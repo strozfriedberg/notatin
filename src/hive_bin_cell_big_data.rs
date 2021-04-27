@@ -68,8 +68,7 @@ fn parse_hive_bin_cell_big_data_internal(input: &[u8]) -> IResult<&[u8], HiveBin
     let (input, segment_list_offset) = le_u32(input)?;
 
     let size_abs = size.abs() as u32;
-    let (input, _) = util::eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
-   // let (input, items) = nom::multi::count(parse_hive_bin_cell_big_data(input), count.into())(input).unwrap();
+    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
 
     Ok((
         input,

@@ -70,7 +70,7 @@ fn parse_sub_key_list_lf_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLf> 
     let (input, items)     = nom::multi::count(parse_sub_key_list_lf_item(), count.into())(input).unwrap();
 
     let size_abs = size.abs() as u32;
-    let (input, _) = util::eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
 
     Ok((
         input,

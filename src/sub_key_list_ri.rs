@@ -87,7 +87,7 @@ pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyLis
     let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input).unwrap();
 
     let size_abs = size.abs() as u32;
-    let (input, _) = util::eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
 
     Ok((
         input,

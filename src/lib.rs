@@ -7,6 +7,7 @@ extern crate num;
 extern crate num_traits;
 extern crate enum_primitive_derive;
 extern crate winstructs;
+extern crate chrono;
 pub mod parser;
 pub mod base_block;
 pub mod hive_bin;

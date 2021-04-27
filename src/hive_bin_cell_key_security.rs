@@ -5,7 +5,7 @@ use nom::{
     number::complete::{le_u16, le_u32, le_i32}
 };
 use std::convert::TryFrom;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use winstructs::security::SecurityDescriptor;
 use crate::hive_bin_cell;
 use crate::util;
@@ -88,7 +88,7 @@ pub fn parse_hive_bin_cell_key_security(input: &[u8]) -> IResult<&[u8], HiveBinC
     let (input, security_descriptor) = take!(input, security_descriptor_size)?;
 
     let size_abs = size.abs() as u32;
-    let (input, _) = util::eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
 
     Ok((
         input,

@@ -102,8 +102,8 @@ pub struct HiveBinCellKeyValue {
     pub size: u32,
     pub signature: [u8; 2], // "vk"
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
-    pub data_size: u32, // In bytes, can be 0 (value isn't set), the most significant bit has a special meaning 
-    pub data_offset: u32, // In bytes, relative from the start of the hive bins data (or data itself)
+    pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning 
+    pub data_offset: u32, // In bytes, relative from the start of the hive bin's data (or data itself)
     pub data_type: HiveBinCellKeyValueDataTypes,
     pub flags: HiveBinCellKeyValueFlags,
     pub padding: u16,
@@ -125,58 +125,56 @@ impl hive_bin_cell::HiveBinCell for HiveBinCellKeyValue {
     }
 }
 
-pub fn get_value_content(input: &[u8], data_type: HiveBinCellKeyValueDataTypes) -> CellValue {
-    match data_type {
+pub fn get_value_content(input: &[u8], data_type: HiveBinCellKeyValueDataTypes) -> (CellValue, Option<Vec<String>>) {
+    let mut warnings = Vec::new();
+    let cv = match data_type {
         HiveBinCellKeyValueDataTypes::RegNone => 
             CellValue::ValueNone,
         HiveBinCellKeyValueDataTypes::RegSZ | 
         HiveBinCellKeyValueDataTypes::RegExpandSZ | 
-        HiveBinCellKeyValueDataTypes::RegLink => 
+        HiveBinCellKeyValueDataTypes::RegLink => {
+            let decoded_warning = util::read_utf16_le_string(input, (input.len() / 2).into());            
+            decoded_warning.1.map(|warning| warnings.push(warning));      
             CellValue::ValueString {
-                content: util::read_utf16_le_string(input, (input.len() / 2).into()).unwrap()
-            },
-        HiveBinCellKeyValueDataTypes::RegUint8 => 
-            CellValue::ValueU32 {
-                content: u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into().unwrap()) as u32
-            },        
-        HiveBinCellKeyValueDataTypes::RegInt16 => 
-            CellValue::ValueI32 {
-                content: i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into().unwrap()) as i32
-            },
-        HiveBinCellKeyValueDataTypes::RegUint16 => 
-            CellValue::ValueU32 {
-                content: u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into().unwrap()) as u32
-            },
+                content: decoded_warning.0
+            }
+        },
+        HiveBinCellKeyValueDataTypes::RegUint8 => CellValue::ValueU32 {
+            content: u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into().unwrap()) as u32
+        },        
+        HiveBinCellKeyValueDataTypes::RegInt16 => CellValue::ValueI32 {
+            content: i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into().unwrap()) as i32
+        },
+        HiveBinCellKeyValueDataTypes::RegUint16 => CellValue::ValueU32 {
+            content: u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into().unwrap()) as u32
+        },
         HiveBinCellKeyValueDataTypes::RegDWord | 
-        HiveBinCellKeyValueDataTypes::RegUint32 => 
-            CellValue::ValueU32 {
-                content: u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into().unwrap())
-            },
-        HiveBinCellKeyValueDataTypes::RegDWordBigEndian => 
-            CellValue::ValueU32 {
-                content: u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into().unwrap())
-            },   
-        HiveBinCellKeyValueDataTypes::RegInt32 => 
-            CellValue::ValueI32 {
-                content: i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into().unwrap())
-            },                      
-        HiveBinCellKeyValueDataTypes::RegInt64 => 
-            CellValue::ValueI64 {
-                content: i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into().unwrap())
-            },            
+        HiveBinCellKeyValueDataTypes::RegUint32 => CellValue::ValueU32 {
+            content: u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into().unwrap())
+        },
+        HiveBinCellKeyValueDataTypes::RegDWordBigEndian => CellValue::ValueU32 {
+            content: u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into().unwrap())
+        },   
+        HiveBinCellKeyValueDataTypes::RegInt32 => CellValue::ValueI32 {
+            content: i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into().unwrap())
+        },                      
+        HiveBinCellKeyValueDataTypes::RegInt64 => CellValue::ValueI64 {
+            content: i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into().unwrap())
+        },            
         HiveBinCellKeyValueDataTypes::RegQWord | 
-        HiveBinCellKeyValueDataTypes::RegUint64 => 
-            CellValue::ValueU64 {
-                content: u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into().unwrap())
-            },           
-        HiveBinCellKeyValueDataTypes::RegBin => 
-            CellValue::ValueBinary {
-                content: input.to_vec()
-            },         
-       HiveBinCellKeyValueDataTypes::RegMultiSZ =>
+        HiveBinCellKeyValueDataTypes::RegUint64 => CellValue::ValueU64 {
+            content: u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into().unwrap())
+        },           
+        HiveBinCellKeyValueDataTypes::RegBin => CellValue::ValueBinary {
+            content: input.to_vec()
+        },         
+        HiveBinCellKeyValueDataTypes::RegMultiSZ => {        
+            let decoded_warning = util::read_utf16_le_strings(input, input.len()/2);         
+            decoded_warning.1.map(|mut warning| warnings.append(&mut warning));              
             CellValue::ValueMultiString {
-                content: util::read_utf16_le_strings(input, input.len()/2).unwrap()
-            },  
+                content: decoded_warning.0
+            }
+        },  
         HiveBinCellKeyValueDataTypes::RegResourceList |
         HiveBinCellKeyValueDataTypes::RegFileTime |
         HiveBinCellKeyValueDataTypes::RegFullResourceDescriptor |
@@ -204,11 +202,17 @@ pub fn get_value_content(input: &[u8], data_type: HiveBinCellKeyValueDataTypes) 
         HiveBinCellKeyValueDataTypes::RegDoubleArray |
         HiveBinCellKeyValueDataTypes::RegUnicodeCharArray |
         HiveBinCellKeyValueDataTypes::RegBooleanArray |
-        HiveBinCellKeyValueDataTypes::RegUnicodeStringArray  => 
+        HiveBinCellKeyValueDataTypes::RegUnicodeStringArray => 
             CellValue::ValueBinary {
                 content: input.to_vec()
             },  
-    } 
+    };
+    if warnings.len() > 0 {
+        (cv, Some(warnings))
+    }
+    else {
+        (cv, None)
+    }
 }
 
 pub fn parse_hive_bin_cell_key_value<'a>(
@@ -241,7 +245,7 @@ pub fn parse_hive_bin_cell_key_value<'a>(
         value_name = String::from_utf8(value_name_bytes.to_vec()).unwrap();
     }
     else {
-        value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into()).unwrap();
+        value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into()).0;
     }
     let abs_size = size.abs() as u32;
     let (input, _) = take!(input, abs_size - bytes_consumed)?;
@@ -253,16 +257,16 @@ pub fn parse_hive_bin_cell_key_value<'a>(
         When the most significant bit is 0, data is stored in the Cell data field of another cell (pointed by the Data offset field) 
         or in the Cell data fields of multiple cells (referenced in the Big data structure stored in a cell pointed by the Data offset field). */
     const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
-    let value_content;
+    let value_content_and_warning;
     if data_size & DATA_IS_RESIDENT_MASK == 0 {
         let offset = (data_offset + start_offset) as usize + mem::size_of_val(&size);
         let value_slice = &file_buffer[offset..offset + data_size as usize]; 
-        value_content = get_value_content(value_slice, data_type);
+        value_content_and_warning = get_value_content(value_slice, data_type);
     }
     else {
         let size = data_size ^ DATA_IS_RESIDENT_MASK;
         let value = data_offset.to_le_bytes(); 
-        value_content = get_value_content(&value[..size as usize], data_type);
+        value_content_and_warning = get_value_content(&value[..size as usize], data_type);
     }
 
     Ok((
@@ -277,7 +281,7 @@ pub fn parse_hive_bin_cell_key_value<'a>(
             flags,
             padding,
             value_name,
-            value_content
+            value_content: value_content_and_warning.0
         },
     ))
 }

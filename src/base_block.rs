@@ -26,14 +26,14 @@ use crate::err::Error;
 pub enum FileType {
     Normal = 0,
     TransactionLog = 1,
-    Unknown = 0x0fffffff
+    Unknown = 0x0fffffff // todo: log warning
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive)]
 #[repr(u32)]
 pub enum FileFormat {
     DirectMemoryLoad = 1,
-    Unknown = 0x0fffffff
+    Unknown = 0x0fffffff // todo: log warning
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -124,7 +124,7 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
     let (input, boot_type) = le_u32(input)?;
     let (input, boot_recover) = le_u32(input)?;
     
-    let filename = util::read_utf16_le_string(filename_bytes, 32).unwrap();
+    let filename_warning = util::read_utf16_le_string(filename_bytes, 32);
         
     let file_type = match FileType::from_u32(file_type_bytes) {
         Some(file_type) => file_type,
@@ -149,7 +149,7 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
             root_cell_offset,
             hive_bins_data_size,
             clustering_factor,
-            filename: filename,
+            filename: filename_warning.0,
             unk2: <[u8; 396]>::try_from(unk2).unwrap(),
             checksum,
             reserved: <[u8; 3576]>::try_from(reserved).unwrap(),
@@ -187,12 +187,11 @@ mod tests {
             ..Default::default()
         };
         let ret = read_registry(&f[..], &mut filter);
-        /*let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
+        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
         assert_eq!(
             (177876, 293276),
             (keys, values)
-        );*/
-        //println!("{:?}", ret.unwrap());
+        );
     }
         
     #[test]

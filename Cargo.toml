@@ -15,6 +15,7 @@ thiserror = "1.0"
 enum-primitive-derive = "0.2.1"
 num-traits = "0.2.14"
 winstructs = "0.3.0"
+chrono = "^0.4"
 
 [dev-dependencies]
 criterion = "0.3"

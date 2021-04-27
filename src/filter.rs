@@ -16,8 +16,7 @@ pub struct Filter {
 impl Filter { 
     pub fn check_cell(
         self: &mut Filter, 
-        is_first_iteration: 
-        bool, 
+        is_first_iteration: bool, 
         cell: &dyn hive_bin_cell::HiveBinCell
     ) -> Result<FilterFlags, Error> {
         if self.find_path.is_some() {
@@ -165,13 +164,6 @@ mod tests {
         assert_eq!(FilterFlags::FILTER_NO_MATCH, 
             filter.clone().check_cell(false, &key_node).unwrap(),
             "check_cell: No match key match failed");
-        
-        let no_name_cell = hive_bin_cell::HiveBinCellUnknown { ..Default::default() };
-        assert_eq!(
-            Err(Error::Any{detail: String::from("HiveBinCell missing name")}),
-            filter.clone().check_cell(false, &no_name_cell),
-            "check_cell: Expected error message for HiveBinCell with no name failed"
-        );
     }
 
     #[test]

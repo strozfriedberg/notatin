@@ -24,11 +24,11 @@ use crate::sub_key_list_li;
 use crate::sub_key_list_ri;
 use crate::filter;
 
-#[derive(Debug, Default, )]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct HiveBinCellKeyNode {
     pub size: u32,
     pub signature: [u8; 2], // "nk"
-    pub flags: KeyNodeFlags, // nk_flags
+    pub flags: KeyNodeFlags,
     pub last_key_written_date_and_time: u64, // filetime
     /* 0x1	This key was accessed before a Windows registry was initialized with the NtInitializeRegistry() routine during the boot
        0x2	This key was accessed after a Windows registry was initialized with the NtInitializeRegistry() routine during the boot */   
@@ -62,45 +62,8 @@ pub struct HiveBinCellKeyNode {
     pub path: PathBuf,
     pub sub_keys: Vec<HiveBinCellKeyNode>,
     pub sub_values: Vec<hive_bin_cell_key_value::HiveBinCellKeyValue>,
-    pub security_descriptors: Vec<SecurityDescriptor>
-   // parse_warnings: Vec<String>
-}
-
-impl Eq for HiveBinCellKeyNode {}
-
-// winstructs::security::SecurityDescriptor doesn't implement Eq/PartialEq so have to do this manually.
-impl PartialEq for HiveBinCellKeyNode {    
-    fn eq(&self, other: &Self) -> bool {
-        return self.size == other.size &&
-        self.signature == other.signature &&
-        self.flags == other.flags &&
-        self.last_key_written_date_and_time == other.last_key_written_date_and_time &&
-        self.access_bits == other.access_bits &&
-        self.parent_key_offset == other.parent_key_offset &&
-        self.number_of_sub_keys == other.number_of_sub_keys &&
-        self.number_of_volatile_sub_keys == other.number_of_volatile_sub_keys &&
-        self.sub_keys_list_offset == other.sub_keys_list_offset &&
-        self.volatile_sub_keys_list_offset == other.volatile_sub_keys_list_offset &&
-        self.number_of_key_values == other.number_of_key_values &&
-        self.key_values_list_offset == other.key_values_list_offset &&
-        self.security_key_offset == other.security_key_offset &&
-        self.class_name_offset == other.class_name_offset &&
-        self.largest_sub_key_name_size == other.largest_sub_key_name_size &&
-        self.largest_sub_key_class_name_size == other.largest_sub_key_class_name_size &&
-        self.largest_value_name_size == other.largest_value_name_size &&
-        self.largest_value_data_size == other.largest_value_data_size &&
-        self.work_var == other.work_var &&
-        self.key_name_size == other.key_name_size &&
-        self.class_name_size == other.class_name_size &&
-        self.key_name == other.key_name &&
-        self.allocated == other.allocated &&
-        self.path == other.path &&
-        self.sub_keys == other.sub_keys &&
-        self.sub_values == other.sub_values/* &&
-        self.security_descriptors == other.security_descriptors*/;
-    }
-}
-  
+    pub parse_warnings: Vec<String>
+}  
 
 impl hive_bin_cell::HiveBinCell for HiveBinCellKeyNode {    
     fn size(&self) -> u32 {
@@ -116,15 +79,15 @@ impl hive_bin_cell::HiveBinCell for HiveBinCellKeyNode {
     }
 }
 
-/*impl err::ParseWarnings for HiveBinCellKeyNode {    
-    fn add_warning(&self, warning: String) {
+impl err::ParseWarnings for HiveBinCellKeyNode {    
+    fn add_warning(&mut self, warning: String) {
         self.parse_warnings.push(warning);
     }
 
-    fn get_warnings(&self) -> Vec<String> {
-        self.parse_warnings
+    fn get_warnings(&self) -> &Vec<String> {
+        &self.parse_warnings
     }
-}*/
+}
 
 impl HiveBinCellKeyNode {
     /// Returns a vector of Security Descriptors for the key node.
@@ -294,7 +257,6 @@ pub fn parse_sub_key_list(
 
 pub fn parse_hive_bin_cell_key_node(
     input: &[u8], 
-    hbin_offset: u32, 
     cur_path: PathBuf
 ) -> IResult<&[u8], HiveBinCellKeyNode> {
     let start_pos = input.as_ptr() as usize;
@@ -327,11 +289,12 @@ pub fn parse_hive_bin_cell_key_node(
         key_name = String::from_utf8(key_name_bytes.to_vec()).unwrap();
     }
     else {
-        key_name = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into()).unwrap();
+        let key_name_warning = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
+        key_name = key_name_warning.0;
     }
     
     let size_abs = size.abs() as u32;
-    let (input, _) = util::eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
 
     let path = cur_path.join(key_name.clone());
     let cell_key_node = HiveBinCellKeyNode {
@@ -361,7 +324,7 @@ pub fn parse_hive_bin_cell_key_node(
         path: path.clone(),
         sub_keys: Vec::new(),
         sub_values: Vec::new(),
-        security_descriptors: Vec::new(),
+        parse_warnings: Vec::new(),
     };
 
     Ok((
@@ -377,7 +340,7 @@ pub fn read_hive_bin_cell_key_node<'a>(
     cur_path: PathBuf, 
     filter: &mut filter::Filter
 ) -> Result<Option<HiveBinCellKeyNode>, Error> {
-    match parse_hive_bin_cell_key_node(input, hbin_offset, cur_path.clone()).finish() {
+    match parse_hive_bin_cell_key_node(input, cur_path.clone()).finish() {
         Ok((_, mut hive_bin_cell_key_node)) => {
             let res_filter_flags = filter.check_cell(cur_path.is_empty(), &hive_bin_cell_key_node);
             match res_filter_flags {
@@ -465,7 +428,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         
-        let ret = parse_hive_bin_cell_key_node(slice, 4096, PathBuf::new());        
+        let ret = parse_hive_bin_cell_key_node(slice, PathBuf::new());        
         let expected_output = HiveBinCellKeyNode {
             size: 136,
             signature: [110, 107],
@@ -493,7 +456,7 @@ mod tests {
             path: PathBuf::from("CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}"),
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            security_descriptors: Vec::new(),
+            parse_warnings: Vec::new(),
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));
@@ -503,7 +466,7 @@ mod tests {
         );
         
         let slice = &f[0..10];
-        let ret = parse_hive_bin_cell_key_node(slice, 4096, PathBuf::new());
+        let ret = parse_hive_bin_cell_key_node(slice, PathBuf::new());
         let remaining = &f[4..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {input: remaining, code: ErrorKind::Tag}));
         assert_eq!(
