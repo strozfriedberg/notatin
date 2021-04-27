@@ -1,11 +1,12 @@
 use nom::Finish;
 use std::path::{PathBuf};
+use serde::Serialize;
 use crate::hive_bin_header;
 use crate::hive_bin_cell_key_node;
 use crate::filter;
 use crate::err::Error;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBin {
     pub header: hive_bin_header::HiveBinHeader,
     pub root: hive_bin_cell_key_node::HiveBinCellKeyNode

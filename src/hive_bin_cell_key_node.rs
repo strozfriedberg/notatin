@@ -3,7 +3,6 @@ use nom::{
     Finish,
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32, le_u64},
-    error::{ErrorKind, make_error},
     branch::alt,
     multi::count
 };
@@ -11,6 +10,7 @@ use std::convert::TryFrom;
 use bitflags::bitflags;
 use std::path::PathBuf;
 use winstructs::security::SecurityDescriptor;
+use serde::Serialize;
 use crate::err;
 use crate::err::Error;
 use crate::util;
@@ -23,13 +23,14 @@ use crate::sub_key_list_lh;
 use crate::sub_key_list_li;
 use crate::sub_key_list_ri;
 use crate::filter;
+use crate::impl_serialize_for_bitflags;
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellKeyNode {
     pub size: u32,
     pub signature: [u8; 2], // "nk"
     pub flags: KeyNodeFlags,
-    pub last_key_written_date_and_time: u64, // filetime
+    pub last_key_written_date_and_time: u64,
     /* 0x1	This key was accessed before a Windows registry was initialized with the NtInitializeRegistry() routine during the boot
        0x2	This key was accessed after a Windows registry was initialized with the NtInitializeRegistry() routine during the boot */   
     pub access_bits: u32, // Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
@@ -37,6 +38,7 @@ pub struct HiveBinCellKeyNode {
     pub number_of_sub_keys: u32,
     pub number_of_volatile_sub_keys: u32, // The offset value is in bytes and relative from the start of the hive bin data / Refers to a sub keys list or contains -1 (0xffffffff) if empty.
     pub sub_keys_list_offset: u32, // In bytes, relative from the start of the hive bins data (also, this field may point to an Index root)
+    #[serde(skip_serializing)]
     pub volatile_sub_keys_list_offset: i32, // This field has no meaning on a disk (volatile keys are not written to a file)
     pub number_of_key_values: u32,
     pub key_values_list_offset: i32,
@@ -54,10 +56,12 @@ pub struct HiveBinCellKeyNode {
     pub largest_sub_key_class_name_size: u32,
     pub largest_value_name_size: u32, // In bytes, a value name is treated as a UTF-16LE string
     pub largest_value_data_size: u32,
+    #[serde(skip_serializing)]
     pub work_var: u32, // Unused as of WinXP
     pub key_name_size: u16,
     pub class_name_size: u16,
     pub key_name: String, // ASCII (extended) string or UTF-16LE string,
+
     pub allocated: bool,
     pub path: PathBuf,
     pub sub_keys: Vec<HiveBinCellKeyNode>,
@@ -194,6 +198,7 @@ bitflags! {
         const KEY_UNKNOWN2       = 0x4000;
     }
 }
+impl_serialize_for_bitflags! {KeyNodeFlags}
 
 fn parse_key_values<'a>(
     file_buffer: &'a [u8], 
@@ -202,11 +207,11 @@ fn parse_key_values<'a>(
     hbin_offset: u32
 ) -> IResult<&'a [u8], Vec<u32>> {
     let slice: &[u8] = &file_buffer[list_offset + (hbin_offset as usize)..];
-    let (slice, size) = le_u32(slice)?;
+    let (slice, _size) = le_u32(slice)?;
     let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
 
     for val in list.iter() {
-        let (input, key_value) = hive_bin_cell_key_value::parse_hive_bin_cell_key_value(&file_buffer[((*val + hbin_offset)as usize)..], file_buffer, hbin_offset)?;
+        let (_input, _key_value) = hive_bin_cell_key_value::parse_hive_bin_cell_key_value(&file_buffer[((*val + hbin_offset)as usize)..], file_buffer, hbin_offset)?;
     }
     
     Ok((
@@ -223,7 +228,7 @@ pub fn parse_sub_key_list(
 ) -> IResult<&[u8], Vec<u32>> {
     let slice = &file_buffer[list_offset as usize + hbin_offset as usize..];
     // we either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
-    // We look for the ri list first and follow the 
+    // We look for the ri list first and follow the pointers
 
     let res_sub_key_list_ri = sub_key_list_ri::parse_sub_key_list_ri(slice);
     match res_sub_key_list_ri {
@@ -244,7 +249,7 @@ pub fn parse_sub_key_list(
                 alt((sub_key_list_lf::parse_sub_key_list_lf(),
                     sub_key_list_lh::parse_sub_key_list_lh(),
                     sub_key_list_li::parse_sub_key_list_li(),
-                    ))(slice).unwrap();
+                    ))(slice).unwrap(); // todo: handle unwrap
             let list = hive_bin_cell_sub_key_list.offsets(hbin_offset);
             if count > 0 { assert_eq!(list.len(), count as usize); }                
             Ok((
@@ -263,7 +268,7 @@ pub fn parse_hive_bin_cell_key_node(
     let (input, size) = le_i32(input)?;
     let (input, signature) = tag("nk")(input)?;
     let (input, flags) = le_u16(input)?;
-    let flags = KeyNodeFlags::from_bits(flags).unwrap();
+    let flags = KeyNodeFlags::from_bits(flags).unwrap(); // todo: handle unwrap
     let (input, last_key_written_date_and_time) = le_u64(input)?;
     let (input, access_bits) = le_u32(input)?;
     let (input, parent_key_offset) = le_i32(input)?;
@@ -286,11 +291,11 @@ pub fn parse_hive_bin_cell_key_node(
     
     let key_name: String;
     if flags.contains(KeyNodeFlags::KEY_COMP_NAME) {
-        key_name = String::from_utf8(key_name_bytes.to_vec()).unwrap();
+        key_name = String::from_utf8(key_name_bytes.to_vec()).unwrap(); // todo: handle unwrap
     }
     else {
         let key_name_warning = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
-        key_name = key_name_warning.0;
+        key_name = key_name_warning;
     }
     
     let size_abs = size.abs() as u32;
@@ -299,7 +304,7 @@ pub fn parse_hive_bin_cell_key_node(
     let path = cur_path.join(key_name.clone());
     let cell_key_node = HiveBinCellKeyNode {
         size: size_abs,
-        signature: <[u8; 2]>::try_from(signature).unwrap(),
+        signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
         flags,
         last_key_written_date_and_time,
         access_bits,
@@ -374,6 +379,11 @@ pub fn read_hive_bin_cell_key_node<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs::File,
+        io::{BufWriter, Write},
+    };
+    use nom::error::ErrorKind;
 
     #[test]
     fn test_hive_bin_cell_key_node_count_all_keys_and_values_with_kv_filter() {        
@@ -386,7 +396,7 @@ mod tests {
         let ret = read_hive_bin_cell_key_node(slice, &f[0..], 4096, PathBuf::new(), &mut filter);
         //let write_file = File::create("out.txt").unwrap();
         //let mut writer = BufWriter::new(&write_file);
-        //write!(&mut writer, "{:#?}", ret.ok());
+        //write!(&mut writer, "{:#?}", ret.ok().unwrap());
 
         let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().unwrap(), 0, 0);
         assert_eq!(

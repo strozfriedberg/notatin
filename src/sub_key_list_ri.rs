@@ -7,8 +7,6 @@ use std::convert::TryFrom;
 use crate::hive_bin_cell;
 use crate::hive_bin_cell_key_node;
 use crate::util;
-use crate::hive_bin_cell::HiveBinCellSubKeyList;
-use crate::err::Error;
 
 // List of subkeys lists (used to subdivide subkeys lists)
 #[derive(Debug, Eq, PartialEq)]
@@ -84,7 +82,7 @@ pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyLis
     let (input, size)         = le_i32(input)?;
     let (input, signature)    = tag("ri")(input)?;
     let (input, count)        = le_u16(input)?;
-    let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input).unwrap();
+    let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input).unwrap(); // todo: handle unwrap
 
     let size_abs = size.abs() as u32;
     let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
@@ -93,7 +91,7 @@ pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyLis
         input,
         SubKeyListRi {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(),
+            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             count,
             items: list_offsets
         },
@@ -103,6 +101,7 @@ pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyLis
 #[cfg(test)]
 mod tests {
     use super::*;    
+    use crate::hive_bin_cell::HiveBinCellSubKeyList;
     
     #[test]
     fn test_sub_key_list_ri_traits() {

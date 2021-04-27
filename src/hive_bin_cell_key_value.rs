@@ -9,10 +9,12 @@ use std::mem;
 use bitflags::bitflags;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
+use serde::Serialize;
 use crate::util;
 use crate::hive_bin_cell;
+use crate::impl_serialize_for_bitflags;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum HiveBinCellKeyValueDataTypes {    
     RegNone                     = 0x0000,
@@ -69,10 +71,11 @@ bitflags! {
         const IS_TOMBSTONE          = 2; // Is a tombstone value (the flag is used starting from Insider Preview builds of Windows 10 "Redstone 1"), a tombstone value also has the Data type field set to REG_NONE, the Data size field set to 0, and the Data offset field set to 0xFFFFFFFF
     }
 }
+impl_serialize_for_bitflags! {HiveBinCellKeyValueFlags}
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub enum CellValue {
-    ValueNone,
+    ValueNone,    
     ValueBinary {
         content: Vec<u8>
     },
@@ -97,7 +100,7 @@ pub enum CellValue {
 }
 
 // Registry key value
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellKeyValue {
     pub size: u32,
     pub signature: [u8; 2], // "vk"
@@ -125,6 +128,7 @@ impl hive_bin_cell::HiveBinCell for HiveBinCellKeyValue {
     }
 }
 
+// todo: handle unwraps
 pub fn get_value_content(input: &[u8], data_type: HiveBinCellKeyValueDataTypes) -> (CellValue, Option<Vec<String>>) {
     let mut warnings = Vec::new();
     let cv = match data_type {
@@ -132,12 +136,8 @@ pub fn get_value_content(input: &[u8], data_type: HiveBinCellKeyValueDataTypes) 
             CellValue::ValueNone,
         HiveBinCellKeyValueDataTypes::RegSZ | 
         HiveBinCellKeyValueDataTypes::RegExpandSZ | 
-        HiveBinCellKeyValueDataTypes::RegLink => {
-            let decoded_warning = util::read_utf16_le_string(input, (input.len() / 2).into());            
-            decoded_warning.1.map(|warning| warnings.push(warning));      
-            CellValue::ValueString {
-                content: decoded_warning.0
-            }
+        HiveBinCellKeyValueDataTypes::RegLink => CellValue::ValueString {
+            content: util::read_utf16_le_string(input, (input.len()).into())
         },
         HiveBinCellKeyValueDataTypes::RegUint8 => CellValue::ValueU32 {
             content: u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into().unwrap()) as u32
@@ -168,12 +168,8 @@ pub fn get_value_content(input: &[u8], data_type: HiveBinCellKeyValueDataTypes) 
         HiveBinCellKeyValueDataTypes::RegBin => CellValue::ValueBinary {
             content: input.to_vec()
         },         
-        HiveBinCellKeyValueDataTypes::RegMultiSZ => {        
-            let decoded_warning = util::read_utf16_le_strings(input, input.len()/2);         
-            decoded_warning.1.map(|mut warning| warnings.append(&mut warning));              
-            CellValue::ValueMultiString {
-                content: decoded_warning.0
-            }
+        HiveBinCellKeyValueDataTypes::RegMultiSZ => CellValue::ValueMultiString {
+            content: util::read_utf16_le_strings(input, input.len())
         },  
         HiveBinCellKeyValueDataTypes::RegResourceList |
         HiveBinCellKeyValueDataTypes::RegFileTime |
@@ -227,7 +223,7 @@ pub fn parse_hive_bin_cell_key_value<'a>(
     let (input, data_offset) = le_u32(input)?;
     let (input, data_type_bytes) = le_u32(input)?;
     let (input, flags) = le_u16(input)?;
-    let flags = HiveBinCellKeyValueFlags::from_bits(flags).unwrap();
+    let flags = HiveBinCellKeyValueFlags::from_bits(flags).unwrap(); // todo: handle unwrap
     let (input, padding) = le_u16(input)?;
     let (input, value_name_bytes) = take!(input, value_name_size)?;     
     let bytes_consumed: u32 = (24 + value_name_size).into();
@@ -242,10 +238,10 @@ pub fn parse_hive_bin_cell_key_value<'a>(
         value_name = String::from("(Default)");
     }
     else if flags.contains(HiveBinCellKeyValueFlags::VALUE_COMP_NAME_ASCII) {
-        value_name = String::from_utf8(value_name_bytes.to_vec()).unwrap();
+        value_name = String::from_utf8(value_name_bytes.to_vec()).unwrap(); // todo: handle unwrap
     }
     else {
-        value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into()).0;
+        value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into());
     }
     let abs_size = size.abs() as u32;
     let (input, _) = take!(input, abs_size - bytes_consumed)?;
@@ -273,7 +269,7 @@ pub fn parse_hive_bin_cell_key_value<'a>(
         input,
         HiveBinCellKeyValue {
             size: abs_size,
-            signature: <[u8; 2]>::try_from(signature).unwrap(),
+            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             value_name_size,
             data_size,
             data_offset,

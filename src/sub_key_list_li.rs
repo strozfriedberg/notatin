@@ -6,7 +6,6 @@ use nom::{
 use std::convert::TryFrom;
 use crate::hive_bin_cell;
 use crate::util;
-use crate::hive_bin_cell::HiveBinCellSubKeyList;
 
 // Subkeys list
 #[derive(Debug, Eq, PartialEq)]
@@ -64,7 +63,7 @@ fn parse_sub_key_list_li_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLi> 
     let (input, size)      = le_i32(input)?;
     let (input, signature) = tag("li")(input)?;
     let (input, count)     = le_u16(input)?;
-    let (input, items)     = nom::multi::count(parse_sub_key_list_li_item(), count.into())(input).unwrap();
+    let (input, items)     = nom::multi::count(parse_sub_key_list_li_item(), count.into())(input)?;
 
     let size_abs = size.abs() as u32;
     let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
@@ -73,7 +72,7 @@ fn parse_sub_key_list_li_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLi> 
         input,
         SubKeyListLi {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(),
+            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             count,
             items
         },
@@ -83,6 +82,7 @@ fn parse_sub_key_list_li_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLi> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hive_bin_cell::HiveBinCellSubKeyList;
     
     #[test]
     fn test_sub_key_list_li_traits() {

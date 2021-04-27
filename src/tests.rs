@@ -1,10 +1,8 @@
-use crate::base_block;
-use crate::filter;
-use crate::hive_bin_cell_key_value;
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::base_block;
+    use crate::filter;
+    use crate::hive_bin_cell_key_value;
     
     #[test]
     fn python_registry_test_issue22() {

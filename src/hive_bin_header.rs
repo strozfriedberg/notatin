@@ -1,24 +1,12 @@
 use nom::{
     IResult,
-    Finish,
     bytes::complete::tag,
     number::complete::{le_u32, le_u64}
 };
 use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
-use crate::hive_bin_cell;
-use crate::hive_bin_cell_key_security;
-use crate::hive_bin_cell_key_node;
-use crate::hive_bin_cell_key_value;
-use crate::hive_bin_cell_big_data;
-use crate::sub_key_list_lf;
-use crate::sub_key_list_lh;
-use crate::sub_key_list_li;
-use crate::sub_key_list_ri;
-use crate::filter;
-use crate::err::Error;
+use serde::Serialize;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
     pub signature: [u8; 4], // "hbin"
     pub offset_from_first_hbin: u32, // The offset of the hive bin, Value in bytes and relative from the start of the hive bin data
@@ -39,7 +27,7 @@ pub fn parse_hive_bin_header<'a>(input: &'a [u8]) -> IResult<&'a [u8], HiveBinHe
     let (input, unknown4) = le_u32(input)?;
 
     let hbh = HiveBinHeader {
-        signature: <[u8; 4]>::try_from(signature).unwrap(),
+        signature: <[u8; 4]>::try_from(signature).unwrap(), // todo: handle unwrap
         offset_from_first_hbin,
         size,
         unknown1,

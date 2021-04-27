@@ -1,47 +1,44 @@
 use std::path::PathBuf;
 use std::mem;
 use std::io::Cursor;
+use std::char::REPLACEMENT_CHARACTER;
 use chrono::{DateTime, Utc};
 use nom::IResult;
 use winstructs::timestamp::WinTimestamp;
 use crate::err::Error;
 use crate::hive_bin_cell_key_node;
 
+const SIZE_OF_UTF16_CHAR: usize = mem::size_of::<u16>();
+
 // todo: failure as warning
-fn read_utf16_le_string_single(slice: &[u8], size: usize) -> (String, Option<String>) {
-    let iter = (0..size)
+fn read_utf16_le_string_single(slice: &[u8], count: usize) -> String {
+    let iter = (0..count / SIZE_OF_UTF16_CHAR)
         .map(|i| u16::from_le_bytes([slice[2*i], slice[2*i+1]]));
-    let intermediate = std::char::decode_utf16(iter).take_while(|c| c.as_ref().ok().unwrap() != &'\0');
-    match intermediate.collect::<Result<String, _>>() {
-        Ok(decoded) => (decoded, None),
-        Err(e) => ("<Parse error>".to_string(), Some(e.to_string()))
-    }
+    let intermediate = std::char::decode_utf16(iter).map(|r| r.unwrap_or(REPLACEMENT_CHARACTER)).take_while(|c| c != &'\0');
+    intermediate.collect::<String>()
 }
 
 /// Reads a null-terminated UTF-16 string (REG_SZ)
-pub fn read_utf16_le_string(slice: &[u8], size: usize) -> (String, Option<String>) {
-    assert!(2*size <= slice.len());
-    read_utf16_le_string_single(slice, size)
+pub fn read_utf16_le_string(slice: &[u8], count: usize) -> String {
+    assert!(count <= slice.len());
+    read_utf16_le_string_single(slice, count)
 }
 
 /// Reads a sequence of null-terminated UTF-16 strings, terminated by an empty string (\0). (REG_MULTI_SZ)
-pub fn read_utf16_le_strings(slice: &[u8], size: usize) -> (Vec<String>, Option<Vec<String>>) {
+pub fn read_utf16_le_strings(slice: &[u8], count: usize) -> Vec<String> {
     let mut strings = Vec::new();
-    let mut warnings = Vec::new();
     let mut offset = 0;
 
-    while offset < size {    
-        let res = read_utf16_le_string_single(slice, size);
-        let decoded = res.0;
+    while offset < count {    
+        let decoded = read_utf16_le_string_single(&slice[offset..], count - offset);
         if decoded.trim().is_empty() {
             break;
         }
-        const NULL_TERMINATOR_LEN: usize = mem::size_of::<char>();
-        offset += decoded.len() + NULL_TERMINATOR_LEN;
+        const NULL_TERMINATOR_LEN: usize = mem::size_of::<u16>();
+        offset += (decoded.len() * SIZE_OF_UTF16_CHAR) + NULL_TERMINATOR_LEN;
         strings.push(decoded);
-        res.1.map(|warning| warnings.push(warning));
     }
-    (strings, Some(warnings))
+    strings
 }
 
 pub trait PathBufExt {
@@ -87,6 +84,21 @@ pub fn get_date_time_from_filetime(filetime: u64) -> Result<DateTime<Utc>, Error
             source: e
         })
     }
+}
+
+/// Via https://github.com/omerbenamram/mft
+#[macro_export]
+macro_rules! impl_serialize_for_bitflags {
+    ($flags: ident) => {
+        impl serde::ser::Serialize for $flags {
+            fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
+            where
+                S: serde::ser::Serializer,
+            {
+                serializer.serialize_str(&format!("{:?}", &self))
+            }
+        }
+    };
 }
 
 #[cfg(test)]

@@ -3,21 +3,15 @@ use nom::{
     Finish,
     bytes::complete::tag,
     bytes::streaming::take,
-    combinator::map_opt,
     number::complete::{le_u32, le_i32, le_u64},
-    error::ErrorKind
 };
-use std::convert::{TryFrom, TryInto};
-use std::mem::size_of;
+use std::convert::TryFrom;
 use bitflags::bitflags;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use crate::util;
-use crate::hive_bin_cell;
 use std::path::{PathBuf};
 use crate::hive_bin;
-use crate::hive_bin_header;
-use crate::hive_bin_cell_key_node;
 use crate::filter;
 use crate::err::Error;
 
@@ -124,7 +118,7 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
     let (input, boot_type) = le_u32(input)?;
     let (input, boot_recover) = le_u32(input)?;
     
-    let filename_warning = util::read_utf16_le_string(filename_bytes, 32);
+    let filename = util::read_utf16_le_string(filename_bytes, 64);
         
     let file_type = match FileType::from_u32(file_type_bytes) {
         Some(file_type) => file_type,
@@ -138,7 +132,7 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
     Ok((
         input,
         FileBaseBlock {
-            signature: <[u8; 4]>::try_from(signature).unwrap(),
+            signature: <[u8; 4]>::try_from(signature).unwrap(), // todo: handle unwrap
             primary_sequence_number,
             secondary_sequence_number,
             last_modification_date_and_time,
@@ -149,10 +143,10 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
             root_cell_offset,
             hive_bins_data_size,
             clustering_factor,
-            filename: filename_warning.0,
-            unk2: <[u8; 396]>::try_from(unk2).unwrap(),
+            filename,
+            unk2: <[u8; 396]>::try_from(unk2).unwrap(),  // todo: handle unwrap
             checksum,
-            reserved: <[u8; 3576]>::try_from(reserved).unwrap(),
+            reserved: <[u8; 3576]>::try_from(reserved).unwrap(),  // todo: handle unwrap
             boot_type,
             boot_recover
         },
@@ -162,6 +156,7 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nom::error::ErrorKind;
     
     #[test]
     fn test_read_big_reg() {
@@ -171,12 +166,11 @@ mod tests {
             ..Default::default()
         };
         let ret = read_registry(&f[..], &mut filter);
-        /*let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
+        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
         assert_eq!(
             (177876, 293276),
             (keys, values)
-        );*/
-        //println!("{:?}", ret.unwrap());
+        );
     }
     
     #[test]
@@ -189,7 +183,7 @@ mod tests {
         let ret = read_registry(&f[..], &mut filter);
         let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
         assert_eq!(
-            (177876, 293276),
+            (2287, 5470),
             (keys, values)
         );
     }

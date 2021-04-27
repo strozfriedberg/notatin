@@ -4,6 +4,7 @@ use nom::{
     number::complete::le_i32
 };
 use std::convert::TryFrom;
+use serde::Serialize;
 
 pub trait HiveBinCell {
     fn signature(&self) -> [u8;2];
@@ -13,7 +14,7 @@ pub trait HiveBinCell {
 
 impl Debug for dyn HiveBinCell {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let sig_string = String::from_utf8(self.signature().to_vec()).unwrap();
+        let sig_string = String::from_utf8(self.signature().to_vec()).unwrap(); // todo: handle unwrap
         write!(f, "HiveBinCell signature:{} size:{}", sig_string, self.size())
     }
 }
@@ -23,7 +24,8 @@ impl Eq for dyn HiveBinCell {}
 impl PartialEq for dyn HiveBinCell {
     fn eq(&self, other: &Self) -> bool {
         self.signature() == other.signature() &&
-        self.size() == other.size()
+        self.size() == other.size()&&
+        self.name_lowercase() == other.name_lowercase()
     }
 }
 
@@ -35,7 +37,7 @@ pub trait HiveBinCellSubKeyList {
 
 impl Debug for dyn HiveBinCellSubKeyList {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let sig_string = String::from_utf8(self.signature().to_vec()).unwrap();
+        let sig_string = String::from_utf8(self.signature().to_vec()).unwrap(); // todo: handle unwrap
         write!(f, "HiveBinCellSubKeyList signature:{} size:{}", sig_string, self.size())
     }
 }
@@ -43,13 +45,14 @@ impl Debug for dyn HiveBinCellSubKeyList {
 impl PartialEq for dyn HiveBinCellSubKeyList {
     fn eq(&self, other: &Self) -> bool {
         self.signature() == other.signature() &&
-        self.size() == other.size()
+        self.size() == other.size() &&
+        self.offsets(0) == other.offsets(0)
     }
 }
 
 impl Eq for dyn HiveBinCellSubKeyList {}
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellUnknown {
     pub size: u32,
     pub signature: [u8; 2],
@@ -81,18 +84,17 @@ pub fn parse_hive_bin_cell_other() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn H
  }
 
 fn parse_hive_bin_cell_unknown_internal(input: &[u8]) -> IResult<&[u8], HiveBinCellUnknown> {
+    let start_pos = input.as_ptr() as usize;
     let (input, size) = le_i32(input)?;
     let (input, signature) = take!(input, 2)?;
-    
-    let bytes_consumed: u32 = 6;
-    let abs_size = size.abs() as u32;
-    let (input, data) = take!(input, abs_size - bytes_consumed)?;
+    let size_abs = size.abs() as u32;
+    let (input, data) = take!(input, size_abs - (input.as_ptr() as usize - start_pos) as u32)?;
 
     Ok((
         input,
         HiveBinCellUnknown {
-            size: abs_size,
-            signature: <[u8; 2]>::try_from(signature).unwrap(),
+            size: size_abs,
+            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             data: data.to_vec()
         },
     ))

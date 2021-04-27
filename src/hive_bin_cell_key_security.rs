@@ -7,15 +7,17 @@ use nom::{
 use std::convert::TryFrom;
 use std::io::Cursor;
 use winstructs::security::SecurityDescriptor;
+use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::util;
 use crate::err::Error;
 
 // Security descriptor
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellKeySecurity {
     pub size: u32,
     pub signature: [u8; 2], // "sk"
+    #[serde(skip_serializing)]
     pub unknown1: u16,
     /* Offsets in bytes, relative from the start of the hive bin's data. 
        When a key security item acts as a list header, flink points to the first entry of this list.
@@ -94,7 +96,7 @@ pub fn parse_hive_bin_cell_key_security(input: &[u8]) -> IResult<&[u8], HiveBinC
         input,
         HiveBinCellKeySecurity {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(),
+            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             unknown1,
             flink,
             blink,

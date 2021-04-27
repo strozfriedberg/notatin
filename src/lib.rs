@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate nom;
-extern crate filetime;
 extern crate bitflags;
 extern crate thiserror;
 extern crate num;
@@ -8,6 +7,7 @@ extern crate num_traits;
 extern crate enum_primitive_derive;
 extern crate winstructs;
 extern crate chrono;
+extern crate serde;
 pub mod parser;
 pub mod base_block;
 pub mod hive_bin;

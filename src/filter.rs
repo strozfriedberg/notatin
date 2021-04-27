@@ -2,10 +2,9 @@ use bitflags::bitflags;
 use std::path::{Path, PathBuf};
 use crate::err::Error;
 use crate::hive_bin_cell;
-use crate::hive_bin_cell_key_node;
-use crate::hive_bin_cell_key_value;
+use crate::impl_serialize_for_bitflags;
 
-/// Filter allows specification of filters to be met when reading the registry.
+/// Filter allows specification of conditions to be met when reading the registry.
 /// Execution will short-circuit for applicable filters. (is_complete = true)
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Filter {
@@ -31,13 +30,13 @@ impl Filter {
         cell: &dyn hive_bin_cell::HiveBinCell
     ) -> Result<FilterFlags, Error> {
         if cell.name_lowercase().is_some() {
-            let fp = self.find_path.as_ref().unwrap();
+            let fp = self.find_path.as_ref().unwrap();  // todo: handle unwrap
             if !fp.key_path.as_os_str().is_empty() {
-                return self.match_cell_key(is_first_iteration, cell.name_lowercase().unwrap());
+                return self.match_cell_key(is_first_iteration, cell.name_lowercase().unwrap());  // todo: handle unwrap
             }
             if fp.value.is_some() {
-                let match_val = fp.value.as_ref().unwrap();
-                let cell_val = &cell.name_lowercase().unwrap();
+                let match_val = fp.value.as_ref().unwrap();  // todo: handle unwrap
+                let cell_val = &cell.name_lowercase().unwrap();  // todo: handle unwrap
                 if match_val == cell_val {
                     return Ok(FilterFlags::FILTER_ITERATE_COMPLETE);
                 }
@@ -55,7 +54,7 @@ impl Filter {
         if is_first_iteration {
             return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
         }
-        self.find_path.as_mut().unwrap().check_key_match(&key_name)
+        self.find_path.as_mut().unwrap().check_key_match(&key_name) // todo: handle unwrap
     }    
 }
 
@@ -72,7 +71,7 @@ impl FindPath {
     pub fn build(key_path: &str, value: Option<String>) -> FindPath {
         let val_lower: Option<String>;
         if value.is_some() {
-            val_lower = Some(value.unwrap().to_ascii_lowercase());
+            val_lower = Some(value.unwrap().to_ascii_lowercase()); // todo: handle unwrap
         }
         else {
             val_lower = None;
@@ -85,7 +84,7 @@ impl FindPath {
 
     fn check_key_match(self: &mut FindPath, key_name: &String) -> Result<FilterFlags, Error> {
         if self.key_path.starts_with(Path::new(&key_name)) {
-            self.key_path = self.key_path.strip_prefix(key_name).unwrap().to_path_buf();
+            self.key_path = self.key_path.strip_prefix(key_name).unwrap().to_path_buf(); // todo: handle unwrap
             if self.key_path.as_os_str().is_empty() { // we matched all the keys!                
                 if self.value.is_none() { // we only have a key path; should return all children / values then stop
                     return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_COMPLETE);
@@ -106,10 +105,13 @@ bitflags! {
         const FILTER_ITERATE_COMPLETE = 0x0008;
     }
 }
+impl_serialize_for_bitflags! {FilterFlags}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hive_bin_cell_key_node;
+    use crate::hive_bin_cell_key_value;
     
     #[test]
     fn test_find_path_build() {
