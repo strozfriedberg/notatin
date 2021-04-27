@@ -4,7 +4,7 @@ use nom::{
     number::complete::{le_u16, le_u32, le_i32}
 };
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::mem;
 use bitflags::bitflags;
 use enum_primitive_derive::Primitive;
@@ -66,6 +66,7 @@ pub enum HiveBinCellKeyValueDataTypes {
 }
 
 bitflags! {
+    #[derive(Default)]
     pub struct HiveBinCellKeyValueFlags: u16 { 
         const VALUE_COMP_NAME_ASCII = 1; // Name is an ASCII string / Otherwise the name is an Unicode (UTF-16 little-endian) string
         const IS_TOMBSTONE          = 2; // Is a tombstone value (the flag is used starting from Insider Preview builds of Windows 10 "Redstone 1"), a tombstone value also has the Data type field set to REG_NONE, the Data size field set to 0, and the Data offset field set to 0xFFFFFFFF
@@ -102,13 +103,17 @@ pub enum CellValue {
 // Registry key value
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellKeyValue {
+    #[serde(skip_serializing)]
     pub size: u32,
-    pub signature: [u8; 2], // "vk"
+    #[serde(skip_serializing)]
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
+    #[serde(skip_serializing)]
     pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning 
+    #[serde(skip_serializing)]
     pub data_offset: u32, // In bytes, relative from the start of the hive bin's data (or data itself)
     pub data_type: HiveBinCellKeyValueDataTypes,
     pub flags: HiveBinCellKeyValueFlags,
+    #[serde(skip_serializing)]
     pub padding: u16,
     pub value_name: String, // in file, ASCII (extended) string or UTF-16LE string
     pub value_content: CellValue
@@ -117,10 +122,6 @@ pub struct HiveBinCellKeyValue {
 impl hive_bin_cell::HiveBinCell for HiveBinCellKeyValue {    
     fn size(&self) -> u32 {
         self.size
-    }
-
-    fn signature(&self) -> [u8;2] {
-        self.signature
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -217,13 +218,13 @@ pub fn parse_hive_bin_cell_key_value<'a>(
     start_offset: u32
 ) -> IResult<&'a [u8], HiveBinCellKeyValue> {
     let (input, size) = le_i32(input)?;
-    let (input, signature) = tag("vk")(input)?;
+    let (input, _signature) = tag("vk")(input)?;
     let (input, value_name_size) = le_u16(input)?;
     let (input, data_size) = le_u32(input)?;
     let (input, data_offset) = le_u32(input)?;
     let (input, data_type_bytes) = le_u32(input)?;
     let (input, flags) = le_u16(input)?;
-    let flags = HiveBinCellKeyValueFlags::from_bits(flags).unwrap(); // todo: handle unwrap
+    let flags = HiveBinCellKeyValueFlags::from_bits(flags).unwrap_or_default();
     let (input, padding) = le_u16(input)?;
     let (input, value_name_bytes) = take!(input, value_name_size)?;     
     let bytes_consumed: u32 = (24 + value_name_size).into();
@@ -269,7 +270,6 @@ pub fn parse_hive_bin_cell_key_value<'a>(
         input,
         HiveBinCellKeyValue {
             size: abs_size,
-            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             value_name_size,
             data_size,
             data_offset,
@@ -295,7 +295,6 @@ mod tests {
         let ret = parse_hive_bin_cell_key_value(slice, &f[0..], 4096);
         let expected_output = HiveBinCellKeyValue {
             size: 48,
-            signature: [118, 107],
             value_name_size: 18,
             data_size: 8,
             data_offset: 1928,

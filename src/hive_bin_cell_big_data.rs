@@ -3,7 +3,6 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32}
 };
-use std::convert::TryFrom;
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::util;
@@ -12,9 +11,11 @@ use crate::util;
    When the Minor version field of the base block is greater than 3, it has the following structure: */
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellBigData {
+    #[serde(skip_serializing)]
     pub size: u32,
-    pub signature: [u8; 2], // "db"
+    #[serde(skip_serializing)]
     pub count: u16,
+    #[serde(skip_serializing)]
     pub segment_list_offset: u32, // relative to the start of the hive bin
     pub items: Vec<HiveBinCellBigDataItem> // Vec size = count
 }
@@ -22,10 +23,6 @@ pub struct HiveBinCellBigData {
 impl hive_bin_cell::HiveBinCell for HiveBinCellBigData {    
     fn size(&self) -> u32 {
         self.size
-    }
-
-    fn signature(&self) -> [u8;2] {
-        self.signature
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -42,7 +39,7 @@ pub struct HiveBinCellBigDataItem {
 fn parse_hive_bin_cell_big_data_internal(input: &[u8]) -> IResult<&[u8], HiveBinCellBigData> {
     let start_pos = input.as_ptr() as usize;
     let (input, size) = le_i32(input)?;
-    let (input, signature) = tag("db")(input)?;
+    let (input, _signature) = tag("db")(input)?;
     let (input, count) = le_u16(input)?;
     let (input, segment_list_offset) = le_u32(input)?;
 
@@ -53,7 +50,6 @@ fn parse_hive_bin_cell_big_data_internal(input: &[u8]) -> IResult<&[u8], HiveBin
         input,
         HiveBinCellBigData {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             count,
             segment_list_offset,
             items: Vec::new()
@@ -73,7 +69,6 @@ mod tests {
         let ret = parse_hive_bin_cell_big_data_internal(slice);
         let expected_output = HiveBinCellBigData {
             size: 16,
-            signature: [100, 98],
             count: 2,
             segment_list_offset: 472,
             items: Vec::new()

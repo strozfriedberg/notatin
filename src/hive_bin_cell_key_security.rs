@@ -4,7 +4,6 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32}
 };
-use std::convert::TryFrom;
 use std::io::Cursor;
 use winstructs::security::SecurityDescriptor;
 use serde::Serialize;
@@ -15,8 +14,8 @@ use crate::err::Error;
 // Security descriptor
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellKeySecurity {
+    #[serde(skip_serializing)]
     pub size: u32,
-    pub signature: [u8; 2], // "sk"
     #[serde(skip_serializing)]
     pub unknown1: u16,
     /* Offsets in bytes, relative from the start of the hive bin's data. 
@@ -32,6 +31,7 @@ pub struct HiveBinCellKeySecurity {
        If there is no previous entry in a list, blink points to a list header. */
     pub blink: u32,
     pub reference_count: u32,
+    #[serde(skip_serializing)]
     pub security_descriptor_size: u32,
     pub security_descriptor: Vec<u8>
 }
@@ -39,10 +39,6 @@ pub struct HiveBinCellKeySecurity {
 impl hive_bin_cell::HiveBinCell for HiveBinCellKeySecurity {    
     fn size(&self) -> u32 {
         self.size
-    }
-
-    fn signature(&self) -> [u8;2] {
-        self.signature
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -81,7 +77,7 @@ pub fn read_hive_bin_cell_key_security(file_buffer: &[u8], security_key_offset: 
 pub fn parse_hive_bin_cell_key_security(input: &[u8]) -> IResult<&[u8], HiveBinCellKeySecurity> {
     let start_pos = input.as_ptr() as usize;
     let (input, size) = le_i32(input)?;
-    let (input, signature) = tag("sk")(input)?;
+    let (input, _signature) = tag("sk")(input)?;
     let (input, unknown1) = le_u16(input)?;
     let (input, flink) = le_u32(input)?;
     let (input, blink) = le_u32(input)?;
@@ -96,7 +92,6 @@ pub fn parse_hive_bin_cell_key_security(input: &[u8]) -> IResult<&[u8], HiveBinC
         input,
         HiveBinCellKeySecurity {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             unknown1,
             flink,
             blink,
@@ -120,7 +115,6 @@ mod tests {
 
         let expected_output = HiveBinCellKeySecurity {
             size: 264,
-            signature: [115, 107],
             unknown1: 0,
             flink: 232704,
             blink: 234848,

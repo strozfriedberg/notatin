@@ -3,16 +3,17 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u16, le_i32, le_u32}
 };
-use std::convert::TryFrom;
+use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::hive_bin_cell_key_node;
 use crate::util;
 
 // List of subkeys lists (used to subdivide subkeys lists)
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListRi {
+    #[serde(skip_serializing)]
     pub size: u32,
-    pub signature: [u8; 2], // "ri"
+    #[serde(skip_serializing)]
     pub count: u16,
     pub items: Vec<SubKeyListRiItem> // Vec size = count
 }
@@ -20,10 +21,6 @@ pub struct SubKeyListRi {
 impl hive_bin_cell::HiveBinCellSubKeyList for SubKeyListRi {    
     fn size(&self) -> u32 {
         self.size
-    }
-
-    fn signature(&self) -> [u8;2] {
-        self.signature
     }
     
     fn offsets(&self, hbin_offset: u32) -> Vec<u32> {
@@ -47,7 +44,7 @@ impl SubKeyListRi {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListRiItem {
     pub sub_key_list_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
 }
@@ -80,9 +77,9 @@ pub struct SubKeyListRiItem {
 pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyListRi> {
     let start_pos = input.as_ptr() as usize;
     let (input, size)         = le_i32(input)?;
-    let (input, signature)    = tag("ri")(input)?;
+    let (input, _signature)    = tag("ri")(input)?;
     let (input, count)        = le_u16(input)?;
-    let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input).unwrap(); // todo: handle unwrap
+    let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
 
     let size_abs = size.abs() as u32;
     let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
@@ -91,7 +88,6 @@ pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyLis
         input,
         SubKeyListRi {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             count,
             items: list_offsets
         },
@@ -107,13 +103,11 @@ mod tests {
     fn test_sub_key_list_ri_traits() {
         let ri = SubKeyListRi {
             size: 64,
-            signature: [114, 105], // "ri"
             count: 2,
             items: vec![SubKeyListRiItem { sub_key_list_offset: 12345 },
                         SubKeyListRiItem { sub_key_list_offset: 54321 }]
         };        
         assert_eq!(ri.size, ri.size());
-        assert_eq!(ri.signature, ri.signature());
         assert_eq!(vec![16441, 58417], ri.offsets(4096));             
     }
 
@@ -124,7 +118,6 @@ mod tests {
         let ret = parse_sub_key_list_ri(slice);
         let expected_output = SubKeyListRi {
             size: 48,
-            signature: [114, 105],
             count: 9,
             items: vec![
                 SubKeyListRiItem {

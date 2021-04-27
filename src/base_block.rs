@@ -6,7 +6,6 @@ use nom::{
     number::complete::{le_u32, le_i32, le_u64},
 };
 use std::convert::TryFrom;
-use bitflags::bitflags;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use crate::util;
@@ -38,7 +37,6 @@ pub struct Registry {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct FileBaseBlock {
-    pub signature: [u8; 4],
     pub primary_sequence_number: u32,
     pub secondary_sequence_number: u32,
     pub last_modification_date_and_time: u64, // Filetime
@@ -100,7 +98,7 @@ pub fn read_registry<'a>(
 
 /// Uses nom to parse the registry file header.
 fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
-    let (input, signature) = tag("regf")(input)?;
+    let (input, _signature) = tag("regf")(input)?;
     let (input, primary_sequence_number) = le_u32(input)?;
     let (input, secondary_sequence_number) = le_u32(input)?;
     let (input, last_modification_date_and_time) = le_u64(input)?;
@@ -132,7 +130,6 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
     Ok((
         input,
         FileBaseBlock {
-            signature: <[u8; 4]>::try_from(signature).unwrap(), // todo: handle unwrap
             primary_sequence_number,
             secondary_sequence_number,
             last_modification_date_and_time,
@@ -211,7 +208,6 @@ mod tests {
 
         let ret = parse_base_block(&f[0..4096]);
         let expected_header = FileBaseBlock {
-            signature: [114, 101, 103, 102],
             primary_sequence_number: 10407,
             secondary_sequence_number: 10407,
             last_modification_date_and_time: 129782121007374460,

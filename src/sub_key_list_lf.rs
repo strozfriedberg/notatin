@@ -3,15 +3,16 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u16, le_i32, le_u32}
 };
-use std::convert::TryFrom;
+use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::util;
 
 // Subkeys list with name hints
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLf {
+    #[serde(skip_serializing)]
     pub size: u32,
-    pub signature: [u8; 2], // "lf"
+    #[serde(skip_serializing)]
     pub count: u16,
     pub items: Vec<SubKeyListLfItem> // Vec size = count
 }
@@ -21,16 +22,12 @@ impl hive_bin_cell::HiveBinCellSubKeyList for SubKeyListLf {
         self.size
     }
 
-    fn signature(&self) -> [u8;2] {
-        self.signature
-    }
-    
     fn offsets(&self, hbin_offset: u32) -> Vec<u32> {
         self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLfItem {
     pub named_key_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
     pub name_hint: String, // The first 4 ASCII characters of a key name string (used to speed up lookups)
@@ -64,7 +61,7 @@ pub fn parse_sub_key_list_lf() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_
 fn parse_sub_key_list_lf_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLf> {
     let start_pos = input.as_ptr() as usize;
     let (input, size)      = le_i32(input)?;
-    let (input, signature) = tag("lf")(input)?;
+    let (input, _signature) = tag("lf")(input)?;
     let (input, count)     = le_u16(input)?;
     let (input, items)     = nom::multi::count(parse_sub_key_list_lf_item(), count.into())(input)?;
 
@@ -75,7 +72,6 @@ fn parse_sub_key_list_lf_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLf> 
         input,
         SubKeyListLf {
             size: size_abs,
-            signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
             count,
             items: items
         },
@@ -91,13 +87,11 @@ mod tests {
     fn test_sub_key_list_lf_traits() {
         let lf = SubKeyListLf {
             size: 64,
-            signature: [108, 102], // "lf"
             count: 2,
             items: vec![SubKeyListLfItem { named_key_offset: 12345, name_hint: "aaaa".to_string() },
                         SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string() }]
         };        
         assert_eq!(lf.size, lf.size());
-        assert_eq!(lf.signature, lf.signature());
         assert_eq!(vec![16441, 58417], lf.offsets(4096));             
     }
     
@@ -109,7 +103,6 @@ mod tests {
 
         let expected_output = SubKeyListLf {
             size: 24,
-            signature: [108, 102],
             count: 2,
             items: vec![
                 SubKeyListLfItem {

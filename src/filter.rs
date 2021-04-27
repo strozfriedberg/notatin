@@ -70,11 +70,9 @@ impl FindPath {
     /// Calling ```build``` ensures that search terms are compared case-insensitively
     pub fn build(key_path: &str, value: Option<String>) -> FindPath {
         let val_lower: Option<String>;
-        if value.is_some() {
-            val_lower = Some(value.unwrap().to_ascii_lowercase()); // todo: handle unwrap
-        }
-        else {
-            val_lower = None;
+        match value {
+            Some(val) => val_lower = Some(val.to_ascii_lowercase()),
+            None => val_lower = None
         }
         FindPath {
             key_path: PathBuf::from(key_path.to_ascii_lowercase()),
@@ -177,7 +175,6 @@ mod tests {
 
         let mut key_value = hive_bin_cell_key_value::HiveBinCellKeyValue {
             size: 48,
-            signature: [118, 107],
             value_name_size: 18,
             data_size: 8,
             data_offset: 1928,

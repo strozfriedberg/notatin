@@ -6,7 +6,6 @@ use nom::{
     branch::alt,
     multi::count
 };
-use std::convert::TryFrom;
 use bitflags::bitflags;
 use std::path::PathBuf;
 use winstructs::security::SecurityDescriptor;
@@ -27,8 +26,8 @@ use crate::impl_serialize_for_bitflags;
 
 #[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct HiveBinCellKeyNode {
+    #[serde(skip_serializing)]
     pub size: u32,
-    pub signature: [u8; 2], // "nk"
     pub flags: KeyNodeFlags,
     pub last_key_written_date_and_time: u64,
     /* 0x1	This key was accessed before a Windows registry was initialized with the NtInitializeRegistry() routine during the boot
@@ -36,13 +35,19 @@ pub struct HiveBinCellKeyNode {
     pub access_bits: u32, // Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
     pub parent_key_offset: i32, // Offset of a parent key node in bytes, relative from the start of the hive bins data (this field has no meaning on a disk for a root key node)
     pub number_of_sub_keys: u32,
+    #[serde(skip_serializing)]
     pub number_of_volatile_sub_keys: u32, // The offset value is in bytes and relative from the start of the hive bin data / Refers to a sub keys list or contains -1 (0xffffffff) if empty.
+    #[serde(skip_serializing)]
     pub sub_keys_list_offset: u32, // In bytes, relative from the start of the hive bins data (also, this field may point to an Index root)
     #[serde(skip_serializing)]
     pub volatile_sub_keys_list_offset: i32, // This field has no meaning on a disk (volatile keys are not written to a file)
+    #[serde(skip_serializing)]
     pub number_of_key_values: u32,
+    #[serde(skip_serializing)]
     pub key_values_list_offset: i32,
+    #[serde(skip_serializing)]
     pub security_key_offset: u32,
+    #[serde(skip_serializing)]
     pub class_name_offset: i32,
     /*  Starting from Windows Vista, Windows Server 2003 SP2, and Windows XP SP3, the Largest subkey name length field has been split 
     into 4 bit fields (the offsets below are relative from the beginning of the old Largest subkey name length field,
@@ -52,13 +57,19 @@ pub struct HiveBinCellKeyNode {
         16	            4	            Virtualization control flags Bit mask, see below
         20	            4	            User flags (Wow64 flags)     Bit mask, see below
         24              8	            Debug                        See below */ 
+    #[serde(skip_serializing)]
     pub largest_sub_key_name_size: u32, // In bytes, a subkey name is treated as a UTF-16LE string (see below)
+    #[serde(skip_serializing)]
     pub largest_sub_key_class_name_size: u32,
+    #[serde(skip_serializing)]
     pub largest_value_name_size: u32, // In bytes, a value name is treated as a UTF-16LE string
+    #[serde(skip_serializing)]
     pub largest_value_data_size: u32,
     #[serde(skip_serializing)]
-    pub work_var: u32, // Unused as of WinXP
-    pub key_name_size: u16,
+    pub work_var: u32, // Unused as of WinXP    
+    #[serde(skip_serializing)]
+    pub key_name_size: u16,    
+    #[serde(skip_serializing)]
     pub class_name_size: u16,
     pub key_name: String, // ASCII (extended) string or UTF-16LE string,
 
@@ -72,10 +83,6 @@ pub struct HiveBinCellKeyNode {
 impl hive_bin_cell::HiveBinCell for HiveBinCellKeyNode {    
     fn size(&self) -> u32 {
         self.size
-    }
-
-    fn signature(&self) -> [u8;2] {
-        self.signature
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -266,9 +273,9 @@ pub fn parse_hive_bin_cell_key_node(
 ) -> IResult<&[u8], HiveBinCellKeyNode> {
     let start_pos = input.as_ptr() as usize;
     let (input, size) = le_i32(input)?;
-    let (input, signature) = tag("nk")(input)?;
+    let (input, _signature) = tag("nk")(input)?;
     let (input, flags) = le_u16(input)?;
-    let flags = KeyNodeFlags::from_bits(flags).unwrap(); // todo: handle unwrap
+    let flags = KeyNodeFlags::from_bits(flags).unwrap_or_default();
     let (input, last_key_written_date_and_time) = le_u64(input)?;
     let (input, access_bits) = le_u32(input)?;
     let (input, parent_key_offset) = le_i32(input)?;
@@ -304,7 +311,6 @@ pub fn parse_hive_bin_cell_key_node(
     let path = cur_path.join(key_name.clone());
     let cell_key_node = HiveBinCellKeyNode {
         size: size_abs,
-        signature: <[u8; 2]>::try_from(signature).unwrap(), // todo: handle unwrap
         flags,
         last_key_written_date_and_time,
         access_bits,
@@ -441,7 +447,6 @@ mod tests {
         let ret = parse_hive_bin_cell_key_node(slice, PathBuf::new());        
         let expected_output = HiveBinCellKeyNode {
             size: 136,
-            signature: [110, 107],
             flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
             last_key_written_date_and_time: 129782011451468083,
             access_bits: 0,

@@ -3,12 +3,10 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u32, le_u64}
 };
-use std::convert::TryFrom;
 use serde::Serialize;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
-    pub signature: [u8; 4], // "hbin"
     pub offset_from_first_hbin: u32, // The offset of the hive bin, Value in bytes and relative from the start of the hive bin data
     pub size: u32, // Size of the hive bin
     pub unknown1: u32, // 0 most of the time, can contain remnant data
@@ -18,7 +16,7 @@ pub struct HiveBinHeader {
 }
 
 pub fn parse_hive_bin_header<'a>(input: &'a [u8]) -> IResult<&'a [u8], HiveBinHeader> {
-    let (input, signature) = tag("hbin")(input)?;
+    let (input, _signature) = tag("hbin")(input)?;
     let (input, offset_from_first_hbin) = le_u32(input)?;
     let (input, size) = le_u32(input)?;
     let (input, unknown1) = le_u32(input)?;
@@ -27,7 +25,6 @@ pub fn parse_hive_bin_header<'a>(input: &'a [u8]) -> IResult<&'a [u8], HiveBinHe
     let (input, unknown4) = le_u32(input)?;
 
     let hbh = HiveBinHeader {
-        signature: <[u8; 4]>::try_from(signature).unwrap(), // todo: handle unwrap
         offset_from_first_hbin,
         size,
         unknown1,
@@ -52,7 +49,6 @@ mod tests {
         let ret = parse_hive_bin_header(&f[4096..4128]);
         
         let expected_output = HiveBinHeader {
-            signature: [104, 98, 105, 110],
             offset_from_first_hbin: 0,
             size: 4096,
             unknown1: 0,
