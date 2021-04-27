@@ -1,0 +1,210 @@
+use bitflags::bitflags;
+use std::path::{Path, PathBuf};
+use crate::err::Error;
+use crate::hive_bin_cell;
+use crate::hive_bin_cell_key_node;
+use crate::hive_bin_cell_key_value;
+
+/// Filter allows specification of filters to be met when reading the registry.
+/// Execution will short-circuit for applicable filters. (is_complete = true)
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Filter {
+    pub find_path: Option<FindPath>,
+    pub is_complete: bool
+}
+
+impl Filter { 
+    pub fn check_cell(
+        self: &mut Filter, 
+        is_first_iteration: 
+        bool, 
+        cell: &dyn hive_bin_cell::HiveBinCell
+    ) -> Result<FilterFlags, Error> {
+        if self.find_path.is_some() {
+            return self.handle_find_path(is_first_iteration, cell);
+        }
+        return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
+    }
+
+    fn handle_find_path(
+        self: &mut Filter,
+        is_first_iteration: bool, 
+        cell: &dyn hive_bin_cell::HiveBinCell
+    ) -> Result<FilterFlags, Error> {
+        if cell.name_lowercase().is_some() {
+            let fp = self.find_path.as_ref().unwrap();
+            if !fp.key_path.as_os_str().is_empty() {
+                return self.match_cell_key(is_first_iteration, cell.name_lowercase().unwrap());
+            }
+            if fp.value.is_some() {
+                let match_val = fp.value.as_ref().unwrap();
+                let cell_val = &cell.name_lowercase().unwrap();
+                if match_val == cell_val {
+                    return Ok(FilterFlags::FILTER_ITERATE_COMPLETE);
+                }
+                return Ok(FilterFlags::FILTER_NO_MATCH);
+            }
+        }
+        else {
+            return Err(Error::Any{detail: String::from("HiveBinCell missing name")});
+        }
+        return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
+    }
+
+    fn match_cell_key(self: &mut Filter, is_first_iteration: bool, key_name: String) -> Result<FilterFlags, Error> {
+        // skip the first iteration; it's the root hive name and should always match
+        if is_first_iteration {
+            return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
+        }
+        self.find_path.as_mut().unwrap().check_key_match(&key_name)
+    }    
+}
+
+/// FindPath is used when looking for a particular key path and/or value name.
+/// The value name is optional; if only a key path is specified all subkeys and values will be returned.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FindPath {
+    key_path: PathBuf,
+    value: Option<String>
+}
+
+impl FindPath {
+    /// Calling ```build``` ensures that search terms are compared case-insensitively
+    pub fn build(key_path: &str, value: Option<String>) -> FindPath {
+        let val_lower: Option<String>;
+        if value.is_some() {
+            val_lower = Some(value.unwrap().to_ascii_lowercase());
+        }
+        else {
+            val_lower = None;
+        }
+        FindPath {
+            key_path: PathBuf::from(key_path.to_ascii_lowercase()),
+            value: val_lower
+        }
+    }
+
+    fn check_key_match(self: &mut FindPath, key_name: &String) -> Result<FilterFlags, Error> {
+        if self.key_path.starts_with(Path::new(&key_name)) {
+            self.key_path = self.key_path.strip_prefix(key_name).unwrap().to_path_buf();
+            if self.key_path.as_os_str().is_empty() { // we matched all the keys!                
+                if self.value.is_none() { // we only have a key path; should return all children / values then stop
+                    return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_COMPLETE);
+                }
+                return Ok(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_COMPLETE);
+            }           
+            return Ok(FilterFlags::FILTER_ITERATE_KEYS);
+        }
+        return Ok(FilterFlags::FILTER_NO_MATCH);
+    }
+}
+
+bitflags! {
+    pub struct FilterFlags: u16 { 
+        const FILTER_NO_MATCH         = 0x0001;
+        const FILTER_ITERATE_KEYS     = 0x0002;
+        const FILTER_ITERATE_VALUES   = 0x0004;
+        const FILTER_ITERATE_COMPLETE = 0x0008;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_find_path_build() {
+        let find_path = FindPath::build("First segment/secondSEGMENT", Some(String::from("valueName")));
+        assert_eq!(find_path.key_path, PathBuf::from("first segment/secondsegment"));
+        assert_eq!(find_path.value, Some(String::from("valuename")));
+    }
+    
+    #[test]
+    fn test_check_cell_first_iteration() {
+        let mut filter = Filter {        
+            find_path: Some(FindPath {            
+                key_path: PathBuf::from("HighContrast"),
+                value: Some(String::from("Flags"))
+            }),
+            is_complete: false
+        };
+
+        let key_node = hive_bin_cell_key_node::HiveBinCellKeyNode {
+            key_name: String::from("Accessibility"),
+             ..Default::default()
+        };
+
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES, 
+            filter.check_cell(true, &key_node).unwrap(),
+            "check_cell: first_iteration success check failed");  
+        assert_eq!(FilterFlags::FILTER_NO_MATCH, 
+            filter.check_cell(false, &key_node).unwrap(),
+            "check_cell: first_iteration failure check failed");  
+    }
+    
+    #[test]
+    fn test_check_cell_match_key() {
+        let filter = Filter {   
+            find_path: Some(FindPath::build("HighContrast", Some(String::from("Flags")))),   
+            is_complete: false
+        };
+        let mut key_node = hive_bin_cell_key_node::HiveBinCellKeyNode {
+            key_name: String::from("HighContrast"),
+             ..Default::default()
+        };
+        assert_eq!(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_COMPLETE, 
+            filter.clone().check_cell(false, &key_node).unwrap(),
+            "check_cell: Same case key match failed");  
+            
+        key_node.key_name = String::from("Highcontrast");
+        assert_eq!(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_COMPLETE, 
+            filter.clone().check_cell(false, &key_node).unwrap(),
+            "check_cell: Different case key match failed");
+        
+        key_node.key_name = String::from("badVal");
+        assert_eq!(FilterFlags::FILTER_NO_MATCH, 
+            filter.clone().check_cell(false, &key_node).unwrap(),
+            "check_cell: No match key match failed");
+        
+        let no_name_cell = hive_bin_cell::HiveBinCellUnknown { ..Default::default() };
+        assert_eq!(
+            Err(Error::Any{detail: String::from("HiveBinCell missing name")}),
+            filter.clone().check_cell(false, &no_name_cell),
+            "check_cell: Expected error message for HiveBinCell with no name failed"
+        );
+    }
+
+    #[test]
+    fn test_check_cell_match_value() {
+        let filter = Filter {        
+            find_path: Some(FindPath::build("", Some(String::from("Flags")))),   
+            is_complete: false
+        };
+
+        let mut key_value = hive_bin_cell_key_value::HiveBinCellKeyValue {
+            size: 48,
+            signature: [118, 107],
+            value_name_size: 18,
+            data_size: 8,
+            data_offset: 1928,
+            data_type: hive_bin_cell_key_value::HiveBinCellKeyValueDataTypes::RegSZ,
+            flags: hive_bin_cell_key_value::HiveBinCellKeyValueFlags::VALUE_COMP_NAME_ASCII,
+            padding: 1280,
+            value_name: String::from("Flags"),
+            value_content: hive_bin_cell_key_value::CellValue::ValueString { content: String::from("5.0") }
+        };
+        assert_eq!(FilterFlags::FILTER_ITERATE_COMPLETE, 
+            filter.clone().check_cell(false, &key_value).unwrap(),
+            "check_cell: Same case value match failed");  
+
+        key_value.value_name = String::from("flags");
+        assert_eq!(FilterFlags::FILTER_ITERATE_COMPLETE, 
+            filter.clone().check_cell(false, &key_value).unwrap(),
+            "check_cell: Different case value match failed");  
+
+        key_value.value_name = String::from("NoMatch");
+        assert_eq!(FilterFlags::FILTER_NO_MATCH, 
+            filter.clone().check_cell(false, &key_value).unwrap(),
+            "check_cell: No match value match failed");  
+    }
+}
