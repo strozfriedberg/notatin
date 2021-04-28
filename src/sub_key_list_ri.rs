@@ -5,34 +5,32 @@ use nom::{
 };
 use serde::Serialize;
 use crate::hive_bin_cell;
-use crate::hive_bin_cell_key_node;
+use crate::cell_key_node;
 use crate::util;
 
 // List of subkeys lists (used to subdivide subkeys lists)
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListRi {
-    #[serde(skip_serializing)]
     pub size: u32,
-    #[serde(skip_serializing)]
     pub count: u16,
     pub items: Vec<SubKeyListRiItem> // Vec size = count
 }
 
-impl hive_bin_cell::HiveBinCellSubKeyList for SubKeyListRi {    
+impl hive_bin_cell::CellSubKeyList for SubKeyListRi {
     fn size(&self) -> u32 {
         self.size
     }
-    
+
     fn offsets(&self, hbin_offset: u32) -> Vec<u32> {
         self.items.iter().map(|x| x.sub_key_list_offset + hbin_offset).collect()
     }
 }
 
-impl SubKeyListRi {    
+impl SubKeyListRi {
     pub fn parse_offsets<'a>(&self, file_buffer: &'a [u8], hbin_offset: u32) -> IResult<&'a [u8], Vec<u32>> {
         let mut list: Vec<u32> = Vec::new();
         for item in self.items.iter() {
-            let nom_ret_sub_list = hive_bin_cell_key_node::parse_sub_key_list(file_buffer, 0, item.sub_key_list_offset, hbin_offset);
+            let nom_ret_sub_list = cell_key_node::parse_sub_key_list(file_buffer, 0, item.sub_key_list_offset, hbin_offset);
             match nom_ret_sub_list {
                 Ok((_, mut sub_list)) => {
                     list.append(&mut sub_list);
@@ -52,7 +50,7 @@ pub struct SubKeyListRiItem {
  fn parse_sub_key_list_ri_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListRiItem> {
     |input: &[u8]| {
         let (input, sub_key_list_offset) = le_u32(input)?;
-        
+
         Ok((
             input,
             SubKeyListRiItem {
@@ -62,10 +60,10 @@ pub struct SubKeyListRiItem {
     }
 }
 
-/*pub fn parse_sub_key_list_ri<'a>(file_buffer: &'a [u8]) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Box<dyn hive_bin_cell::HiveBinCellSubKeyList>> {
+/*pub fn parse_sub_key_list_ri<'a>(file_buffer: &'a [u8]) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
     |input: &[u8]| {
         let (input, ret) = parse_sub_key_list_ri_internal(input, file_buffer)?;
-        
+
         Ok((
             input,
             Box::new(ret)
@@ -74,7 +72,7 @@ pub struct SubKeyListRiItem {
 }*/
 
 /// Uses nom to parse an ri sub key list (ri) hive bin cell.
-pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyListRi> {
+pub fn parse_sub_key_list_ri(input: &[u8]) -> IResult<&[u8], SubKeyListRi> {
     let start_pos = input.as_ptr() as usize;
     let (input, size)         = le_i32(input)?;
     let (input, _signature)    = tag("ri")(input)?;
@@ -96,9 +94,9 @@ pub fn parse_sub_key_list_ri<'a>(input: &'a [u8]) -> IResult<&'a [u8], SubKeyLis
 
 #[cfg(test)]
 mod tests {
-    use super::*;    
-    use crate::hive_bin_cell::HiveBinCellSubKeyList;
-    
+    use super::*;
+    use crate::hive_bin_cell::CellSubKeyList;
+
     #[test]
     fn test_sub_key_list_ri_traits() {
         let ri = SubKeyListRi {
@@ -106,9 +104,9 @@ mod tests {
             count: 2,
             items: vec![SubKeyListRiItem { sub_key_list_offset: 12345 },
                         SubKeyListRiItem { sub_key_list_offset: 54321 }]
-        };        
+        };
         assert_eq!(ri.size, ri.size());
-        assert_eq!(vec![16441, 58417], ri.offsets(4096));             
+        assert_eq!(vec![16441, 58417], ri.offsets(4096));
     }
 
     #[test]

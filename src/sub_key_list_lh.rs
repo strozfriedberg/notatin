@@ -10,18 +10,16 @@ use crate::util;
 // Subkeys list with name hints
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLh {
-    #[serde(skip_serializing)]
     pub size: u32,
-    #[serde(skip_serializing)]
     pub count: u16,
     pub items: Vec<SubKeyListLhItem> // Vec size = count
 }
 
-impl hive_bin_cell::HiveBinCellSubKeyList for SubKeyListLh {    
+impl hive_bin_cell::CellSubKeyList for SubKeyListLh {
     fn size(&self) -> u32 {
         self.size
     }
-    
+
     fn offsets(&self, hbin_offset: u32) -> Vec<u32> {
         self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
     }
@@ -37,7 +35,7 @@ fn parse_sub_key_list_lh_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListLh
     |input: &[u8]| {
         let (input, named_key_offset) = le_u32(input)?;
         let (input, name_hash) = le_u32(input)?;
-        
+
         Ok((
             input,
             SubKeyListLhItem {
@@ -48,7 +46,7 @@ fn parse_sub_key_list_lh_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListLh
     }
 }
 
-pub fn parse_sub_key_list_lh() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::HiveBinCellSubKeyList>> {
+pub fn parse_sub_key_list_lh() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
     |input: &[u8]| {
         let (input, ret) = parse_sub_key_list_lh_internal(input)?;
         Ok((
@@ -61,10 +59,10 @@ pub fn parse_sub_key_list_lh() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_
 /// Uses nom to parse an lh sub key list (lh) hive bin cell.
 fn parse_sub_key_list_lh_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLh> {
     let start_pos = input.as_ptr() as usize;
-    let (input, size)      = le_i32(input)?;
+    let (input, size)       = le_i32(input)?;
     let (input, _signature) = tag("lh")(input)?;
-    let (input, count)     = le_u16(input)?;
-    let (input, items)     = nom::multi::count(parse_sub_key_list_lh_item(), count.into())(input)?;
+    let (input, count)      = le_u16(input)?;
+    let (input, items)      = nom::multi::count(parse_sub_key_list_lh_item(), count.into())(input)?;
 
     let size_abs = size.abs() as u32;
     let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
@@ -74,16 +72,16 @@ fn parse_sub_key_list_lh_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLh> 
         SubKeyListLh {
             size: size_abs,
             count,
-            items: items
+            items
         },
     ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;   
-    use crate::hive_bin_cell::HiveBinCellSubKeyList; 
-    
+    use super::*;
+    use crate::hive_bin_cell::CellSubKeyList;
+
     #[test]
     fn test_sub_key_list_lh_traits() {
         let lh = SubKeyListLh {
@@ -91,9 +89,9 @@ mod tests {
             count: 2,
             items: vec![SubKeyListLhItem { named_key_offset: 12345, name_hash: 1111 },
                         SubKeyListLhItem { named_key_offset: 54321, name_hash: 2222 }]
-        };        
+        };
         assert_eq!(lh.size, lh.size());
-        assert_eq!(vec![16441, 58417], lh.offsets(4096));             
+        assert_eq!(vec![16441, 58417], lh.offsets(4096));
     }
 
     #[test]

@@ -10,17 +10,17 @@ use crate::util;
 /* List of data segments. Big data is used to reference data larger than 16344 bytes  
    When the Minor version field of the base block is greater than 3, it has the following structure: */
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct HiveBinCellBigData {
+pub struct CellBigData {
     #[serde(skip_serializing)]
     pub size: u32,
     #[serde(skip_serializing)]
     pub count: u16,
     #[serde(skip_serializing)]
     pub segment_list_offset: u32, // relative to the start of the hive bin
-    pub items: Vec<HiveBinCellBigDataItem> // Vec size = count
+    pub items: Vec<CellBigDataItem> // Vec size = count
 }
 
-impl hive_bin_cell::HiveBinCell for HiveBinCellBigData {    
+impl hive_bin_cell::Cell for CellBigData {    
     fn size(&self) -> u32 {
         self.size
     }
@@ -31,12 +31,12 @@ impl hive_bin_cell::HiveBinCell for HiveBinCellBigData {
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct HiveBinCellBigDataItem {
+pub struct CellBigDataItem {
     pub data_segment_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
  }
  
 /// Uses nom to parse a big data (db) hive bin cell.
-fn parse_hive_bin_cell_big_data_internal(input: &[u8]) -> IResult<&[u8], HiveBinCellBigData> {
+fn parse_cell_big_data_internal(input: &[u8]) -> IResult<&[u8], CellBigData> {
     let start_pos = input.as_ptr() as usize;
     let (input, size) = le_i32(input)?;
     let (input, _signature) = tag("db")(input)?;
@@ -48,7 +48,7 @@ fn parse_hive_bin_cell_big_data_internal(input: &[u8]) -> IResult<&[u8], HiveBin
 
     Ok((
         input,
-        HiveBinCellBigData {
+        CellBigData {
             size: size_abs,
             count,
             segment_list_offset,
@@ -66,8 +66,8 @@ mod tests {
     fn test_parse_sub_key_list_db() {
         let f = std::fs::read("test_data/FuseHive").unwrap();
         let slice = &f[4552..4568];
-        let ret = parse_hive_bin_cell_big_data_internal(slice);
-        let expected_output = HiveBinCellBigData {
+        let ret = parse_cell_big_data_internal(slice);
+        let expected_output = CellBigData {
             size: 16,
             count: 2,
             segment_list_offset: 472,

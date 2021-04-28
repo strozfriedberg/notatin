@@ -10,14 +10,12 @@ use crate::util;
 // Subkeys list with name hints
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLf {
-    #[serde(skip_serializing)]
     pub size: u32,
-    #[serde(skip_serializing)]
     pub count: u16,
     pub items: Vec<SubKeyListLfItem> // Vec size = count
 }
 
-impl hive_bin_cell::HiveBinCellSubKeyList for SubKeyListLf {    
+impl hive_bin_cell::CellSubKeyList for SubKeyListLf {
     fn size(&self) -> u32 {
         self.size
     }
@@ -36,7 +34,7 @@ pub struct SubKeyListLfItem {
 fn parse_sub_key_list_lf_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListLfItem> {
     |input: &[u8]| {
         let (input, named_key_offset) = le_u32(input)?;
-        let (input, name_hint) = take!(input, 4usize)?;        
+        let (input, name_hint) = take!(input, 4usize)?;
         Ok((
             input,
             SubKeyListLfItem {
@@ -47,9 +45,9 @@ fn parse_sub_key_list_lf_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListLf
     }
 }
 
-pub fn parse_sub_key_list_lf() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::HiveBinCellSubKeyList>> {
+pub fn parse_sub_key_list_lf() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
     |input: &[u8]| {
-        let (input, ret) = parse_sub_key_list_lf_internal(input)?;        
+        let (input, ret) = parse_sub_key_list_lf_internal(input)?;
         Ok((
             input,
             Box::new(ret)
@@ -73,7 +71,7 @@ fn parse_sub_key_list_lf_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLf> 
         SubKeyListLf {
             size: size_abs,
             count,
-            items: items
+            items
         },
     ))
 }
@@ -81,8 +79,8 @@ fn parse_sub_key_list_lf_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLf> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hive_bin_cell::HiveBinCellSubKeyList;
-    
+    use crate::hive_bin_cell::CellSubKeyList;
+
     #[test]
     fn test_sub_key_list_lf_traits() {
         let lf = SubKeyListLf {
@@ -90,11 +88,11 @@ mod tests {
             count: 2,
             items: vec![SubKeyListLfItem { named_key_offset: 12345, name_hint: "aaaa".to_string() },
                         SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string() }]
-        };        
+        };
         assert_eq!(lf.size, lf.size());
-        assert_eq!(vec![16441, 58417], lf.offsets(4096));             
+        assert_eq!(vec![16441, 58417], lf.offsets(4096));
     }
-    
+
     #[test]
     fn test_parse_sub_key_list_lf() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();

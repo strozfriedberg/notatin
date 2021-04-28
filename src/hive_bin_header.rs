@@ -15,7 +15,7 @@ pub struct HiveBinHeader {
     pub unknown4: u32, // Contains number of bytes
 }
 
-pub fn parse_hive_bin_header<'a>(input: &'a [u8]) -> IResult<&'a [u8], HiveBinHeader> {
+pub fn parse_hive_bin_header(input: &[u8]) -> IResult<&[u8], HiveBinHeader> {
     let (input, _signature) = tag("hbin")(input)?;
     let (input, offset_from_first_hbin) = le_u32(input)?;
     let (input, size) = le_u32(input)?;
@@ -42,12 +42,12 @@ pub fn parse_hive_bin_header<'a>(input: &'a [u8]) -> IResult<&'a [u8], HiveBinHe
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_hive_bin_header() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let ret = parse_hive_bin_header(&f[4096..4128]);
-        
+
         let expected_output = HiveBinHeader {
             offset_from_first_hbin: 0,
             size: 4096,

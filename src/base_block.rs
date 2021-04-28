@@ -5,6 +5,7 @@ use nom::{
     bytes::streaming::take,
     number::complete::{le_u32, le_i32, le_u64},
 };
+use std::ffi::OsString;
 use std::convert::TryFrom;
 use serde::Serialize;
 use enum_primitive_derive::Primitive;
@@ -16,7 +17,7 @@ use crate::filter;
 use crate::err::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
-#[repr(u32)] 
+#[repr(u32)]
 pub enum FileType {
     Normal = 0,
     TransactionLog = 1,
@@ -51,11 +52,11 @@ pub struct FileBaseBlock {
     pub filename: String, // UTF-16LE string (contains a partial file path to the primary file, or a file name of the primary file), used for debugging purposes
     #[serde(skip_serializing)]
     pub unk2: [u8; 396],
-    pub checksum: u32, // XOR-32 checksum of the previous 508 bytes    
+    pub checksum: u32, // XOR-32 checksum of the previous 508 bytes
     #[serde(skip_serializing)]
     pub reserved: [u8; 3576], // see https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block for additional info in this area
     pub boot_type: u32,
-    pub boot_recover: u32,  
+    pub boot_recover: u32,
 }
 
 // relevant to win10+
@@ -77,15 +78,15 @@ pub enum FileBaseBlockReservedFlags {
 }
 
 /// Reads a Windows registry; returns a Registry object containing the information from the header and a tree of parsed hive bins
-pub fn read_registry<'a>(
-    file_buffer: &[u8], 
+pub fn read_registry(
+    file_buffer: &[u8],
     filter: &mut filter::Filter
 ) -> Result<Registry, Error> {
     match parse_base_block(file_buffer).finish() {
     Ok((input, file_base_block)) => {
-            let ret = hive_bin::read_hive_bin(&input, file_buffer, PathBuf::new(), filter);
-            match ret { 
-                Ok(hive_bin) => 
+            let ret = hive_bin::read_hive_bin(&input, file_buffer, String::new(), filter);
+            match ret {
+                Ok(hive_bin) =>
                     Ok(Registry {
                         header: file_base_block,
                         hive_bin_root: hive_bin
@@ -94,13 +95,13 @@ pub fn read_registry<'a>(
             }
         },
         Err(e) => return Err(Error::Nom {
-            detail: format!("read_registry: parse_base_block {:#?}", e)        
+            detail: format!("read_registry: parse_base_block {:#?}", e)
         })
     }
 }
 
 /// Uses nom to parse the registry file header.
-fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
+fn parse_base_block(input: &[u8]) -> IResult<&[u8], FileBaseBlock> {
     let (input, _signature) = tag("regf")(input)?;
     let (input, primary_sequence_number) = le_u32(input)?;
     let (input, secondary_sequence_number) = le_u32(input)?;
@@ -118,13 +119,13 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
     let (input, reserved) = take(3576usize)(input)?;
     let (input, boot_type) = le_u32(input)?;
     let (input, boot_recover) = le_u32(input)?;
-    
+
     let filename = util::read_utf16_le_string(filename_bytes, 64);
-        
+
     let file_type = match FileType::from_u32(file_type_bytes) {
         Some(file_type) => file_type,
         None => FileType::Unknown
-    };        
+    };
     let format = match FileFormat::from_u32(format_bytes) {
         Some(format) => format,
         None => FileFormat::Unknown
@@ -161,12 +162,12 @@ mod tests {
         fs::File,
         io::{BufWriter, Write},
     };
-    
+
     #[test]
     fn test_read_big_reg() {
         let f = std::fs::read("test_data/SOFTWARE_1_nfury").unwrap();
 
-        let mut filter = filter::Filter {        
+        let mut filter = filter::Filter {
             ..Default::default()
         };
         let ret = read_registry(&f[..], &mut filter);
@@ -176,12 +177,12 @@ mod tests {
             (keys, values)
         );
     }
-    
+
     #[test]
     fn test_read_small_reg() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
-        let mut filter = filter::Filter {        
+        let mut filter = filter::Filter {
             ..Default::default()
         };
         let ret = read_registry(&f[..], &mut filter);
@@ -191,12 +192,12 @@ mod tests {
             (keys, values)
         );
     }
-        
+
     #[test]
     fn test_read_base_block() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
-        let mut filter = filter::Filter {        
+        let mut filter = filter::Filter {
             find_path: Some(filter::FindPath::build("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
             is_complete: false
         };
@@ -249,9 +250,9 @@ mod tests {
     }
 
     #[test]
-    fn dump_registry() {        
+    fn dump_registry() {
         let f = std::fs::read("test_data/FuseHive").unwrap();
-        let mut filter = filter::Filter {        
+        let mut filter = filter::Filter {
             ..Default::default()
         };
         let ret = read_registry(&f[..], &mut filter);

@@ -6,54 +6,54 @@ use nom::{
 use std::convert::TryFrom;
 use serde::Serialize;
 
-pub trait HiveBinCell {
+pub trait Cell {
     fn size(&self) -> u32;
     fn name_lowercase(&self) -> Option<String>;
 }
 
-impl Debug for dyn HiveBinCell {
+impl Debug for dyn Cell {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "HiveBinCell {}, size:{}", self.name_lowercase().unwrap(), self.size())
+        write!(f, "Cell {}, size:{}", self.name_lowercase().unwrap(), self.size())
     }
 }
 
-impl Eq for dyn HiveBinCell {}
+impl Eq for dyn Cell {}
 
-impl PartialEq for dyn HiveBinCell {
+impl PartialEq for dyn Cell {
     fn eq(&self, other: &Self) -> bool {
         self.size() == other.size()&&
         self.name_lowercase() == other.name_lowercase()
     }
 }
 
-pub trait HiveBinCellSubKeyList {
+pub trait CellSubKeyList {
     fn size(&self) -> u32;
     fn offsets(&self, hbin_offset: u32) -> Vec<u32>;
 }
 
-impl Debug for dyn HiveBinCellSubKeyList {
+impl Debug for dyn CellSubKeyList {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "HiveBinCellSubKeyList size:{}", self.size())
+        write!(f, "CellSubKeyList size:{}", self.size())
     }
 }
 
-impl PartialEq for dyn HiveBinCellSubKeyList {
+impl PartialEq for dyn CellSubKeyList {
     fn eq(&self, other: &Self) -> bool {
         self.size() == other.size() &&
         self.offsets(0) == other.offsets(0)
     }
 }
 
-impl Eq for dyn HiveBinCellSubKeyList {}
+impl Eq for dyn CellSubKeyList {}
 
 #[derive(Debug, Default, Eq, PartialEq, Serialize)]
-pub struct HiveBinCellUnknown {
+pub struct CellUnknown {
     pub size: u32,
     pub signature: [u8; 2],
     pub data: Vec<u8>
 }
 
-impl HiveBinCell for HiveBinCellUnknown {    
+impl Cell for CellUnknown {    
     fn size(&self) -> u32 {
         self.size
     }
@@ -63,9 +63,9 @@ impl HiveBinCell for HiveBinCellUnknown {
     }
 }
 
-pub fn parse_hive_bin_cell_other() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn HiveBinCell>> {
+pub fn parse_cell_other() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn Cell>> {
     |input: &[u8]| {
-        let (input, ret) = parse_hive_bin_cell_unknown_internal(input)?;
+        let (input, ret) = parse_cell_unknown_internal(input)?;
         Ok((
             input,
             Box::new(ret)
@@ -73,7 +73,7 @@ pub fn parse_hive_bin_cell_other() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn H
     }
  }
 
-fn parse_hive_bin_cell_unknown_internal(input: &[u8]) -> IResult<&[u8], HiveBinCellUnknown> {
+fn parse_cell_unknown_internal(input: &[u8]) -> IResult<&[u8], CellUnknown> {
     let start_pos = input.as_ptr() as usize;
     let (input, size) = le_i32(input)?;
     let (input, signature) = take!(input, 2)?;
@@ -82,7 +82,7 @@ fn parse_hive_bin_cell_unknown_internal(input: &[u8]) -> IResult<&[u8], HiveBinC
 
     Ok((
         input,
-        HiveBinCellUnknown {
+        CellUnknown {
             size: size_abs,
             signature: <[u8; 2]>::try_from(signature).unwrap_or_default(),
             data: data.to_vec()

@@ -1,5 +1,4 @@
 use thiserror::Error;
-use winstructs;
 
 pub trait ParseWarnings {
     fn add_warning(&mut self, warning: String);
