@@ -27,6 +27,27 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListRi {
 }
 
 impl SubKeyListRi {
+    /// Uses nom to parse an ri sub key list (ri) hive bin cell.
+    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let start_pos = input.as_ptr() as usize;
+        let (input, size)         = le_i32(input)?;
+        let (input, _signature)   = tag("ri")(input)?;
+        let (input, count)        = le_u16(input)?;
+        let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
+
+        let size_abs = size.abs() as u32;
+        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+
+        Ok((
+            input,
+            SubKeyListRi {
+                size: size_abs,
+                count,
+                items: list_offsets
+            },
+        ))
+    }
+
     pub fn parse_offsets<'a>(&self, file_buffer: &'a [u8], hbin_offset: u32) -> IResult<&'a [u8], Vec<u32>> {
         let mut list: Vec<u32> = Vec::new();
         for item in self.items.iter() {
@@ -60,38 +81,6 @@ pub struct SubKeyListRiItem {
     }
 }
 
-/*pub fn parse_sub_key_list_ri<'a>(file_buffer: &'a [u8]) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
-    |input: &[u8]| {
-        let (input, ret) = parse_sub_key_list_ri_internal(input, file_buffer)?;
-
-        Ok((
-            input,
-            Box::new(ret)
-        ))
-    }
-}*/
-
-/// Uses nom to parse an ri sub key list (ri) hive bin cell.
-pub fn parse_sub_key_list_ri(input: &[u8]) -> IResult<&[u8], SubKeyListRi> {
-    let start_pos = input.as_ptr() as usize;
-    let (input, size)         = le_i32(input)?;
-    let (input, _signature)    = tag("ri")(input)?;
-    let (input, count)        = le_u16(input)?;
-    let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
-
-    let size_abs = size.abs() as u32;
-    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
-
-    Ok((
-        input,
-        SubKeyListRi {
-            size: size_abs,
-            count,
-            items: list_offsets
-        },
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,7 +102,7 @@ mod tests {
     fn test_parse_sub_key_list_ri() {
         let f = std::fs::read("test_data/ManySubkeysHive").unwrap();
         let slice = &f[5920..5968];
-        let ret = parse_sub_key_list_ri(slice);
+        let ret = SubKeyListRi::from_bytes(slice);
         let expected_output = SubKeyListRi {
             size: 48,
             count: 9,

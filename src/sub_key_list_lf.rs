@@ -25,55 +25,59 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLf {
     }
 }
 
+impl SubKeyListLf {
+    /// Uses nom to parse an lf sub key list (lf) hive bin cell.
+    fn from_bytes_direct(input: &[u8]) -> IResult<&[u8], Self> {
+        let start_pos = input.as_ptr() as usize;
+        let (input, size)       = le_i32(input)?;
+        let (input, _signature) = tag("lf")(input)?;
+        let (input, count)      = le_u16(input)?;
+        let (input, items)      = nom::multi::count(SubKeyListLfItem::from_bytes(), count.into())(input)?;
+
+        let size_abs = size.abs() as u32;
+        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+
+        Ok((
+            input,
+            SubKeyListLf {
+                size: size_abs,
+                count,
+                items
+            },
+        ))
+    }
+
+    pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
+        |input: &[u8]| {
+            let (input, ret) = SubKeyListLf::from_bytes_direct(input)?;
+            Ok((
+                input,
+                Box::new(ret)
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLfItem {
     pub named_key_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
     pub name_hint: String, // The first 4 ASCII characters of a key name string (used to speed up lookups)
 }
 
-fn parse_sub_key_list_lf_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListLfItem> {
-    |input: &[u8]| {
-        let (input, named_key_offset) = le_u32(input)?;
-        let (input, name_hint) = take!(input, 4usize)?;
-        Ok((
-            input,
-            SubKeyListLfItem {
-                named_key_offset,
-                name_hint: String::from_utf8(name_hint.to_vec()).unwrap() // todo: handle unwrap
-            },
-        ))
+impl SubKeyListLfItem {
+    fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
+        |input: &[u8]| {
+            let (input, named_key_offset) = le_u32(input)?;
+            let (input, name_hint) = take!(input, 4usize)?;
+            Ok((
+                input,
+                SubKeyListLfItem {
+                    named_key_offset,
+                    name_hint: String::from_utf8(name_hint.to_vec()).unwrap() // todo: handle unwrap
+                },
+            ))
+        }
     }
-}
-
-pub fn parse_sub_key_list_lf() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
-    |input: &[u8]| {
-        let (input, ret) = parse_sub_key_list_lf_internal(input)?;
-        Ok((
-            input,
-            Box::new(ret)
-        ))
-    }
-}
-
-/// Uses nom to parse an lf sub key list (lf) hive bin cell.
-fn parse_sub_key_list_lf_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLf> {
-    let start_pos = input.as_ptr() as usize;
-    let (input, size)      = le_i32(input)?;
-    let (input, _signature) = tag("lf")(input)?;
-    let (input, count)     = le_u16(input)?;
-    let (input, items)     = nom::multi::count(parse_sub_key_list_lf_item(), count.into())(input)?;
-
-    let size_abs = size.abs() as u32;
-    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
-
-    Ok((
-        input,
-        SubKeyListLf {
-            size: size_abs,
-            count,
-            items
-        },
-    ))
 }
 
 #[cfg(test)]
@@ -97,7 +101,7 @@ mod tests {
     fn test_parse_sub_key_list_lf() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4360..4384];
-        let ret = parse_sub_key_list_lf_internal(slice);
+        let ret = SubKeyListLf::from_bytes_direct(slice);
 
         let expected_output = SubKeyListLf {
             size: 24,

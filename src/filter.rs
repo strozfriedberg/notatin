@@ -80,7 +80,7 @@ impl FindPath {
         }
     }
 
-    fn check_key_match(self: &mut FindPath, key_name: &String) -> Result<FilterFlags, Error> {
+    fn check_key_match(self: &mut FindPath, key_name: &str) -> Result<FilterFlags, Error> {
         if self.key_path.starts_with(Path::new(&key_name)) {
             self.key_path = self.key_path.strip_prefix(key_name).unwrap().to_path_buf(); // todo: handle unwrap
             if self.key_path.as_os_str().is_empty() { // we matched all the keys!
@@ -184,7 +184,7 @@ mod tests {
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::RegSZ,
             value_name: String::from("Flags"),
-            value_content: cell_key_value::CellValue::ValueString { content: String::from("5.0") }
+            value_content: None
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_COMPLETE,
             filter.clone().check_cell(false, &key_value).unwrap(),

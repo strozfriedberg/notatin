@@ -3,7 +3,6 @@ use std::mem;
 use std::io::Cursor;
 use std::char::REPLACEMENT_CHARACTER;
 use std::fmt::Write;
-use std::io;
 use chrono::{DateTime, Utc};
 use nom::IResult;
 use winstructs::timestamp::WinTimestamp;

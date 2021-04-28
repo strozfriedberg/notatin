@@ -120,7 +120,81 @@ pub struct CellKeyValue {
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
     pub value_name: String, // in file, ASCII (extended) string or UTF-16LE string
-    pub value_content: CellValue
+    pub value_content: Option<CellValue>
+}
+
+impl CellKeyValue {
+    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let start_pos = input.as_ptr() as usize;
+        let (input, size) = le_i32(input)?;
+        let (input, _signature) = tag("vk")(input)?;
+        let (input, value_name_size) = le_u16(input)?;
+        let (input, data_size) = le_u32(input)?;
+        let (input, data_offset) = le_u32(input)?;
+        let (input, data_type_bytes) = le_u32(input)?;
+        let (input, flags) = le_u16(input)?;
+        let flags = CellKeyValueFlags::from_bits(flags).unwrap_or_default();
+        let (input, padding) = le_u16(input)?;
+        let (input, value_name_bytes) = take!(input, value_name_size)?;
+
+        let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
+            None => CellKeyValueDataTypes::RegNone,
+            Some(data_type) => data_type
+        };
+
+        let value_name;
+        if value_name_size == 0 {
+            value_name = String::from("(Default)");
+        }
+        else if flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII) {
+            value_name = String::from_utf8(value_name_bytes.to_vec()).unwrap(); // todo: handle unwrap
+        }
+        else {
+            value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into());
+        }
+        let size_abs = size.abs() as u32;
+        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+
+        Ok((
+            input,
+            CellKeyValue {
+                detail: CellKeyValueDetail {
+                    value_name_size,
+                    data_size,
+                    data_offset,
+                    padding,
+                },
+                size: size_abs,
+                data_type,
+                flags,
+                value_name,
+                value_content: None
+            },
+        ))
+    }
+
+    pub fn read_content(&mut self, file_buffer: &[u8], hbin_offset: u32) -> Option<Vec<String>> {
+        /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md:
+            When the most significant bit is 1, data (4 bytes or less) is stored in the Data offset field directly
+            (when data contains less than 4 bytes, it is being stored as is in the beginning of the Data offset field).
+            The most significant bit (when set to 1) should be ignored when calculating the data size.
+            When the most significant bit is 0, data is stored in the Cell data field of another cell (pointed by the Data offset field)
+            or in the Cell data fields of multiple cells (referenced in the Big data structure stored in a cell pointed by the Data offset field). */
+        const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
+        let value_content_and_warning;
+        if self.detail.data_size & DATA_IS_RESIDENT_MASK == 0 {
+            let offset = (self.detail.data_offset + hbin_offset) as usize + mem::size_of_val(&self.size);
+            let value_slice = &file_buffer[offset..offset + self.detail.data_size as usize];
+            value_content_and_warning = get_value_content(value_slice, self.data_type);
+        }
+        else {
+            let size = self.detail.data_size ^ DATA_IS_RESIDENT_MASK;
+            let value = self.detail.data_offset.to_le_bytes();
+            value_content_and_warning = get_value_content(&value[..size as usize], self.data_type);
+        }
+        self.value_content = Some(value_content_and_warning.0);
+        value_content_and_warning.1
+    }
 }
 
 impl hive_bin_cell::Cell for CellKeyValue {
@@ -134,7 +208,7 @@ impl hive_bin_cell::Cell for CellKeyValue {
 }
 
 // todo: handle unwraps
-pub fn get_value_content(input: &[u8], data_type: CellKeyValueDataTypes) -> (CellValue, Option<Vec<String>>) {
+fn get_value_content(input: &[u8], data_type: CellKeyValueDataTypes) -> (CellValue, Option<Vec<String>>) {
     let mut warnings = Vec::new();
     let cv = match data_type {
         CellKeyValueDataTypes::RegNone =>
@@ -216,79 +290,6 @@ pub fn get_value_content(input: &[u8], data_type: CellKeyValueDataTypes) -> (Cel
     }
 }
 
-pub fn parse_cell_key_value<'a>(
-    input: &'a [u8],
-    file_buffer: &[u8],
-    start_offset: u32
-) -> IResult<&'a [u8], CellKeyValue> {
-    let (input, size) = le_i32(input)?;
-    let (input, _signature) = tag("vk")(input)?;
-    let (input, value_name_size) = le_u16(input)?;
-    let (input, data_size) = le_u32(input)?;
-    let (input, data_offset) = le_u32(input)?;
-    let (input, data_type_bytes) = le_u32(input)?;
-    let (input, flags) = le_u16(input)?;
-    let flags = CellKeyValueFlags::from_bits(flags).unwrap_or_default();
-    let (input, padding) = le_u16(input)?;
-    let (input, value_name_bytes) = take!(input, value_name_size)?;
-    let bytes_consumed: u32 = (24 + value_name_size).into();
-
-    let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
-        None => CellKeyValueDataTypes::RegNone,
-        Some(data_type) => data_type
-    };
-
-    let value_name;
-    if value_name_size == 0 {
-        value_name = String::from("(Default)");
-    }
-    else if flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII) {
-        value_name = String::from_utf8(value_name_bytes.to_vec()).unwrap(); // todo: handle unwrap
-    }
-    else {
-        value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into());
-    }
-    let abs_size = size.abs() as u32;
-    let (input, _) = take!(input, abs_size - bytes_consumed)?;
-
-    /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md:
-        When the most significant bit is 1, data (4 bytes or less) is stored in the Data offset field directly
-        (when data contains less than 4 bytes, it is being stored as is in the beginning of the Data offset field).
-        The most significant bit (when set to 1) should be ignored when calculating the data size.
-        When the most significant bit is 0, data is stored in the Cell data field of another cell (pointed by the Data offset field)
-        or in the Cell data fields of multiple cells (referenced in the Big data structure stored in a cell pointed by the Data offset field). */
-    const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
-    let value_content_and_warning;
-    if data_size & DATA_IS_RESIDENT_MASK == 0 {
-        let offset = (data_offset + start_offset) as usize + mem::size_of_val(&size);
-        let value_slice = &file_buffer[offset..offset + data_size as usize];
-        value_content_and_warning = get_value_content(value_slice, data_type);
-    }
-    else {
-        let size = data_size ^ DATA_IS_RESIDENT_MASK;
-        let value = data_offset.to_le_bytes();
-        value_content_and_warning = get_value_content(&value[..size as usize], data_type);
-    }
-
-    Ok((
-        input,
-        CellKeyValue {
-            detail: CellKeyValueDetail {
-                value_name_size,
-                data_size,
-                data_offset,
-                padding,
-            },
-            size: abs_size,
-            data_type,
-            flags,
-            value_name,
-            value_content: value_content_and_warning.0
-        },
-    ))
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,7 +299,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4400..4448];
 
-        let ret = parse_cell_key_value(slice, &f[0..], 4096);
+        let ret = CellKeyValue::from_bytes(slice);
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
                 value_name_size: 18,
@@ -310,14 +311,23 @@ mod tests {
             data_type: CellKeyValueDataTypes::RegSZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             value_name: "IE5_UA_Backup_Flag".to_string(),
-            value_content: CellValue::ValueString { content: "5.0".to_string() }
+            value_content: None
         };
         let remaining: [u8; 0] = [];
         let expected = Ok((&remaining[..], expected_output));
-
         assert_eq!(
             expected,
             ret
+        );
+        let (_, mut cell_key_value) = ret.unwrap();
+        let warnings = cell_key_value.read_content(&f[0..], 4096);
+        assert_eq!(
+            CellValue::ValueString { content: "5.0".to_string() },
+            cell_key_value.value_content.unwrap()
+        );
+        assert_eq!(
+            None,
+            warnings
         );
     }
 }

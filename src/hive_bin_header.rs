@@ -15,28 +15,30 @@ pub struct HiveBinHeader {
     pub unknown4: u32, // Contains number of bytes
 }
 
-pub fn parse_hive_bin_header(input: &[u8]) -> IResult<&[u8], HiveBinHeader> {
-    let (input, _signature) = tag("hbin")(input)?;
-    let (input, offset_from_first_hbin) = le_u32(input)?;
-    let (input, size) = le_u32(input)?;
-    let (input, unknown1) = le_u32(input)?;
-    let (input, unknown2) = le_u32(input)?;
-    let (input, timestamp) = le_u64(input)?;
-    let (input, unknown4) = le_u32(input)?;
+impl HiveBinHeader {
+    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, _signature) = tag("hbin")(input)?;
+        let (input, offset_from_first_hbin) = le_u32(input)?;
+        let (input, size) = le_u32(input)?;
+        let (input, unknown1) = le_u32(input)?;
+        let (input, unknown2) = le_u32(input)?;
+        let (input, timestamp) = le_u64(input)?;
+        let (input, unknown4) = le_u32(input)?;
 
-    let hbh = HiveBinHeader {
-        offset_from_first_hbin,
-        size,
-        unknown1,
-        unknown2,
-        timestamp,
-        unknown4
-    };
+        let hbh = HiveBinHeader {
+            offset_from_first_hbin,
+            size,
+            unknown1,
+            unknown2,
+            timestamp,
+            unknown4
+        };
 
-    Ok((
-        input,
-        hbh
-    ))
+        Ok((
+            input,
+            hbh
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -46,7 +48,7 @@ mod tests {
     #[test]
     fn test_parse_hive_bin_header() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let ret = parse_hive_bin_header(&f[4096..4128]);
+        let ret = HiveBinHeader::from_bytes(&f[4096..4128]);
 
         let expected_output = HiveBinHeader {
             offset_from_first_hbin: 0,

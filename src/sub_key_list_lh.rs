@@ -15,6 +15,39 @@ pub struct SubKeyListLh {
     pub items: Vec<SubKeyListLhItem> // Vec size = count
 }
 
+impl SubKeyListLh {
+    /// Uses nom to parse an lf sub key list (lf) hive bin cell.
+    fn from_bytes_direct(input: &[u8]) -> IResult<&[u8], Self> {
+        let start_pos = input.as_ptr() as usize;
+        let (input, size)       = le_i32(input)?;
+        let (input, _signature) = tag("lh")(input)?;
+        let (input, count)      = le_u16(input)?;
+        let (input, items)      = nom::multi::count(SubKeyListLhItem::from_bytes(), count.into())(input)?;
+
+        let size_abs = size.abs() as u32;
+        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+
+        Ok((
+            input,
+            SubKeyListLh {
+                size: size_abs,
+                count,
+                items
+            },
+        ))
+    }
+
+    pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
+        |input: &[u8]| {
+            let (input, ret) = SubKeyListLh::from_bytes_direct(input)?;
+            Ok((
+                input,
+                Box::new(ret)
+            ))
+        }
+    }
+}
+
 impl hive_bin_cell::CellSubKeyList for SubKeyListLh {
     fn size(&self) -> u32 {
         self.size
@@ -31,50 +64,21 @@ pub struct SubKeyListLhItem {
     pub name_hash: u32, // Hash of a key name string (used to speed up lookups). A different hash function is used for different sub key list types.
 }
 
-fn parse_sub_key_list_lh_item() -> impl Fn(&[u8]) -> IResult<&[u8], SubKeyListLhItem> {
-    |input: &[u8]| {
-        let (input, named_key_offset) = le_u32(input)?;
-        let (input, name_hash) = le_u32(input)?;
+impl SubKeyListLhItem {
+    fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
+        |input: &[u8]| {
+            let (input, named_key_offset) = le_u32(input)?;
+            let (input, name_hash) = le_u32(input)?;
 
-        Ok((
-            input,
-            SubKeyListLhItem {
-                named_key_offset,
-                name_hash
-            },
-        ))
+            Ok((
+                input,
+                SubKeyListLhItem {
+                    named_key_offset,
+                    name_hash
+                },
+            ))
+        }
     }
-}
-
-pub fn parse_sub_key_list_lh() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
-    |input: &[u8]| {
-        let (input, ret) = parse_sub_key_list_lh_internal(input)?;
-        Ok((
-            input,
-            Box::new(ret)
-        ))
-    }
-}
-
-/// Uses nom to parse an lh sub key list (lh) hive bin cell.
-fn parse_sub_key_list_lh_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLh> {
-    let start_pos = input.as_ptr() as usize;
-    let (input, size)       = le_i32(input)?;
-    let (input, _signature) = tag("lh")(input)?;
-    let (input, count)      = le_u16(input)?;
-    let (input, items)      = nom::multi::count(parse_sub_key_list_lh_item(), count.into())(input)?;
-
-    let size_abs = size.abs() as u32;
-    let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
-
-    Ok((
-        input,
-        SubKeyListLh {
-            size: size_abs,
-            count,
-            items
-        },
-    ))
 }
 
 #[cfg(test)]
@@ -98,7 +102,7 @@ mod tests {
     fn test_parse_sub_key_list_lh() {
         let f = std::fs::read("test_data/lh_block").unwrap();
         let slice = &f[..];
-        let ret = parse_sub_key_list_lh_internal(slice);
+        let ret = SubKeyListLh::from_bytes_direct(slice);
 
         let expected_output = SubKeyListLh {
             size: 96,
