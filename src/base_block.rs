@@ -6,6 +6,7 @@ use nom::{
     number::complete::{le_u32, le_i32, le_u64},
 };
 use std::convert::TryFrom;
+use serde::Serialize;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use crate::util;
@@ -14,7 +15,7 @@ use crate::hive_bin;
 use crate::filter;
 use crate::err::Error;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)] 
 pub enum FileType {
     Normal = 0,
@@ -22,20 +23,20 @@ pub enum FileType {
     Unknown = 0x0fffffff // todo: log warning
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileFormat {
     DirectMemoryLoad = 1,
     Unknown = 0x0fffffff // todo: log warning
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct Registry {
     pub header: FileBaseBlock,
     pub hive_bin_root: Option<hive_bin::HiveBin>
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct FileBaseBlock {
     pub primary_sequence_number: u32,
     pub secondary_sequence_number: u32,
@@ -48,8 +49,10 @@ pub struct FileBaseBlock {
     pub hive_bins_data_size: u32,
     pub clustering_factor: u32, // Logical sector size of the underlying disk in bytes divided by 512
     pub filename: String, // UTF-16LE string (contains a partial file path to the primary file, or a file name of the primary file), used for debugging purposes
+    #[serde(skip_serializing)]
     pub unk2: [u8; 396],
-    pub checksum: u32, // XOR-32 checksum of the previous 508 bytes
+    pub checksum: u32, // XOR-32 checksum of the previous 508 bytes    
+    #[serde(skip_serializing)]
     pub reserved: [u8; 3576], // see https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block for additional info in this area
     pub boot_type: u32,
     pub boot_recover: u32,  
@@ -154,6 +157,10 @@ fn parse_base_block<'a>(input: &'a [u8]) -> IResult<&'a [u8], FileBaseBlock> {
 mod tests {
     use super::*;
     use nom::error::ErrorKind;
+    use std::{
+        fs::File,
+        io::{BufWriter, Write},
+    };
     
     #[test]
     fn test_read_big_reg() {
@@ -239,5 +246,18 @@ mod tests {
             expected_error,
             ret
         );
+    }
+
+    #[test]
+    fn dump_registry() {        
+        let f = std::fs::read("test_data/FuseHive").unwrap();
+        let mut filter = filter::Filter {        
+            ..Default::default()
+        };
+        let ret = read_registry(&f[..], &mut filter);
+
+        let write_file = File::create("out.txt").unwrap();
+        let mut writer = BufWriter::new(&write_file);
+        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap());
     }
 }
