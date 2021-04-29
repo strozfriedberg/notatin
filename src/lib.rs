@@ -16,6 +16,7 @@ pub mod cell_key_node;
 pub mod cell_key_value;
 pub mod cell_key_security;
 pub mod cell_big_data;
+pub mod cell_value;
 pub mod sub_key_list_lf;
 pub mod sub_key_list_lh;
 pub mod sub_key_list_ri;

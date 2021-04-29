@@ -67,8 +67,8 @@ pub struct FindPath {
 }
 
 impl FindPath {
-    /// Calling ```build``` ensures that search terms are compared case-insensitively
-    pub fn build(key_path: &str, value: Option<String>) -> FindPath {
+    /// Calling ```new``` ensures that search terms are compared case-insensitively
+    pub fn new(key_path: &str, value: Option<String>) -> FindPath {
         let val_lower: Option<String>;
         match value {
             Some(val) => val_lower = Some(val.to_ascii_lowercase()),
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_find_path_build() {
-        let find_path = FindPath::build("First segment/secondSEGMENT", Some(String::from("valueName")));
+        let find_path = FindPath::new("First segment/secondSEGMENT", Some(String::from("valueName")));
         assert_eq!(find_path.key_path, PathBuf::from("first segment/secondsegment"));
         assert_eq!(find_path.value, Some(String::from("valuename")));
     }
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_check_cell_match_key() {
         let filter = Filter {
-            find_path: Some(FindPath::build("HighContrast", Some(String::from("Flags")))),
+            find_path: Some(FindPath::new("HighContrast", Some(String::from("Flags")))),
             is_complete: false
         };
         let mut key_node = cell_key_node::CellKeyNode {
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn test_check_cell_match_value() {
         let filter = Filter {
-            find_path: Some(FindPath::build("", Some(String::from("Flags")))),
+            find_path: Some(FindPath::new("", Some(String::from("Flags")))),
             is_complete: false
         };
 

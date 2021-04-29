@@ -230,9 +230,13 @@ impl CellKeyNode {
             Ok((_, cell_sub_key_offset_list)) => {
                 for val in cell_sub_key_offset_list.iter() {
                     match CellKeyNode::read(&file_buffer[(*val as usize)..], file_buffer, hbin_offset, self.path.clone(), filter) {
-                        Ok(key_value) =>
-                            match key_value {
-                                Some(kv) => self.sub_keys.push(kv),
+                        Ok(key_node) =>
+                            match key_node {
+                                Some(kn) =>
+                                {
+                                    println!("{}", kn.path);
+                                    self.sub_keys.push(kn);
+                                },
                                 None => continue
                             },
                         Err(e) => return Err(Error::Any {
@@ -324,11 +328,6 @@ fn parse_key_values(
     let slice: &[u8] = &file_buffer[list_offset + (hbin_offset as usize)..];
     let (slice, _size) = le_u32(slice)?;
     let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
-
-    for val in list.iter() {
-        let (_input, _key_value) = CellKeyValue::from_bytes(&file_buffer[((*val + hbin_offset)as usize)..])?;//, file_buffer, hbin_offset)?;
-    }
-
     Ok((
         slice,
         list
@@ -347,8 +346,7 @@ pub fn parse_sub_key_list(
     let res_sub_key_list_ri = SubKeyListRi::from_bytes(slice);
     match res_sub_key_list_ri {
         Ok((remaining, sub_key_list_ri)) => {
-            let res_list = sub_key_list_ri.parse_offsets(file_buffer, hbin_offset);
-            match res_list {
+            match sub_key_list_ri.parse_offsets(file_buffer, hbin_offset) {
                 Ok((_, list)) => {
                     Ok((
                         remaining,
@@ -385,7 +383,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         let mut filter = Filter {
-            find_path: Some(FindPath::build("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
+            find_path: Some(FindPath::new("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
             is_complete: false
         };
         let ret = CellKeyNode::read(slice, &f[0..], 4096, String::new(), &mut filter);
@@ -400,7 +398,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         let mut filter = Filter {
-            find_path: Some(FindPath::build("Software/Microsoft/Office/14.0/Common", None)),
+            find_path: Some(FindPath::new("Software/Microsoft/Office/14.0/Common", None)),
             is_complete: false
         };
         let ret = CellKeyNode::read(slice, &f[0..], 4096, String::new(), &mut filter);

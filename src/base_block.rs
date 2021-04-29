@@ -200,7 +200,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
         let mut filter = Filter {
-            find_path: Some(FindPath::build("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
+            find_path: Some(FindPath::new("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
             is_complete: false
         };
         let ret = Registry::from_bytes(&f[0..], &mut filter);
