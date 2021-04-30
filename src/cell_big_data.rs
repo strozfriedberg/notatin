@@ -6,6 +6,7 @@ use nom::{
     multi::count
 };
 use serde::Serialize;
+use crate::base_block::State;
 use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::cell_value::CellValue;
@@ -42,16 +43,16 @@ impl CellBigData {
         ))
     }
 
-    pub fn get_big_data_content(file_buffer: &[u8], offset: usize, hbin_offset: u32, data_type: CellKeyValueDataTypes, data_size: u32) -> (CellValue, Option<Vec<String>>) {
-        match CellBigData::from_bytes(&file_buffer[offset..]).finish() {
+    pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> (CellValue, Option<Vec<String>>) {
+        match CellBigData::from_bytes(&state.file_buffer[offset..]).finish() {
             Ok((_, hive_bin_cell_big_data)) => {
-                match CellBigData::parse_big_data_offsets(file_buffer, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize, hbin_offset).finish() {
+                match CellBigData::parse_big_data_offsets(state, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize).finish() {
                     Ok((_, data_offsets)) => {
                         let mut big_data_buffer: Vec<u8> = Vec::new();
                         let mut data_size_remaining = data_size;
                         for offset in data_offsets.iter() {
                             if data_size_remaining > 0 {
-                                match CellBigData::parse_big_data_size(file_buffer, (offset + hbin_offset) as usize).finish() {
+                                match CellBigData::parse_big_data_size(state.file_buffer, *offset as usize + state.hbin_offset).finish() {
                                     Ok((input, size)) => {
                                         let mut size_to_read = std::cmp::min(size.abs() as u32, data_size_remaining);
                                         size_to_read = std::cmp::min(CellKeyValue::BIG_DATA_SIZE_THRESHOLD, size_to_read);
@@ -80,13 +81,12 @@ impl CellBigData {
         Ok((input, size))
     }
 
-    fn parse_big_data_offsets(
-        file_buffer: &[u8],
+    fn parse_big_data_offsets<'a>(
+        state: &'a State,
         segments_count: u16,
         list_offset: usize,
-        hbin_offset: u32
-    ) -> IResult<&[u8], Vec<u32>> {
-        let slice: &[u8] = &file_buffer[list_offset + (hbin_offset as usize)..];
+    ) -> IResult<&'a [u8], Vec<u32>> {
+        let slice: &[u8] = &state.file_buffer[list_offset + (state.hbin_offset as usize)..];
         let (slice, _size) = le_u32(slice)?;
         let (_, list) = count(le_u32, segments_count as usize)(slice)?;
 

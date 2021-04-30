@@ -11,6 +11,7 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use serde::Serialize;
 use crate::util;
+use crate::base_block::State;
 use crate::hive_bin_cell;
 use crate::cell_value::CellValue;
 use crate::cell_big_data::CellBigData;
@@ -161,6 +162,7 @@ impl_serialize_for_bitflags! {CellKeyValueFlags}
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValueDetail {
+    pub absolute_file_offset: usize,
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
     pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
     pub data_offset: u32, // In bytes, relative from the start of the hive bin's data (or data itself)
@@ -180,7 +182,8 @@ pub struct CellKeyValue {
 impl CellKeyValue {
     pub const BIG_DATA_SIZE_THRESHOLD: u32 = 16344;
 
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn from_bytes<'a>(state: &State, input: &'a [u8]) -> IResult<&'a [u8], Self> {
+        let absolute_file_offset = state.get_file_offset(input);
         let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("vk")(input)?;
@@ -215,6 +218,7 @@ impl CellKeyValue {
             input,
             CellKeyValue {
                 detail: CellKeyValueDetail {
+                    absolute_file_offset,
                     value_name_size,
                     data_size,
                     data_offset,
@@ -229,7 +233,7 @@ impl CellKeyValue {
         ))
     }
 
-    pub fn read_content(&mut self, file_buffer: &[u8], hbin_offset: u32) -> Option<Vec<String>> {
+    pub fn read_content(&mut self, state: &State) -> Option<Vec<String>> {
         /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md:
             When the most significant bit is 1, data (4 bytes or less) is stored in the Data offset field directly
             (when data contains less than 4 bytes, it is being stored as is in the beginning of the Data offset field).
@@ -240,12 +244,12 @@ impl CellKeyValue {
         let value_content_and_warning;
         if self.detail.data_size & DATA_IS_RESIDENT_MASK == 0 {
             if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size {
-                let offset = (self.detail.data_offset + hbin_offset) as usize;
-                value_content_and_warning = CellBigData::get_big_data_content(&file_buffer, offset, hbin_offset, self.data_type, self.detail.data_size);
+                let offset = self.detail.data_offset as usize + state.hbin_offset;
+                value_content_and_warning = CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size);
             }
             else {
-                let offset = (self.detail.data_offset + hbin_offset) as usize + mem::size_of_val(&self.size);
-                let value_slice = &file_buffer[offset..offset + self.detail.data_size as usize];
+                let offset = self.detail.data_offset as usize + state.hbin_offset + mem::size_of_val(&self.size);
+                let value_slice = &state.file_buffer[offset..offset + self.detail.data_size as usize];
                 value_content_and_warning = self.data_type.get_value_content(value_slice);
             }
         }
@@ -280,9 +284,15 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4400..4448];
 
-        let ret = CellKeyValue::from_bytes(slice);
+        let state = State {
+            file_start_pos: f.as_ptr() as usize,
+            hbin_offset: 4096,
+            file_buffer: &f[..]
+        };
+        let ret = CellKeyValue::from_bytes(&state, slice);
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
+                absolute_file_offset: 4400,
                 value_name_size: 18,
                 data_size: 8,
                 data_offset: 1928,
@@ -301,7 +311,13 @@ mod tests {
             ret
         );
         let (_, mut cell_key_value) = ret.unwrap();
-        let warnings = cell_key_value.read_content(&f[0..], 4096);
+
+        let state = State {
+            file_start_pos: f.as_ptr() as usize,
+            hbin_offset: 4096,
+            file_buffer: &f[..]
+        };
+        let warnings = cell_key_value.read_content(&state);
         assert_eq!(
             CellValue::ValueString("5.0".to_string()),
             cell_key_value.value_content.unwrap()
@@ -315,7 +331,12 @@ mod tests {
     #[test]
     fn test_parse_big_data() {
         let f = std::fs::read("test_data/FuseHive").unwrap();
-        let key_node = CellKeyNode::read(&f[4416..], &f, 4096, String::new(), &mut Filter {..Default::default() }).unwrap().unwrap();
+        let state = State {
+            file_start_pos: f.as_ptr() as usize,
+            hbin_offset: 4096,
+            file_buffer: &f[..]
+        };
+        let key_node = CellKeyNode::read(&state, &f[4416..], String::new(), &mut Filter {..Default::default() }).unwrap().unwrap();
         let t=3;
 
         assert_eq!(

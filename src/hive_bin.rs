@@ -1,5 +1,6 @@
 use nom::Finish;
 use serde::Serialize;
+use crate::base_block::State;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::cell_key_node::CellKeyNode;
 use crate::filter::Filter;
@@ -12,15 +13,15 @@ pub struct HiveBin {
 }
 
 impl HiveBin {
-    pub fn read<'a>(
-        input: &'a [u8],
-        file_buffer: &[u8],
+    pub fn read(
+        state: &State,
+        input: &[u8],
         path: String,
         filter: &mut Filter
     ) -> Result<Option<HiveBin>, Error> {
-        match HiveBinHeader::from_bytes(input).finish() {
+        match HiveBinHeader::from_bytes(state, input).finish() {
             Ok((input, hive_bin_header)) => {
-                let res_hive_bin_root = CellKeyNode::read(input, file_buffer, hive_bin_header.size, path, filter);
+                let res_hive_bin_root = CellKeyNode::read(state, input, path, filter);
                 match res_hive_bin_root {
                     Ok(hive_bin_root) =>
                         match hive_bin_root {

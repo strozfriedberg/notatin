@@ -4,8 +4,8 @@ use std::io::Cursor;
 use std::char::REPLACEMENT_CHARACTER;
 use std::fmt::Write;
 use chrono::{DateTime, Utc};
-use nom::IResult;
 use winstructs::timestamp::WinTimestamp;
+use nom::IResult;
 use crate::err::Error;
 use crate::cell_key_node;
 

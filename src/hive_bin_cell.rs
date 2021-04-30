@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 use nom::{
-    IResult,    
+    IResult,
     number::complete::le_i32
 };
 use std::convert::TryFrom;
@@ -25,7 +25,6 @@ impl PartialEq for dyn Cell {
         self.name_lowercase() == other.name_lowercase()
     }
 }
-
 pub trait CellSubKeyList {
     fn size(&self) -> u32;
     fn offsets(&self, hbin_offset: u32) -> Vec<u32>;
@@ -53,7 +52,7 @@ pub struct CellUnknown {
     pub data: Vec<u8>
 }
 
-impl Cell for CellUnknown {    
+impl Cell for CellUnknown {
     fn size(&self) -> u32 {
         self.size
     }

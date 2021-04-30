@@ -4,9 +4,11 @@ use nom::{
     number::complete::{le_u32, le_u64}
 };
 use serde::Serialize;
+use crate::base_block::State;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
+    pub absolute_file_offset: usize,
     pub offset_from_first_hbin: u32, // The offset of the hive bin, Value in bytes and relative from the start of the hive bin data
     pub size: u32, // Size of the hive bin
     pub unknown1: u32, // 0 most of the time, can contain remnant data
@@ -16,7 +18,8 @@ pub struct HiveBinHeader {
 }
 
 impl HiveBinHeader {
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn from_bytes<'a>(state: &State, input: &'a[u8]) -> IResult<&'a[u8], Self> {
+        let absolute_file_offset = state.get_file_offset(input);
         let (input, _signature) = tag("hbin")(input)?;
         let (input, offset_from_first_hbin) = le_u32(input)?;
         let (input, size) = le_u32(input)?;
@@ -26,6 +29,7 @@ impl HiveBinHeader {
         let (input, unknown4) = le_u32(input)?;
 
         let hbh = HiveBinHeader {
+            absolute_file_offset,
             offset_from_first_hbin,
             size,
             unknown1,
@@ -48,9 +52,15 @@ mod tests {
     #[test]
     fn test_parse_hive_bin_header() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let ret = HiveBinHeader::from_bytes(&f[4096..4128]);
+        let state = State {
+            file_start_pos: f.as_ptr() as usize,
+            hbin_offset: 4096,
+            file_buffer: &f[..]
+        };
+        let ret = HiveBinHeader::from_bytes(&state, &f[4096..4128]);
 
         let expected_output = HiveBinHeader {
+            absolute_file_offset: 4096,
             offset_from_first_hbin: 0,
             size: 4096,
             unknown1: 0,
