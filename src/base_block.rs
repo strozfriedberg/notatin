@@ -1,68 +1,18 @@
 use nom::{
     IResult,
-    Finish,
     bytes::complete::tag,
     bytes::streaming::take,
     number::complete::{le_u32, le_i32, le_u64},
 };
 use std::convert::TryFrom;
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use crate::util;
-use crate::hive_bin::HiveBin;
 use crate::filter::Filter;
-use crate::err::Error;
+use crate::registry::Registry;
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct State<'a> { // todo: this isn't actually state.  that's a terrible name.  improve!
-    pub file_start_pos: usize,
-    pub hbin_offset: usize,
-    pub file_buffer: &'a[u8]
-}
-
-impl State<'_> {
-    pub fn get_file_offset(&self, input: &[u8]) -> usize {
-        return input.as_ptr() as usize - self.file_start_pos;
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct Registry {
-    pub header: FileBaseBlock,
-    pub hive_bin_root: Option<HiveBin>
-}
-
-impl Registry {
-    /// Reads a Windows registry; returns a Registry object containing the information from the header and a tree of parsed hive bins
-    pub fn from_bytes(
-        file_buffer: &[u8],
-        filter: &mut Filter
-    ) -> Result<Self, Error> {
-        let file_start_pos = file_buffer.as_ptr() as usize;
-        match FileBaseBlock::from_bytes(file_buffer).finish() {
-        Ok((input, file_base_block)) => {
-                let state = State {
-                    file_start_pos,
-                    hbin_offset: input.as_ptr() as usize - file_start_pos,
-                    file_buffer
-                };
-                let ret = HiveBin::read(&state, &input, String::new(), filter);
-                match ret {
-                    Ok(hive_bin) =>
-                        Ok(Registry {
-                            header: file_base_block,
-                            hive_bin_root: hive_bin
-                        }),
-                    Err(e) => Err(e)
-                }
-            },
-            Err(e) => return Err(Error::Nom {
-                detail: format!("read_registry: parse_base_block {:#?}", e)
-            })
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
@@ -83,7 +33,7 @@ pub enum FileFormat {
 pub struct FileBaseBlock {
     pub primary_sequence_number: u32,
     pub secondary_sequence_number: u32,
-    pub last_modification_date_and_time: u64,
+    pub last_modification_date_and_time: DateTime<Utc>,
     pub major_version: u32,
     pub minor_version: u32,
     pub file_type: FileType,
@@ -103,7 +53,7 @@ pub struct FileBaseBlock {
 
 impl FileBaseBlock {
     /// Uses nom to parse the registry file header.
-    fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, _signature) = tag("regf")(input)?;
         let (input, primary_sequence_number) = le_u32(input)?;
         let (input, secondary_sequence_number) = le_u32(input)?;
@@ -132,13 +82,14 @@ impl FileBaseBlock {
             Some(format) => format,
             None => FileFormat::Unknown
         };
+        let modification_date = util::get_date_time_from_filetime(last_modification_date_and_time).unwrap();
 
         Ok((
             input,
             FileBaseBlock {
                 primary_sequence_number,
                 secondary_sequence_number,
-                last_modification_date_and_time,
+                last_modification_date_and_time: modification_date,
                 major_version,
                 minor_version,
                 file_type,
@@ -223,7 +174,6 @@ mod tests {
             is_complete: false
         };
         let ret = Registry::from_bytes(&f[0..], &mut filter);
-        println!("{:?}", ret.unwrap());
     }
 
     #[test]
@@ -239,7 +189,7 @@ mod tests {
         let expected_header = FileBaseBlock {
             primary_sequence_number: 10407,
             secondary_sequence_number: 10407,
-            last_modification_date_and_time: 129782121007374460,
+            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460).unwrap(),
             major_version: 1,
             minor_version: 3,
             file_type: FileType::Normal,

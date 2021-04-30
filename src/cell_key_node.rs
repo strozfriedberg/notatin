@@ -6,14 +6,11 @@ use nom::{
     branch::alt,
     multi::count
 };
-use winstructs::{
-    security::SecurityDescriptor,
-    timestamp::WinTimestamp
-};
+use winstructs::security::SecurityDescriptor;
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use crate::base_block::State;
+use crate::registry::State;
 use crate::err;
 use crate::err::Error;
 use crate::util;
@@ -71,6 +68,22 @@ pub struct CellKeyNode {
     pub sub_values: Vec<CellKeyValue>,
     pub parse_warnings: Vec<String>
 }
+
+/*impl Iterator for CellKeyNode {
+    // The return type is `Option<T>`:
+    //     * When the `Iterator` is finished, `None` is returned.
+    //     * Otherwise, the next value is wrapped in `Some` and returned.
+    fn next(&mut self) -> Option<CellKeyNode> {
+        let new_next = self.curr + self.next;
+
+        self.curr = self.next;
+        self.next = new_next;
+
+        // Since there's no endpoint to a Fibonacci sequence, the `Iterator`
+        // will never return `None`, and `Some` is always returned.
+        Some(self.curr)
+    }
+}*/
 
 impl Default for CellKeyNode {
     fn default() -> Self {

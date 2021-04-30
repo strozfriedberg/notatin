@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::base_block::{State, Registry};
+    use crate::registry::{State, Registry};
     use crate::filter::Filter;
     use crate::cell_value::CellValue;
 

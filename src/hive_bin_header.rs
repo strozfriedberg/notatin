@@ -4,7 +4,7 @@ use nom::{
     number::complete::{le_u32, le_u64}
 };
 use serde::Serialize;
-use crate::base_block::State;
+use crate::registry::State;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {

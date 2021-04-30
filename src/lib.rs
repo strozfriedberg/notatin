@@ -8,7 +8,7 @@ extern crate enum_primitive_derive;
 extern crate winstructs;
 extern crate chrono;
 extern crate serde;
-pub mod parser;
+pub mod registry;
 pub mod base_block;
 pub mod hive_bin;
 pub mod hive_bin_header;

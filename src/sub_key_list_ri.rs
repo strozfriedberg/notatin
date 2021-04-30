@@ -4,7 +4,7 @@ use nom::{
     number::complete::{le_u16, le_i32, le_u32}
 };
 use serde::Serialize;
-use crate::base_block::State;
+use crate::registry::State;
 use crate::hive_bin_cell;
 use crate::cell_key_node;
 use crate::util;

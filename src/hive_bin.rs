@@ -1,6 +1,6 @@
 use nom::Finish;
 use serde::Serialize;
-use crate::base_block::State;
+use crate::registry::State;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::cell_key_node::CellKeyNode;
 use crate::filter::Filter;

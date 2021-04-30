@@ -11,7 +11,7 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use serde::Serialize;
 use crate::util;
-use crate::base_block::State;
+use crate::registry::State;
 use crate::hive_bin_cell;
 use crate::cell_value::CellValue;
 use crate::cell_big_data::CellBigData;
@@ -348,12 +348,7 @@ mod tests {
                 81719,
                 content.len()
             );
-            for c in content.iter() {
-                assert_eq!(
-                    50,
-                    *c
-                );
-            }
+            content.iter().for_each(|c| assert_eq!(50, *c));
         }
         else {
             assert_eq!(true, false, "key_node.sub_values[1].value_content was unexpected type");

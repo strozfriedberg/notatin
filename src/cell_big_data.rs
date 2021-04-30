@@ -6,7 +6,7 @@ use nom::{
     multi::count
 };
 use serde::Serialize;
-use crate::base_block::State;
+use crate::registry::State;
 use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::cell_value::CellValue;
