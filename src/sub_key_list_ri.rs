@@ -8,6 +8,7 @@ use crate::registry::State;
 use crate::hive_bin_cell;
 use crate::cell_key_node;
 use crate::util;
+use crate::warn::Warnings;
 
 // List of subkeys lists (used to subdivide subkeys lists)
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -22,7 +23,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListRi {
         self.size
     }
 
-    fn offsets(&self, hbin_offset: u32) -> Vec<u32> {
+    fn get_offset_list(&self, hbin_offset: u32, parse_warnings: &mut Warnings) -> Vec<u32> {
         self.items.iter().map(|x| x.sub_key_list_offset + hbin_offset).collect()
     }
 }
@@ -37,7 +38,7 @@ impl SubKeyListRi {
         let (input, list_offsets) = nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
 
         let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         Ok((
             input,
@@ -51,8 +52,9 @@ impl SubKeyListRi {
 
     pub fn parse_offsets<'a>(&self, state: &'a State) -> IResult<&'a [u8], Vec<u32>> {
         let mut list: Vec<u32> = Vec::new();
+        let mut parse_warnings = Warnings::new();
         for item in self.items.iter() {
-            let nom_ret_sub_list = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset);
+            let nom_ret_sub_list = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset, &mut parse_warnings);
             match nom_ret_sub_list {
                 Ok((_, mut sub_list)) => {
                     list.append(&mut sub_list);
@@ -96,7 +98,7 @@ mod tests {
                         SubKeyListRiItem { sub_key_list_offset: 54321 }]
         };
         assert_eq!(ri.size, ri.size());
-        assert_eq!(vec![16441, 58417], ri.offsets(4096));
+        assert_eq!(vec![16441, 58417], ri.get_offset_list(4096, &mut Warnings::new()));
     }
 
     #[test]

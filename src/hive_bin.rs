@@ -19,27 +19,21 @@ impl HiveBin {
         path: String,
         filter: &mut Filter
     ) -> Result<Option<HiveBin>, Error> {
-        match HiveBinHeader::from_bytes(state, input).finish() {
-            Ok((input, hive_bin_header)) => {
-                let res_hive_bin_root = CellKeyNode::read(state, input, path, filter);
-                match res_hive_bin_root {
-                    Ok(hive_bin_root) =>
-                        match hive_bin_root {
-                            Some(hbr) =>
-                                Ok(Some(HiveBin {
-                                        header: hive_bin_header,
-                                        root: hbr
-                                    })
-                                ),
-                            None => Ok(None)
-                        },
-                    Err(e) => return Err(Error::Nom {
-                        detail: format!("read_hive_bin: cell_key_node::read_cell_key_node {:#?}", e)
-                    })
-                }
-            },
-            Err(e) => return Err(Error::Nom {
-                detail: format!("read_hive_bin: hive_bin_header::parse_hive_bin_header {:#?}", e)
+        let (input, hive_bin_header) = HiveBinHeader::from_bytes(state, input)?;
+        let res_hive_bin_root = CellKeyNode::read(state, input, path, filter);
+        match res_hive_bin_root {
+            Ok(hive_bin_root) =>
+                match hive_bin_root {
+                    Some(hbr) =>
+                        Ok(Some(HiveBin {
+                                header: hive_bin_header,
+                                root: hbr
+                            })
+                        ),
+                    None => Ok(None)
+                },
+            Err(e) => return Err(Error::Any {
+                detail: format!("read_hive_bin: cell_key_node::read_cell_key_node {:#?}", e)
             })
         }
     }

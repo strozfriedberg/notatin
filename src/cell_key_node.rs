@@ -11,8 +11,8 @@ use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use crate::registry::State;
-use crate::err;
 use crate::err::Error;
+use crate::warn::{Warning, Warnings};
 use crate::util;
 use crate::hive_bin_cell;
 use crate::cell_key_value::CellKeyValue;
@@ -66,7 +66,7 @@ pub struct CellKeyNode {
     pub path: String,
     pub sub_keys: Vec<CellKeyNode>,
     pub sub_values: Vec<CellKeyValue>,
-    pub parse_warnings: Vec<String>
+    pub parse_warnings: Warnings
 }
 
 /*impl Iterator for CellKeyNode {
@@ -101,7 +101,7 @@ impl Default for CellKeyNode {
             path: String::default(),
             sub_keys: Vec::default(),
             sub_values: Vec::default(),
-            parse_warnings: Vec::default()
+            parse_warnings: Warnings::new()
          }
     }
 }
@@ -113,16 +113,6 @@ impl hive_bin_cell::Cell for CellKeyNode {
 
     fn name_lowercase(&self) -> Option<String> {
         Some(self.key_name.clone().to_ascii_lowercase())
-    }
-}
-
-impl err::ParseWarnings for CellKeyNode {
-    fn add_warning(&mut self, warning: String) {
-        self.parse_warnings.push(warning);
-    }
-
-    fn get_warnings(&self) -> &Vec<String> {
-        &self.parse_warnings
     }
 }
 
@@ -157,18 +147,21 @@ impl CellKeyNode {
         let (input, class_name_size) = le_u16(input)?;
         let (input, key_name_bytes) = take!(input, key_name_size)?;
 
+        let mut parse_warnings = Warnings::new();
         let flags = KeyNodeFlags::from_bits(flags).unwrap_or_default();
         let key_name: String;
+
         if flags.contains(KeyNodeFlags::KEY_COMP_NAME) {
-            key_name = String::from_utf8(key_name_bytes.to_vec()).unwrap(); // todo: handle unwrap
+           // let key_name_bytes = [0, 159, 146, 150];
+            key_name = util::from_utf8(&key_name_bytes, &mut parse_warnings, "key_name_bytes");
         }
         else {
             let key_name_warning = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
             key_name = key_name_warning;
         }
 
-        let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+        let size_abs =  size.abs() as u32;
+        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time);
 
@@ -204,7 +197,7 @@ impl CellKeyNode {
             path,
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            parse_warnings: Vec::new(),
+            parse_warnings: Warnings::new()
         };
 
         Ok((
@@ -219,32 +212,26 @@ impl CellKeyNode {
         cur_path: String,
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
-        match CellKeyNode::from_bytes(state, input, cur_path.clone()).finish() {
-            Ok((_, mut cell_key_node)) => {
-                let res_filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node);
-                match res_filter_flags {
-                    Ok(filter_flags) => {
-                        if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                            return Ok(None);
-                        }
-                        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
-                            cell_key_node.read_sub_keys(state, filter);
-                        }
-                        if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
-                            cell_key_node.read_values(state, filter);
-                        }
-                        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-                            filter.is_complete = true;
-                        }
-                        return Ok(Some(cell_key_node));
-                    }
-                    Err(e) => return Err(Error::Any {
-                        detail: format!("read_cell_key_node: filter.check_cell {:#?}", e)
-                    })
-                };
-            },
-            Err(e) => return Err(Error::Nom {
-                detail: format!("read_cell_key_node: parse_cell_key_node {:#?}", e)
+        let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
+        let res_filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node);
+        match res_filter_flags {
+            Ok(filter_flags) => {
+                if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
+                    return Ok(None);
+                }
+                if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
+                    cell_key_node.read_sub_keys(state, filter);
+                }
+                if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
+                    cell_key_node.read_values(state, filter);
+                }
+                if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
+                    filter.is_complete = true;
+                }
+                return Ok(Some(cell_key_node));
+            }
+            Err(e) => return Err(Error::Any {
+                detail: format!("read_cell_key_node: filter.check_cell {:#?}", e)
             })
         };
     }
@@ -266,33 +253,26 @@ impl CellKeyNode {
         state: &State,
         filter: &mut Filter
     ) -> Result<Vec<u32>, Error> {
-        match parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset) {
-            Ok((_, cell_sub_key_offset_list)) => {
-                for val in cell_sub_key_offset_list.iter() {
-                    match CellKeyNode::read(state, &state.file_buffer[(*val as usize)..], self.path.clone(), filter) {
-                        Ok(key_node) =>
-                            match key_node {
-                                Some(kn) =>
-                                {
-                                    println!("{}", kn.path);
-                                    self.sub_keys.push(kn);
-                                },
-                                None => continue
-                            },
-                        Err(e) => return Err(Error::Any {
-                            detail: format!("read_sub_keys: hive_bin_header::read_cell_key_node {:#?}", e)
-                        })
-                    };
-                    if filter.is_complete {
-                        break;
-                    }
-                }
-                Ok(cell_sub_key_offset_list)
-            },
-            Err(e) => return Err(Error::Nom {
-                detail: format!("read_sub_keys: hive_bin_header::parse_sub_key_list {:#?}", e)
-            })
+        let (_, cell_sub_key_offset_list) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset, &mut self.parse_warnings)?;
+        for val in cell_sub_key_offset_list.iter() {
+            match CellKeyNode::read(state, &state.file_buffer[(*val as usize)..], self.path.clone(), filter) {
+                Ok(key_node) =>
+                    match key_node {
+                        Some(kn) =>
+                        {
+                            self.sub_keys.push(kn);
+                        },
+                        None => continue
+                    },
+                Err(e) => return Err(Error::Any {
+                    detail: format!("read_sub_keys: hive_bin_header::read_cell_key_node {:#?}", e)
+                })
+            };
+            if filter.is_complete {
+                break;
+            }
         }
+        Ok(cell_sub_key_offset_list)
     }
 
     fn read_values<'a>(
@@ -300,42 +280,26 @@ impl CellKeyNode {
         state: &State,
         filter: &mut Filter
     ) -> Result<(), Error> {
-        match parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset as usize).finish() {
-            Ok((_, key_values)) => {
-                for val in key_values.iter() {
-                    let nom_ret_parse_cell_key_value = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset)..]);
-                    match nom_ret_parse_cell_key_value {
-                        Ok(parse_cell_key_value) => {
-                            let mut cell_key_value = parse_cell_key_value.1;
-                            let ret = filter.check_cell(true, &cell_key_value);
-                            match ret {
-                                Ok(iterate_flags) => {
-                                    if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-                                        filter.is_complete = true;
-                                    }
-                                    if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                                        cell_key_value.read_content(state);
-                                        self.sub_values.push(cell_key_value);
-                                    }
-                                }
-                                Err(e) => return Err(Error::Nom {
-                                    detail: format!("read_values: filter.check_cell {:#?}", e)
-                                })
-                            };
-                            //cell_key_value.read_content(state);
-                            //self.sub_values.push(cell_key_value);
-                        },
-                        Err(e) => return Err(Error::Nom {
-                            detail: format!("read_values: cell_key_value::parse_cell_key_value {:#?}", e)
-                        })
+        let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset as usize)?;
+        for val in key_values.iter() {
+            let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset)..])?;
+            let res_iterate_flags = filter.check_cell(true, &cell_key_value);
+            match res_iterate_flags {
+                Ok(iterate_flags) => {
+                    if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
+                        filter.is_complete = true;
+                    }
+                    if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
+                        cell_key_value.read_content(state);
+                        self.sub_values.push(cell_key_value);
                     }
                 }
-                Ok(())
-            },
-            Err(e) => return Err(Error::Nom {
-                detail: format!("read_values: parse_key_values {:#?}", e)
-            })
+                Err(e) => return Err(Error::Any {
+                    detail: format!("read_values: filter.check_cell {:#?}", e)
+                })
+            }
         }
+        Ok(())
     }
 }
 
@@ -386,32 +350,25 @@ fn parse_key_values<'a>(
 pub fn parse_sub_key_list<'a>(
     state: &'a State,
     count: u32,
-    list_offset: u32
+    list_offset: u32,
+    parse_warnings: &mut Warnings
 ) -> IResult<&'a[u8], Vec<u32>> {
     let slice = &state.file_buffer[list_offset as usize + state.hbin_offset..];
     // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
     // Look for the ri list first and follow the pointers
     let res_sub_key_list_ri = SubKeyListRi::from_bytes(slice);
     match res_sub_key_list_ri {
-        Ok((remaining, sub_key_list_ri)) => {
-            match sub_key_list_ri.parse_offsets(state) {
-                Ok((_, list)) => {
-                    Ok((
-                        remaining,
-                        list
-                    ))
-                },
-                Err(e) => Err(e)
-            }
+        Ok((_, sub_key_list_ri)) => {
+            sub_key_list_ri.parse_offsets(state)
         },
         Err(_) => {
             let (remaining, cell_sub_key_list) =
                 alt((SubKeyListLf::from_bytes(),
                      SubKeyListLh::from_bytes(),
                      SubKeyListLi::from_bytes(),
-                    ))(slice).unwrap(); // todo: handle unwrap
-            let list = cell_sub_key_list.offsets(state.hbin_offset as u32);
-            if count > 0 { assert_eq!(list.len(), count as usize); }
+                    ))(slice)?;
+            let list = cell_sub_key_list.get_offset_list(state.hbin_offset as u32, parse_warnings);
+            if count > 0 { assert_eq!(list.len(), count as usize, "SubKeyList offset list doesn't match expected count"); }
             Ok((
                 remaining,
                 list
@@ -526,7 +483,7 @@ mod tests {
             path: String::from("\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}"),
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            parse_warnings: Vec::new(),
+            parse_warnings: Warnings::new()
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

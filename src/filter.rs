@@ -29,30 +29,35 @@ impl Filter {
         is_first_iteration: bool,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
-        if cell.name_lowercase().is_some() {
-            let fp = self.find_path.as_ref().unwrap();  // todo: handle unwrap
-            if !fp.key_path.as_os_str().is_empty() {
-                return self.match_key(is_first_iteration, cell.name_lowercase().unwrap());  // todo: handle unwrap
-            }
-            if fp.value.is_some() {
-                let match_val = fp.value.as_ref().unwrap();  // todo: handle unwrap
-                let cell_val = &cell.name_lowercase().unwrap();  // todo: handle unwrap
-                if match_val == cell_val {
-                    return Ok(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE);
+        if let Some(find_path) = &self.find_path { //we don't end up in this function unless find_path.is_some()
+            if let Some(cell_name_lowercase) = cell.name_lowercase() {
+                if !find_path.key_path.as_os_str().is_empty() {
+                    return Ok(self.match_key(is_first_iteration, cell_name_lowercase));
                 }
-                return Ok(FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE);
+                if let Some(match_val) = &find_path.value {
+                    if match_val == &cell_name_lowercase {
+                        Ok(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
+                    }
+                    else {
+                        Ok(FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
+                    }
+                }
+                else {
+                    Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
+                }
+            }
+            else {
+                Err(Error::Any{detail: String::from("Missing cell name")})
             }
         }
         else {
-            return Err(Error::Any{detail: String::from("Cell missing name")});
+            Err(Error::Any{detail: String::from("Missing find_path")})
         }
-        return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
     }
 
-    fn match_key(self: &mut Filter, is_first_iteration: bool, key_name: String) -> Result<FilterFlags, Error> {
-        // skip the first iteration; it's the root hive name and should always match
-        if is_first_iteration {
-            return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
+    fn match_key(self: &mut Filter, is_first_iteration: bool, key_name: String) -> FilterFlags {
+        if is_first_iteration { // skip the first iteration; it's the root hive name and therefore always matches
+            return FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES;
         }
         self.find_path.as_mut().unwrap().check_key_match(&key_name) // todo: handle unwrap
     }
@@ -80,18 +85,18 @@ impl FindPath {
         }
     }
 
-    fn check_key_match(self: &mut FindPath, key_name: &str) -> Result<FilterFlags, Error> {
+    fn check_key_match(self: &mut FindPath, key_name: &str) -> FilterFlags {
         if self.key_path.starts_with(Path::new(&key_name)) {
             self.key_path = self.key_path.strip_prefix(key_name).unwrap().to_path_buf(); // todo: handle unwrap
             if self.key_path.as_os_str().is_empty() { // we matched all the keys!
                 if self.value.is_none() { // we only have a key path; should return all children / values then stop
-                    return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE);
+                    return FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
                 }
-                return Ok(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE);
+                return FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
             }
-            return Ok(FilterFlags::FILTER_ITERATE_KEYS);
+            return FilterFlags::FILTER_ITERATE_KEYS;
         }
-        Ok(FilterFlags::FILTER_NO_MATCH)
+        FilterFlags::FILTER_NO_MATCH
     }
 }
 
@@ -185,7 +190,8 @@ mod tests {
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::RegSZ,
             value_name: String::from("Flags"),
-            value_content: None
+            value_content: None,
+            parse_warnings: None
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
             filter.clone().check_cell(false, &key_value).unwrap(),

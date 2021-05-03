@@ -11,6 +11,8 @@ use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::cell_value::CellValue;
 use crate::util;
+use crate::err::Error;
+use crate::warn::{Warning, Warnings};
 
 /* List of data segments. Big data is used to reference data larger than 16344 bytes
    When the Minor version field of the base block is greater than 3, it has the following structure: */
@@ -19,6 +21,7 @@ pub struct CellBigData {
     pub size: u32,
     pub count: u16,
     pub segment_list_offset: u32, // relative to the start of the hive bin
+    pub parse_warnings: Option<Vec<Warning>>
 }
 
 impl CellBigData {
@@ -31,14 +34,15 @@ impl CellBigData {
         let (input, segment_list_offset) = le_u32(input)?;
 
         let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         Ok((
             input,
             CellBigData {
                 size: size_abs,
                 count,
-                segment_list_offset
+                segment_list_offset,
+                parse_warnings: None
             },
         ))
     }
@@ -119,7 +123,8 @@ mod tests {
         let expected_output = CellBigData {
             size: 16,
             count: 2,
-            segment_list_offset: 472
+            segment_list_offset: 472,
+            parse_warnings: None
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

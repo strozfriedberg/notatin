@@ -5,6 +5,7 @@ use nom::{
 };
 use std::convert::TryFrom;
 use serde::Serialize;
+use crate::warn::Warnings;
 
 pub trait Cell {
     fn size(&self) -> u32;
@@ -21,13 +22,14 @@ impl Eq for dyn Cell {}
 
 impl PartialEq for dyn Cell {
     fn eq(&self, other: &Self) -> bool {
-        self.size() == other.size()&&
+        self.size() == other.size() &&
         self.name_lowercase() == other.name_lowercase()
     }
 }
+
 pub trait CellSubKeyList {
     fn size(&self) -> u32;
-    fn offsets(&self, hbin_offset: u32) -> Vec<u32>;
+    fn get_offset_list(&self, hbin_offset: u32, parse_warnings: &mut Warnings) -> Vec<u32>;
 }
 
 impl Debug for dyn CellSubKeyList {
@@ -38,8 +40,12 @@ impl Debug for dyn CellSubKeyList {
 
 impl PartialEq for dyn CellSubKeyList {
     fn eq(&self, other: &Self) -> bool {
+        let mut self_warnings = Warnings::new();
+        let mut other_warnings = Warnings::new();
+
         self.size() == other.size() &&
-        self.offsets(0) == other.offsets(0)
+        self.get_offset_list(0, &mut self_warnings) == other.get_offset_list(0, &mut other_warnings) &&
+        self_warnings == other_warnings
     }
 }
 

@@ -6,6 +6,7 @@ use nom::{
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::util;
+use crate::warn::Warnings;
 
 // Subkeys list with name hints
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -20,7 +21,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLf {
         self.size
     }
 
-    fn offsets(&self, hbin_offset: u32) -> Vec<u32> {
+    fn get_offset_list(&self, hbin_offset: u32, parse_warnings: &mut Warnings) -> Vec<u32> {
         self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
     }
 }
@@ -35,7 +36,7 @@ impl SubKeyListLf {
         let (input, items)      = nom::multi::count(SubKeyListLfItem::from_bytes(), count.into())(input)?;
 
         let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         Ok((
             input,
@@ -62,6 +63,7 @@ impl SubKeyListLf {
 pub struct SubKeyListLfItem {
     pub named_key_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
     pub name_hint: String, // The first 4 ASCII characters of a key name string (used to speed up lookups)
+    pub parse_warnings: Warnings
 }
 
 impl SubKeyListLfItem {
@@ -69,11 +71,13 @@ impl SubKeyListLfItem {
         |input: &[u8]| {
             let (input, named_key_offset) = le_u32(input)?;
             let (input, name_hint) = take!(input, 4usize)?;
+            let mut parse_warnings = Warnings::new();
             Ok((
                 input,
                 SubKeyListLfItem {
                     named_key_offset,
-                    name_hint: String::from_utf8(name_hint.to_vec()).unwrap() // todo: handle unwrap
+                    name_hint: util::from_utf8(&name_hint, &mut parse_warnings, "SubKeyListLfItem::key_name"),
+                    parse_warnings
                 },
             ))
         }
@@ -90,11 +94,11 @@ mod tests {
         let lf = SubKeyListLf {
             size: 64,
             count: 2,
-            items: vec![SubKeyListLfItem { named_key_offset: 12345, name_hint: "aaaa".to_string() },
-                        SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string() }]
+            items: vec![SubKeyListLfItem { named_key_offset: 12345, name_hint: "aaaa".to_string(), parse_warnings: Warnings::new() },
+                        SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string(), parse_warnings: Warnings::new()  }]
         };
         assert_eq!(lf.size, lf.size());
-        assert_eq!(vec![16441, 58417], lf.offsets(4096));
+        assert_eq!(vec![16441, 58417], lf.get_offset_list(4096, &mut Warnings::new()));
     }
 
     #[test]
@@ -109,11 +113,13 @@ mod tests {
             items: vec![
                 SubKeyListLfItem {
                     named_key_offset: 105464,
-                    name_hint: "Scre".to_string()
+                    name_hint: "Scre".to_string(),
+                    parse_warnings: Warnings::new()
                 },
                 SubKeyListLfItem {
                     named_key_offset: 105376,
-                    name_hint: "Scre".to_string()
+                    name_hint: "Scre".to_string(),
+                    parse_warnings: Warnings::new()
                 }
             ]
         };

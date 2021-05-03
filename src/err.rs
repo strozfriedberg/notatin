@@ -1,9 +1,6 @@
+//use std::error;
 use thiserror::Error;
-
-pub trait ParseWarnings {
-    fn add_warning(&mut self, warning: String);
-    fn get_warnings(&self) -> &Vec<String>;
-}
+use serde::Serialize;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -13,6 +10,12 @@ pub enum Error {
     Nom { detail: String },
     #[error("An unexpected error has occurred: {}", detail)]
     Any { detail: String },
+}
+
+impl From<nom::Err<nom::error::Error<&[u8]>>> for Error {
+    fn from(error: nom::Err<nom::error::Error<&[u8]>>) -> Self {
+        Error::Nom{ detail: format!("{:#?}", error.to_string()) }
+    }
 }
 
 impl Error {

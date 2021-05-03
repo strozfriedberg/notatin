@@ -10,6 +10,8 @@ use bitflags::bitflags;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use serde::Serialize;
+use crate::err::Error;
+use crate::warn::{Warning, Warnings};
 use crate::util;
 use crate::registry::State;
 use crate::hive_bin_cell;
@@ -71,7 +73,7 @@ pub enum CellKeyValueDataTypes {
 impl CellKeyValueDataTypes {
     // todo: handle unwraps
     pub fn get_value_content(self, input: &[u8]) -> (CellValue, Option<Vec<String>>) {
-        let mut warnings = Vec::new();
+        let mut parse_warnings = Vec::new();
         let cv = match self {
             CellKeyValueDataTypes::RegNone =>
                 CellValue::ValueNone,
@@ -142,8 +144,8 @@ impl CellKeyValueDataTypes {
             CellKeyValueDataTypes::RegUnicodeStringArray =>
                 CellValue::ValueBinary(input.to_vec()),
         };
-        if !warnings.is_empty() {
-            (cv, Some(warnings))
+        if !parse_warnings.is_empty() {
+            (cv, Some(parse_warnings))
         }
         else {
             (cv, None)
@@ -176,7 +178,8 @@ pub struct CellKeyValue {
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
     pub value_name: String, // in file, ASCII (extended) string or UTF-16LE string
-    pub value_content: Option<CellValue>
+    pub value_content: Option<CellValue>,
+    pub parse_warnings: Option<Vec<Warning>>
 }
 
 impl CellKeyValue {
@@ -201,18 +204,19 @@ impl CellKeyValue {
             Some(data_type) => data_type
         };
 
+        let mut parse_warnings = Warnings::new();
         let value_name;
         if value_name_size == 0 {
             value_name = String::from("(Default)");
         }
         else if flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII) {
-            value_name = String::from_utf8(value_name_bytes.to_vec()).unwrap(); // todo: handle unwrap
+            value_name = util::from_utf8(&value_name_bytes, &mut parse_warnings, "value_name_bytes");
         }
         else {
             value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into());
         }
         let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         Ok((
             input,
@@ -228,7 +232,8 @@ impl CellKeyValue {
                 data_type,
                 flags,
                 value_name,
-                value_content: None
+                value_content: None,
+                parse_warnings: None
             },
         ))
     }
@@ -302,7 +307,9 @@ mod tests {
             data_type: CellKeyValueDataTypes::RegSZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             value_name: "IE5_UA_Backup_Flag".to_string(),
-            value_content: None
+            value_content: None,
+            parse_warnings: None
+
         };
         let remaining: [u8; 0] = [];
         let expected = Ok((&remaining[..], expected_output));
@@ -317,14 +324,14 @@ mod tests {
             hbin_offset: 4096,
             file_buffer: &f[..]
         };
-        let warnings = cell_key_value.read_content(&state);
+        let parse_warnings = cell_key_value.read_content(&state);
         assert_eq!(
             CellValue::ValueString("5.0".to_string()),
             cell_key_value.value_content.unwrap()
         );
         assert_eq!(
             None,
-            warnings
+            parse_warnings
         );
     }
 

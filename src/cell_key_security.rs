@@ -8,8 +8,9 @@ use std::io::Cursor;
 use winstructs::security::SecurityDescriptor;
 use serde::Serialize;
 use crate::hive_bin_cell;
-use crate::util;
 use crate::err::Error;
+use crate::warn::{Warning, Warnings};
+use crate::util;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeySecurityDetail {
@@ -34,7 +35,8 @@ pub struct CellKeySecurityDetail {
 pub struct CellKeySecurity {
     pub detail: CellKeySecurityDetail,
     pub size: u32,
-    pub security_descriptor: Vec<u8>
+    pub security_descriptor: Vec<u8>,
+    pub parse_warnings: Option<Vec<Warning>>
 }
 
 impl CellKeySecurity {
@@ -51,7 +53,7 @@ impl CellKeySecurity {
         let (input, security_descriptor) = take!(input, security_descriptor_size)?;
 
         let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs as usize, input.as_ptr() as usize - start_pos)?;
+        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         Ok((
             input,
@@ -64,7 +66,8 @@ impl CellKeySecurity {
                     security_descriptor_size,
                 },
                 size: size_abs,
-                security_descriptor: security_descriptor.to_vec()
+                security_descriptor: security_descriptor.to_vec(),
+                parse_warnings: None
             },
         ))
     }
@@ -85,24 +88,20 @@ pub fn read_cell_key_security(file_buffer: &[u8], security_key_offset: u32, hbin
     let mut offset: usize = security_key_offset as usize;
     loop {
         let input = &file_buffer[offset + hbin_offset as usize..];
-        match CellKeySecurity::from_bytes(input).finish() {
-            Ok((_, cell_key_security)) => {
-                let res_security_descriptor = SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor));
-                match res_security_descriptor {
-                    Ok(security_descriptor) => {
-                        security_descriptors.push(security_descriptor);
-                    },
-                    Err(e) => {
-                        // log error as warning and keep going
-                    }
-                }
-                if cell_key_security.detail.flink == security_key_offset {
-                    break;
-                }
-                offset = cell_key_security.detail.flink as usize;
+        let (_, cell_key_security) = CellKeySecurity::from_bytes(input)?;
+        let res_security_descriptor = SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor));
+        match res_security_descriptor {
+            Ok(security_descriptor) => {
+                security_descriptors.push(security_descriptor);
             },
-            Err(e) => return Err(Error::Nom { detail: format!("read_hive_bin: hive_bin_header::parse_hive_bin_header {:#?}", e) })
+            Err(e) => {
+                // log error as warning and keep going
+            }
         }
+        if cell_key_security.detail.flink == security_key_offset {
+            break;
+        }
+        offset = cell_key_security.detail.flink as usize;
     }
     Ok(security_descriptors)
 }
@@ -126,7 +125,8 @@ mod tests {
                 security_descriptor_size: 156,
             },
             size: 264,
-            security_descriptor: vec![1, 0, 4, 144, 128, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 2, 0, 108, 0, 4, 0, 0, 0, 0, 3, 36, 0, 63, 0, 15, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 151, 42, 103, 121, 160, 84, 74, 182, 25, 135, 40, 126, 81, 4, 0, 0, 0, 3, 20, 0, 63, 0, 15, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 3, 24, 0, 63, 0, 15, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 0, 3, 20, 0, 25, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0 ]
+            security_descriptor: vec![1, 0, 4, 144, 128, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 2, 0, 108, 0, 4, 0, 0, 0, 0, 3, 36, 0, 63, 0, 15, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 151, 42, 103, 121, 160, 84, 74, 182, 25, 135, 40, 126, 81, 4, 0, 0, 0, 3, 20, 0, 63, 0, 15, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 3, 24, 0, 63, 0, 15, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 0, 3, 20, 0, 25, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0 ],
+            parse_warnings: None
         };
 
         let remaining: [u8; 0] = [];

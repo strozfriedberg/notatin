@@ -3,10 +3,12 @@ use std::mem;
 use std::io::Cursor;
 use std::char::REPLACEMENT_CHARACTER;
 use std::fmt::Write;
+use std::string::FromUtf8Error;
 use chrono::{DateTime, Utc};
 use winstructs::timestamp::WinTimestamp;
 use nom::IResult;
 use crate::err::Error;
+use crate::warn::{Warning, Warnings, WarningCode};
 use crate::cell_key_node;
 
 const SIZE_OF_UTF16_CHAR: usize = mem::size_of::<u16>();
@@ -42,6 +44,20 @@ pub fn read_utf16_le_strings(slice: &[u8], count: usize) -> Vec<String> {
     strings
 }
 
+/// Converts a slice of UTF-8 bytes into a String; upon failure, logs the error into the parse_warnings parameter and returns `"<Invalid string>"`
+pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, detail: &str) -> String {
+    let store_error_in_warnings = |err: FromUtf8Error| -> Result<String, FromUtf8Error>{
+        parse_warnings.add_warning(
+            Warning {
+                warning_code: WarningCode::WarningConversion,
+                warning_text: format!("{}: {}", detail, err.to_string())
+            }
+        );
+        Ok(String::from("<Invalid string>"))
+    };
+    String::from_utf8(slice.to_vec()).or_else(store_error_in_warnings).unwrap()
+}
+
 pub trait PathBufExt {
     /// Returns true if the PathBuf is empty
     fn is_empty(&self) -> bool;
@@ -56,10 +72,10 @@ impl PathBufExt for PathBuf {
 /// Consumes any padding at the end of a hive bin cell. Used during sequential registry read to find deleted cells.
 pub fn parser_eat_remaining(
     input: &[u8],
-    cell_size: usize,
+    cell_size: u32,
     bytes_consumed: usize
 ) -> IResult<&[u8], &[u8]> {
-    take!(input, cell_size - bytes_consumed)
+    take!(input, cell_size as usize - bytes_consumed)
 }
 
 pub fn count_all_keys_and_values(
