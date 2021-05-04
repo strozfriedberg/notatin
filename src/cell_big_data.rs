@@ -56,13 +56,6 @@ impl CellBigData {
         ))
     }
 
-    /*pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> Result<CellValue, Error> {
-        match CellBigData::get_big_data_content_internal(state, offset, data_type, data_size) {
-            Ok(value_content_and_warning) => value_content_and_warning,
-            Err(e) =>  (CellValue::ValueNone, Some(vec![format!("Error getting big data content: {}", e.to_string())]))
-        }
-    }*/
-
     pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> Result<CellValue, Error> {
         let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
         let (_, data_offsets)           = CellBigData::parse_big_data_offsets(state, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize)?;
@@ -77,7 +70,7 @@ impl CellBigData {
                 data_size_remaining -= size_to_read;
             }
         }
-        return data_type.get_value_content(&big_data_buffer[..]);
+        data_type.get_value_content(&big_data_buffer[..])
     }
 
     fn parse_big_data_size(

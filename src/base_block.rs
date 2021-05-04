@@ -9,9 +9,10 @@ use serde::Serialize;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use winstructs::guid::Guid;
+use std::time::SystemTime;
+use crate::err::Error;
 use crate::util;
-use crate::warn::Warnings;
-
+use crate::warn::{Warnings, WarningCode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
@@ -81,8 +82,9 @@ impl FileBaseBlock {
             Some(format) => format,
             None => FileFormat::Unknown
         };
-        let modification_date = util::get_date_time_from_filetime(last_modification_date_and_time).unwrap();
+
         let mut parse_warnings = Warnings::new();
+        let modification_date = util::get_date_time_from_filetime(last_modification_date_and_time, &mut parse_warnings);
         Ok((
             input,
             FileBaseBlock {
@@ -118,7 +120,8 @@ pub struct FileBaseBlockReserved {
     pub signature: u32,
     pub last_reorganized_timestamp: DateTime<Utc>,
     #[serde(serialize_with = "util::data_as_hex")]
-    pub remaining: Vec<u8>
+    pub remaining: Vec<u8>,
+    pub parse_warnings: Warnings
 }
 
 impl Eq for FileBaseBlockReserved {}
@@ -150,7 +153,8 @@ impl FileBaseBlockReserved {
             None => FileBaseBlockReservedFlags::None,
             Some(flags) => flags
         };
-        let last_reorganized_timestamp = util::get_date_time_from_filetime(last_reorganized_timestamp).unwrap();
+        let mut parse_warnings = Warnings::new();
+        let last_reorganized_timestamp = util::get_date_time_from_filetime(last_reorganized_timestamp, &mut parse_warnings);
         Ok((
             input,
             FileBaseBlockReserved {
@@ -160,7 +164,8 @@ impl FileBaseBlockReserved {
                 tm_id: Guid::from_buffer(tm_id).unwrap(),
                 signature,
                 last_reorganized_timestamp,
-                remaining: remaining.to_vec()
+                remaining: remaining.to_vec(),
+                parse_warnings
             },
         ))
     }
@@ -238,7 +243,7 @@ mod tests {
         let expected_header = FileBaseBlock {
             primary_sequence_number: 10407,
             secondary_sequence_number: 10407,
-            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460).unwrap(),
+            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460, &mut Warnings::new()),
             major_version: 1,
             minor_version: 3,
             file_type: FileType::Normal,

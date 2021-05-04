@@ -16,8 +16,8 @@ impl Warnings {
     pub fn add_warning(&mut self, code: WarningCode, text: String) {
         self.add_warning_internal(
             Warning {
-                warning_code: code,
-                warning_text: text
+                code: code,
+                text: text
             }
         );
     }
@@ -46,11 +46,12 @@ pub enum WarningCode {
     WarningConversion,
     WarningContent,
     WarningBigDataContent,
+    WarningUnrecognizedBitflag,
     WarningOther
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Warning {
-    pub warning_code: WarningCode,
-    pub warning_text: String
+    pub code: WarningCode,
+    pub text: String
 }

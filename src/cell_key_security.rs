@@ -8,7 +8,7 @@ use winstructs::security::SecurityDescriptor;
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::err::Error;
-use crate::warn::Warning;
+use crate::warn::Warnings;
 use crate::util;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -35,7 +35,7 @@ pub struct CellKeySecurityDetail {
 pub struct CellKeySecurity {
     pub detail: CellKeySecurityDetail,
     pub security_descriptor: Vec<u8>,
-    pub parse_warnings: Option<Vec<Warning>>
+    pub parse_warnings: Warnings
 }
 
 impl CellKeySecurity {
@@ -66,7 +66,7 @@ impl CellKeySecurity {
                     security_descriptor_size,
                 },
                 security_descriptor: security_descriptor.to_vec(),
-                parse_warnings: None
+                parse_warnings: Warnings::new()
             },
         ))
     }
@@ -132,7 +132,7 @@ mod tests {
                 security_descriptor_size: 156,
             },
             security_descriptor: vec![1, 0, 4, 144, 128, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 2, 0, 108, 0, 4, 0, 0, 0, 0, 3, 36, 0, 63, 0, 15, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 151, 42, 103, 121, 160, 84, 74, 182, 25, 135, 40, 126, 81, 4, 0, 0, 0, 3, 20, 0, 63, 0, 15, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 3, 24, 0, 63, 0, 15, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 0, 3, 20, 0, 25, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0 ],
-            parse_warnings: None
+            parse_warnings: Warnings::new()
         };
 
         let remaining: [u8; 0] = [];

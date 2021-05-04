@@ -1,3 +1,4 @@
+use std::time::SystemTime;
 use nom::{
     IResult,
     bytes::complete::tag,
@@ -11,7 +12,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use crate::registry::State;
 use crate::err::Error;
-use crate::warn::Warnings;
+use crate::warn::{Warnings, WarningCode};
 use crate::util;
 use crate::hive_bin_cell;
 use crate::cell_key_value::CellKeyValue;
@@ -22,6 +23,7 @@ use crate::sub_key_list_li::SubKeyListLi;
 use crate::sub_key_list_ri::SubKeyListRi;
 use crate::filter::{Filter, FilterFlags};
 use crate::impl_serialize_for_bitflags;
+use crate::impl_flags_from_bits;
 
 #[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNodeDetail {
@@ -53,9 +55,9 @@ pub struct CellKeyNodeDetail {
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
-    pub flags: KeyNodeFlags,
+    pub key_node_flags: KeyNodeFlags,
     pub last_key_written_date_and_time: DateTime<Utc>,
-    pub access_bits: AccessFlags, // Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
+    pub access_flags: AccessFlags, // Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
     pub parent_key_offset: i32, // Offset of a parent key node in bytes, relative from the start of the hive bins data (this field has no meaning on a disk for a root key node)
     pub number_of_sub_keys: u32,
     pub number_of_key_values: u32,
@@ -88,9 +90,9 @@ impl Default for CellKeyNode {
     fn default() -> Self {
         CellKeyNode {
             detail: CellKeyNodeDetail::default(),
-            flags: KeyNodeFlags::default(),
-            last_key_written_date_and_time: Utc::now(),
-            access_bits: AccessFlags::default(),
+            key_node_flags: KeyNodeFlags::default(),
+            last_key_written_date_and_time: DateTime::from(SystemTime::UNIX_EPOCH),
+            access_flags: AccessFlags::default(),
             parent_key_offset: i32::default(),
             number_of_sub_keys: u32::default(),
             number_of_key_values: u32::default(),
@@ -146,26 +148,27 @@ impl CellKeyNode {
         let (input, key_name_bytes) = take!(input, key_name_size)?;
 
         let mut parse_warnings = Warnings::new();
-        let flags = KeyNodeFlags::from_bits(flags).unwrap_or_default();
-        let key_name: String;
+        let key_node_flags = KeyNodeFlags::from_bits(flags).unwrap_or_default();
+        //let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut parse_warnings);
 
-        if flags.contains(KeyNodeFlags::KEY_COMP_NAME) {
-           // let key_name_bytes = [0, 159, 146, 150];
+        let key_name;
+        if key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME) {
             key_name = util::from_utf8(&key_name_bytes, &mut parse_warnings, "key_name_bytes");
         }
         else {
-            let key_name_warning = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
-            key_name = key_name_warning;
+            key_name = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
         }
+        //let access_flags = AccessFlags::from_bits_checked(access_bits, &mut parse_warnings);
+        let access_flags = AccessFlags::from_bits(access_bits).unwrap_or_default();
+        let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time, &mut parse_warnings);
 
         let size_abs =  size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
-        let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time);
-
         let mut path = cur_path;
         path.push('\\');
         path += &key_name;
+
         let cell_key_node = CellKeyNode {
             detail: CellKeyNodeDetail {
                 absolute_file_offset,
@@ -184,9 +187,9 @@ impl CellKeyNode {
                 key_name_size,
                 class_name_size,
             },
-            flags,
-            last_key_written_date_and_time: timestamp.unwrap(),
-            access_bits: AccessFlags::from_bits(access_bits).unwrap_or_default(),
+            key_node_flags,
+            last_key_written_date_and_time: timestamp,
+            access_flags,
             parent_key_offset,
             number_of_sub_keys,
             number_of_key_values,
@@ -195,7 +198,7 @@ impl CellKeyNode {
             path,
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            parse_warnings: Warnings::new()
+            parse_warnings
         };
 
         Ok((
@@ -224,7 +227,7 @@ impl CellKeyNode {
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
             filter.is_complete = true;
         }
-        return Ok(Some(cell_key_node));
+        Ok(Some(cell_key_node))
     }
 
     /// Returns a vector of Security Descriptors for the key node.
@@ -302,7 +305,8 @@ bitflags! {
         const ACCESSED_AFTER_INIT  = 0x00000002; // This key was accessed after a Windows registry was initialized with the NtInitializeRegistry() routine during the boot
     }
 }
-impl_serialize_for_bitflags! {AccessFlags}
+impl_serialize_for_bitflags! { AccessFlags }
+impl_flags_from_bits! { AccessFlags, u32 }
 
 bitflags! {
     #[allow(non_camel_case_types)]
@@ -322,7 +326,8 @@ bitflags! {
         const KEY_UNKNOWN2       = 0x4000;
     }
 }
-impl_serialize_for_bitflags! {KeyNodeFlags}
+impl_serialize_for_bitflags! { KeyNodeFlags }
+impl_flags_from_bits! { KeyNodeFlags, u16 }
 
 fn parse_key_values<'a>(
     state: &'a State,
@@ -463,9 +468,9 @@ mod tests {
                 key_name_size: 52,
                 class_name_size: 0,
             },
-            flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
-            last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083).unwrap(),
-            access_bits: AccessFlags::empty(),
+            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
+            last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083, &mut Warnings::new()),
+            access_flags: AccessFlags::empty(),
             parent_key_offset: 1536,
             number_of_sub_keys: 11,
             number_of_key_values: 0,

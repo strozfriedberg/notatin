@@ -35,7 +35,7 @@ impl Filter {
         if let Some(find_path) = &self.find_path { //we don't end up in this function unless find_path.is_some()
             if let Some(cell_name_lowercase) = cell.name_lowercase() {
                 if !find_path.key_path.as_os_str().is_empty() {
-                    return Ok(self.match_key(is_first_iteration, cell_name_lowercase));
+                    return self.match_key(is_first_iteration, cell_name_lowercase);
                 }
                 if let Some(match_val) = &find_path.value {
                     if match_val == &cell_name_lowercase {
@@ -58,11 +58,13 @@ impl Filter {
         }
     }
 
-    fn match_key(self: &mut Filter, is_first_iteration: bool, key_name: String) -> FilterFlags {
+    fn match_key(self: &mut Filter, is_first_iteration: bool, key_name: String) -> Result<FilterFlags, Error> {
         if is_first_iteration { // skip the first iteration; it's the root hive name and therefore always matches
-            return FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES;
+            Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
         }
-        self.find_path.as_mut().unwrap().check_key_match(&key_name) // todo: handle unwrap
+        else {
+            self.find_path.as_mut().unwrap().check_key_match(&key_name) // self.find_path was checked previously
+        }
     }
 }
 
@@ -88,18 +90,24 @@ impl FindPath {
         }
     }
 
-    fn check_key_match(self: &mut FindPath, key_name: &str) -> FilterFlags {
+    fn check_key_match(self: &mut FindPath, key_name: &str) -> Result<FilterFlags, Error> {
         if self.key_path.starts_with(Path::new(&key_name)) {
-            self.key_path = self.key_path.strip_prefix(key_name).unwrap().to_path_buf(); // todo: handle unwrap
+            self.key_path = self.key_path.strip_prefix(key_name)?.to_path_buf();
             if self.key_path.as_os_str().is_empty() { // we matched all the keys!
                 if self.value.is_none() { // we only have a key path; should return all children / values then stop
-                    return FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
+                    Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
                 }
-                return FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
+                else {
+                    Ok(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
+                }
             }
-            return FilterFlags::FILTER_ITERATE_KEYS;
+            else {
+                Ok(FilterFlags::FILTER_ITERATE_KEYS)
+            }
         }
-        FilterFlags::FILTER_NO_MATCH
+        else {
+            Ok(FilterFlags::FILTER_NO_MATCH)
+        }
     }
 }
 

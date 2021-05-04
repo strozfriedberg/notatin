@@ -4,7 +4,9 @@ use std::io::Cursor;
 use std::char::REPLACEMENT_CHARACTER;
 use std::fmt::Write;
 use std::string::FromUtf8Error;
+use std::time::SystemTime;
 use serde::ser;
+use std::convert::TryInto;
 use chrono::{DateTime, Utc};
 use winstructs::timestamp::WinTimestamp;
 use nom::IResult;
@@ -81,12 +83,13 @@ pub fn count_all_keys_and_values(
 }
 
 /// Converts a u64 filetime to a DateTime<Utc>
-pub fn get_date_time_from_filetime(filetime: u64) -> Result<DateTime<Utc>, Error> {
+pub fn get_date_time_from_filetime(filetime: u64, parse_warnings: &mut Warnings) -> DateTime<Utc> {
     match WinTimestamp::from_reader(&mut Cursor::new(filetime.to_le_bytes())) {
-        Ok(date_time) => Ok(date_time.to_datetime()),
-        Err(e) => Err(Error::FailedToReadWindowsTime {
-            source: e
-        })
+        Ok(win_timestamp) => win_timestamp.to_datetime(),
+        Err(e) => {
+            parse_warnings.add_warning(WarningCode::WarningConversion, e.to_string());
+            DateTime::from(SystemTime::UNIX_EPOCH)
+        }
     }
 }
 
@@ -100,6 +103,28 @@ macro_rules! impl_serialize_for_bitflags {
                 S: serde::ser::Serializer,
             {
                 serializer.serialize_str(&format!("{:?}", &self))
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_flags_from_bits {
+    ($bitflag_type: ident, $var_type: ident) => {
+        impl $bitflag_type {
+            fn from_bits_checked(flags: $var_type, parse_warnings: &mut Warnings) -> Self {
+                let flags_mapped = $bitflag_type::from_bits_truncate(flags);
+                if flags != flags_mapped.bits() {
+                    fn f() {}
+                    fn type_name_of<T>(_: T) -> &'static str {
+                        std::any::type_name::<T>()
+                    }
+                    let name = type_name_of(f);
+                    const FOOTER_LEN: usize = "::f".len();
+                    let fn_name = &name[..name.len() - FOOTER_LEN];
+                    parse_warnings.add_warning(WarningCode::WarningUnrecognizedBitflag, format!("{}: {:#X}", fn_name, flags));
+                }
+                return flags_mapped;
             }
         }
     };
@@ -127,6 +152,6 @@ mod tests {
 
     #[test]
     fn test_get_date_time_from_filetime() {
-       assert_eq!(1333727545, get_date_time_from_filetime(129782011451468083).unwrap().timestamp());
+       assert_eq!(1333727545, get_date_time_from_filetime(129782011451468083, &mut Warnings::new()).timestamp());
     }
 }

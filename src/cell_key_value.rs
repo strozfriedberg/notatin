@@ -72,7 +72,6 @@ pub enum CellKeyValueDataTypes {
 }
 
 impl CellKeyValueDataTypes {
-    // todo: handle unwraps
     pub fn get_value_content(self, input: &[u8]) -> Result<CellValue, Error> {
         let cv = match self {
             CellKeyValueDataTypes::REG_NONE =>
