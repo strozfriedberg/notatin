@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::char::REPLACEMENT_CHARACTER;
 use std::fmt::Write;
 use std::string::FromUtf8Error;
+use serde::ser;
 use chrono::{DateTime, Utc};
 use winstructs::timestamp::WinTimestamp;
 use nom::IResult;
@@ -46,27 +47,13 @@ pub fn read_utf16_le_strings(slice: &[u8], count: usize) -> Vec<String> {
 
 /// Converts a slice of UTF-8 bytes into a String; upon failure, logs the error into the parse_warnings parameter and returns `"<Invalid string>"`
 pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, detail: &str) -> String {
-    let store_error_in_warnings = |err: FromUtf8Error| -> Result<String, FromUtf8Error>{
-        parse_warnings.add_warning(
-            Warning {
-                warning_code: WarningCode::WarningConversion,
-                warning_text: format!("{}: {}", detail, err.to_string())
+    String::from_utf8(slice.to_vec())
+        .or_else(
+            |err: FromUtf8Error| -> Result<String, FromUtf8Error> {
+                parse_warnings.add_warning(WarningCode::WarningConversion, format!("{}: {}", detail, err.to_string()));
+                Ok(String::from("<Invalid string>"))
             }
-        );
-        Ok(String::from("<Invalid string>"))
-    };
-    String::from_utf8(slice.to_vec()).or_else(store_error_in_warnings).unwrap()
-}
-
-pub trait PathBufExt {
-    /// Returns true if the PathBuf is empty
-    fn is_empty(&self) -> bool;
-}
-
-impl PathBufExt for PathBuf {
-    fn is_empty(&self) -> bool {
-        *self == PathBuf::new()
-    }
+        ).unwrap()
 }
 
 /// Consumes any padding at the end of a hive bin cell. Used during sequential registry read to find deleted cells.
@@ -116,6 +103,10 @@ macro_rules! impl_serialize_for_bitflags {
             }
         }
     };
+}
+
+pub fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S::Ok, S::Error> {
+    s.serialize_str(&to_hex_string(x))
 }
 
 /// Adapted from https://github.com/omerbenamram/mft

@@ -11,7 +11,7 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use serde::Serialize;
 use crate::err::Error;
-use crate::warn::{Warning, Warnings};
+use crate::warn::{Warning, Warnings, WarningCode};
 use crate::util;
 use crate::registry::State;
 use crate::hive_bin_cell;
@@ -21,135 +21,130 @@ use crate::impl_serialize_for_bitflags;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
+#[allow(non_camel_case_types)]
 pub enum CellKeyValueDataTypes {
-    RegNone                     = 0x0000,
-    RegSZ                       = 0x0001,
-    RegExpandSZ                 = 0x0002,
-    RegBin                      = 0x0003,
-    RegDWord                    = 0x0004,
-    RegDWordBigEndian           = 0x0005,
-    RegLink                     = 0x0006,
-    RegMultiSZ                  = 0x0007,
-    RegResourceList             = 0x0008,
-    RegFullResourceDescriptor   = 0x0009,
-    RegResourceRequirementsList = 0x000A,
-    RegQWord                    = 0x000B,
-    RegFileTime                 = 0x0010,
+    REG_NONE                       = 0x0000,
+    REG_SZ                         = 0x0001,
+    REG_EXPAND_SZ                  = 0x0002,
+    REG_BIN                        = 0x0003,
+    REG_DWORD                      = 0x0004,
+    REG_DWORD_BIG_ENDIAN           = 0x0005,
+    REG_LINK                       = 0x0006,
+    REG_MULTI_SZ                   = 0x0007,
+    REG_RESOURCE_LIST              = 0x0008,
+    REG_FULL_RESOURCE_DESCRIPTOR   = 0x0009,
+    REG_RESOURCE_REQUIREMENTS_LIST = 0x000A,
+    REG_QWORD                      = 0x000B,
+    REG_FILETIME                   = 0x0010,
     // Following are new types from settings.dat
     // Per https://github.com/williballenthin/python-registry/blob/master/Registry/RegistryParse.py
-    RegUint8                    = 0x0101,
-    RegInt16                    = 0x0102,
-    RegUint16                   = 0x0103,
-    RegInt32                    = 0x0104,
-    RegUint32                   = 0x0105,
-    RegInt64                    = 0x0106,
-    RegUint64                   = 0x0107,
-    RegFloat                    = 0x0108,
-    RegDouble                   = 0x0109,
-    RegUnicodeChar              = 0x010A,
-    RegBoolean                  = 0x010B,
-    RegUnicodeString            = 0x010C,
-    RegCompositeValue           = 0x010D,
-    RegDateTimeOffset           = 0x010E,
-    RegTimeSpan                 = 0x010F,
-    RegGuid                     = 0x0110,
-    RegUnk111                   = 0x0111,
-    RegUnk112                   = 0x0112,
-    RegUnk113                   = 0x0113,
-    RegBytesArray               = 0x0114,
-    RegInt16Array               = 0x0115,
-    RegUint16Array              = 0x0116,
-    RegInt32Array               = 0x0117,
-    RegUInt32Array              = 0x0118,
-    RegInt64Array               = 0x0119,
-    RegUInt64Array              = 0x011A,
-    RegFloatArray               = 0x011B,
-    RegDoubleArray              = 0x011C,
-    RegUnicodeCharArray         = 0x011D,
-    RegBooleanArray             = 0x011E,
-    RegUnicodeStringArray       = 0x011F,
+    REG_UINT8                      = 0x0101,
+    REG_INT16                      = 0x0102,
+    REG_UINT16                     = 0x0103,
+    REG_INT32                      = 0x0104,
+    REG_UINT32                     = 0x0105,
+    REG_INT64                      = 0x0106,
+    REG_UINT64                     = 0x0107,
+    REG_FLOAT                      = 0x0108,
+    REG_DOUBLE                     = 0x0109,
+    REG_UNICODE_CHAR               = 0x010A,
+    REG_BOOLEAN                    = 0x010B,
+    REG_UNICODE_STRING             = 0x010C,
+    REG_COMPOSITE_VALUE            = 0x010D,
+    REG_DATE_TIME_OFFSET           = 0x010E,
+    REG_TIME_SPAN                  = 0x010F,
+    REG_GUID                       = 0x0110,
+    REG_UNK_111                    = 0x0111,
+    REG_UNK_112                    = 0x0112,
+    REG_UNK_113                    = 0x0113,
+    REG_BYTES_ARRAY                = 0x0114,
+    REG_INT16_ARRAY                = 0x0115,
+    REG_UINT16_ARRAY               = 0x0116,
+    REG_INT32_ARRAY                = 0x0117,
+    REG_UINT32_ARRAY               = 0x0118,
+    REG_INT64_ARRAY                = 0x0119,
+    REG_UINT64_ARRAY               = 0x011A,
+    REG_FLOAT_ARRAY                = 0x011B,
+    REG_DOUBLE_ARRAY               = 0x011C,
+    REG_UNICODE_CHAR_ARRAY         = 0x011D,
+    REG_BOOLEAN_ARRAY              = 0x011E,
+    REG_UNICODE_STRING_ARRAY       = 0x011F,
 }
 
 impl CellKeyValueDataTypes {
     // todo: handle unwraps
-    pub fn get_value_content(self, input: &[u8]) -> (CellValue, Option<Vec<String>>) {
-        let mut parse_warnings = Vec::new();
+    pub fn get_value_content(self, input: &[u8]) -> Result<CellValue, Error> {
         let cv = match self {
-            CellKeyValueDataTypes::RegNone =>
+            CellKeyValueDataTypes::REG_NONE =>
                 CellValue::ValueNone,
-            CellKeyValueDataTypes::RegSZ |
-            CellKeyValueDataTypes::RegExpandSZ |
-            CellKeyValueDataTypes::RegLink => CellValue::ValueString(
+            CellKeyValueDataTypes::REG_SZ |
+            CellKeyValueDataTypes::REG_EXPAND_SZ |
+            CellKeyValueDataTypes::REG_LINK => CellValue::ValueString(
                 util::read_utf16_le_string(input, input.len())
             ),
-            CellKeyValueDataTypes::RegUint8 => CellValue::ValueU32(
-                u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into().unwrap()) as u32
+            CellKeyValueDataTypes::REG_UINT8 => CellValue::ValueU32(
+                u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32
             ),
-            CellKeyValueDataTypes::RegInt16 => CellValue::ValueI32(
-                i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into().unwrap()) as i32
+            CellKeyValueDataTypes::REG_INT16 => CellValue::ValueI32(
+                i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into()?) as i32
             ),
-            CellKeyValueDataTypes::RegUint16 => CellValue::ValueU32(
-                u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into().unwrap()) as u32
+            CellKeyValueDataTypes::REG_UINT16 => CellValue::ValueU32(
+                u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into()?) as u32
             ),
-            CellKeyValueDataTypes::RegDWord |
-            CellKeyValueDataTypes::RegUint32 => CellValue::ValueU32(
-                u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into().unwrap())
+            CellKeyValueDataTypes::REG_DWORD |
+            CellKeyValueDataTypes::REG_UINT32 => CellValue::ValueU32(
+                u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into()?)
             ),
-            CellKeyValueDataTypes::RegDWordBigEndian => CellValue::ValueU32(
-                u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into().unwrap())
+            CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => CellValue::ValueU32(
+                u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into()?)
             ),
-            CellKeyValueDataTypes::RegInt32 => CellValue::ValueI32(
-                i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into().unwrap())
+            CellKeyValueDataTypes::REG_INT32 => CellValue::ValueI32(
+                i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into()?)
             ),
-            CellKeyValueDataTypes::RegInt64 => CellValue::ValueI64(
-                i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into().unwrap())
+            CellKeyValueDataTypes::REG_INT64 => CellValue::ValueI64(
+                i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into()?)
             ),
-            CellKeyValueDataTypes::RegQWord |
-            CellKeyValueDataTypes::RegUint64 => CellValue::ValueU64(
-                u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into().unwrap())
+            CellKeyValueDataTypes::REG_QWORD |
+            CellKeyValueDataTypes::REG_UINT64 => CellValue::ValueU64(
+                u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into()?)
             ),
-            CellKeyValueDataTypes::RegBin => CellValue::ValueBinary(
+            CellKeyValueDataTypes::REG_BIN => CellValue::ValueBinary(
                 input.to_vec()
             ),
-            CellKeyValueDataTypes::RegMultiSZ => CellValue::ValueMultiString(
+            CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::ValueMultiString(
                 util::read_utf16_le_strings(input, input.len())
             ),
-            CellKeyValueDataTypes::RegResourceList |
-            CellKeyValueDataTypes::RegFileTime |
-            CellKeyValueDataTypes::RegFullResourceDescriptor |
-            CellKeyValueDataTypes::RegResourceRequirementsList |
-            CellKeyValueDataTypes::RegFloat |
-            CellKeyValueDataTypes::RegDouble |
-            CellKeyValueDataTypes::RegUnicodeChar |
-            CellKeyValueDataTypes::RegBoolean |
-            CellKeyValueDataTypes::RegUnicodeString |
-            CellKeyValueDataTypes::RegCompositeValue |
-            CellKeyValueDataTypes::RegDateTimeOffset |
-            CellKeyValueDataTypes::RegTimeSpan |
-            CellKeyValueDataTypes::RegGuid |
-            CellKeyValueDataTypes::RegUnk111 |
-            CellKeyValueDataTypes::RegUnk112 |
-            CellKeyValueDataTypes::RegUnk113 |
-            CellKeyValueDataTypes::RegBytesArray |
-            CellKeyValueDataTypes::RegInt16Array |
-            CellKeyValueDataTypes::RegUint16Array |
-            CellKeyValueDataTypes::RegInt32Array |
-            CellKeyValueDataTypes::RegUInt32Array |
-            CellKeyValueDataTypes::RegInt64Array |
-            CellKeyValueDataTypes::RegUInt64Array |
-            CellKeyValueDataTypes::RegFloatArray |
-            CellKeyValueDataTypes::RegDoubleArray |
-            CellKeyValueDataTypes::RegUnicodeCharArray |
-            CellKeyValueDataTypes::RegBooleanArray |
-            CellKeyValueDataTypes::RegUnicodeStringArray =>
+            CellKeyValueDataTypes::REG_RESOURCE_LIST |
+            CellKeyValueDataTypes::REG_FILETIME |
+            CellKeyValueDataTypes::REG_FULL_RESOURCE_DESCRIPTOR |
+            CellKeyValueDataTypes::REG_RESOURCE_REQUIREMENTS_LIST |
+            CellKeyValueDataTypes::REG_FLOAT |
+            CellKeyValueDataTypes::REG_DOUBLE |
+            CellKeyValueDataTypes::REG_UNICODE_CHAR |
+            CellKeyValueDataTypes::REG_BOOLEAN |
+            CellKeyValueDataTypes::REG_UNICODE_STRING |
+            CellKeyValueDataTypes::REG_COMPOSITE_VALUE |
+            CellKeyValueDataTypes::REG_DATE_TIME_OFFSET |
+            CellKeyValueDataTypes::REG_TIME_SPAN |
+            CellKeyValueDataTypes::REG_GUID |
+            CellKeyValueDataTypes::REG_UNK_111 |
+            CellKeyValueDataTypes::REG_UNK_112 |
+            CellKeyValueDataTypes::REG_UNK_113 |
+            CellKeyValueDataTypes::REG_BYTES_ARRAY |
+            CellKeyValueDataTypes::REG_INT16_ARRAY |
+            CellKeyValueDataTypes::REG_UINT16_ARRAY |
+            CellKeyValueDataTypes::REG_INT32_ARRAY |
+            CellKeyValueDataTypes::REG_UINT32_ARRAY |
+            CellKeyValueDataTypes::REG_INT64_ARRAY |
+            CellKeyValueDataTypes::REG_UINT64_ARRAY |
+            CellKeyValueDataTypes::REG_FLOAT_ARRAY |
+            CellKeyValueDataTypes::REG_DOUBLE_ARRAY |
+            CellKeyValueDataTypes::REG_UNICODE_CHAR_ARRAY |
+            CellKeyValueDataTypes::REG_BOOLEAN_ARRAY |
+            CellKeyValueDataTypes::REG_UNICODE_STRING_ARRAY =>
                 CellValue::ValueBinary(input.to_vec()),
         };
-        if !parse_warnings.is_empty() {
-            (cv, Some(parse_warnings))
-        }
-        else {
-            (cv, None)
-        }
+        Ok(cv)
     }
 }
 
@@ -165,6 +160,7 @@ impl_serialize_for_bitflags! {CellKeyValueFlags}
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValueDetail {
     pub absolute_file_offset: usize,
+    pub size: u32,
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
     pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
     pub data_offset: u32, // In bytes, relative from the start of the hive bin's data (or data itself)
@@ -174,12 +170,11 @@ pub struct CellKeyValueDetail {
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValue {
     pub detail: CellKeyValueDetail,
-    pub size: u32,
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
-    pub value_name: String, // in file, ASCII (extended) string or UTF-16LE string
+    pub value_name: String,
     pub value_content: Option<CellValue>,
-    pub parse_warnings: Option<Vec<Warning>>
+    pub parse_warnings: Warnings
 }
 
 impl CellKeyValue {
@@ -200,7 +195,7 @@ impl CellKeyValue {
         let (input, value_name_bytes) = take!(input, value_name_size)?;
 
         let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
-            None => CellKeyValueDataTypes::RegNone,
+            None => CellKeyValueDataTypes::REG_NONE,
             Some(data_type) => data_type
         };
 
@@ -223,22 +218,22 @@ impl CellKeyValue {
             CellKeyValue {
                 detail: CellKeyValueDetail {
                     absolute_file_offset,
+                    size: size_abs,
                     value_name_size,
                     data_size,
                     data_offset,
                     padding,
                 },
-                size: size_abs,
                 data_type,
                 flags,
                 value_name,
                 value_content: None,
-                parse_warnings: None
+                parse_warnings: Warnings::new()
             },
         ))
     }
 
-    pub fn read_content(&mut self, state: &State) -> Option<Vec<String>> {
+    pub fn read_content(&mut self, state: &State) {
         /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md:
             When the most significant bit is 1, data (4 bytes or less) is stored in the Data offset field directly
             (when data contains less than 4 bytes, it is being stored as is in the beginning of the Data offset field).
@@ -246,31 +241,47 @@ impl CellKeyValue {
             When the most significant bit is 0, data is stored in the Cell data field of another cell (pointed by the Data offset field)
             or in the Cell data fields of multiple cells (referenced in the Big data structure stored in a cell pointed by the Data offset field). */
         const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
-        let value_content_and_warning;
+        let value_content;
         if self.detail.data_size & DATA_IS_RESIDENT_MASK == 0 {
-            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size {
-                let offset = self.detail.data_offset as usize + state.hbin_offset;
-                value_content_and_warning = CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size);
+            let mut offset = self.detail.data_offset as usize + state.hbin_offset;
+            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size {//} && CellBigData::is_big_data_block(&state.file_buffer[offset..]) {
+                value_content =
+                    CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size)
+                        .or_else(
+                            |err: Error| -> Result<CellValue, Error> {
+                                self.parse_warnings.add_warning(WarningCode::WarningBigDataContent, err.to_string());
+                                Ok(CellValue::ValueError)
+                            }
+                        )
+                        .unwrap();
             }
             else {
-                let offset = self.detail.data_offset as usize + state.hbin_offset + mem::size_of_val(&self.size);
-                let value_slice = &state.file_buffer[offset..offset + self.detail.data_size as usize];
-                value_content_and_warning = self.data_type.get_value_content(value_slice);
+                offset += mem::size_of_val(&self.detail.size);
+                value_content = self.get_value_content(&state.file_buffer[offset .. offset + self.detail.data_size as usize]);
             }
         }
         else {
-            let size = self.detail.data_size ^ DATA_IS_RESIDENT_MASK;
             let value = self.detail.data_offset.to_le_bytes();
-            value_content_and_warning = self.data_type.get_value_content(&value[..size as usize]);
+            value_content = self.get_value_content(&value[..(self.detail.data_size ^ DATA_IS_RESIDENT_MASK) as usize]);
         }
-        self.value_content = Some(value_content_and_warning.0);
-        value_content_and_warning.1
+        self.value_content = Some(value_content);
+    }
+
+    fn get_value_content(&mut self, input: &[u8]) -> CellValue {
+        self.data_type.get_value_content(input)
+            .or_else(
+                |err: Error| -> Result<CellValue, Error> {
+                    self.parse_warnings.add_warning(WarningCode::WarningContent, err.to_string());
+                    Ok(CellValue::ValueError)
+                }
+            )
+            .unwrap()
     }
 }
 
 impl hive_bin_cell::Cell for CellKeyValue {
     fn size(&self) -> u32 {
-        self.size
+        self.detail.size
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -298,17 +309,17 @@ mod tests {
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
                 absolute_file_offset: 4400,
+                size: 48,
                 value_name_size: 18,
                 data_size: 8,
                 data_offset: 1928,
                 padding: 1280,
             },
-            size: 48,
-            data_type: CellKeyValueDataTypes::RegSZ,
+            data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             value_name: "IE5_UA_Backup_Flag".to_string(),
             value_content: None,
-            parse_warnings: None
+            parse_warnings: Warnings::new()
 
         };
         let remaining: [u8; 0] = [];
@@ -324,14 +335,10 @@ mod tests {
             hbin_offset: 4096,
             file_buffer: &f[..]
         };
-        let parse_warnings = cell_key_value.read_content(&state);
+        cell_key_value.read_content(&state);
         assert_eq!(
             CellValue::ValueString("5.0".to_string()),
             cell_key_value.value_content.unwrap()
-        );
-        assert_eq!(
-            None,
-            parse_warnings
         );
     }
 

@@ -1,4 +1,3 @@
-use nom::Finish;
 use serde::Serialize;
 use crate::base_block::FileBaseBlock;
 use crate::hive_bin::HiveBin;

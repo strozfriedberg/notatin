@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use std::path::{Path, PathBuf};
 use crate::err::Error;
+use crate::warn::Warnings;
 use crate::hive_bin_cell;
 use crate::impl_serialize_for_bitflags;
 
@@ -19,9 +20,11 @@ impl Filter {
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
         if self.find_path.is_some() {
-            return self.handle_find_path(is_first_iteration, cell);
+            self.handle_find_path(is_first_iteration, cell)
         }
-        return Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES);
+        else {
+            Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
+        }
     }
 
     pub fn handle_find_path(
@@ -181,17 +184,17 @@ mod tests {
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
                 absolute_file_offset: 0,
+                size: 48,
                 value_name_size: 18,
                 data_size: 8,
                 data_offset: 1928,
                 padding: 1280,
             },
-            size: 48,
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-            data_type: cell_key_value::CellKeyValueDataTypes::RegSZ,
+            data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
             value_content: None,
-            parse_warnings: None
+            parse_warnings: Warnings::new()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
             filter.clone().check_cell(false, &key_value).unwrap(),

@@ -1,6 +1,5 @@
 use nom::{
     IResult,
-    Finish,
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32}
 };
@@ -9,11 +8,12 @@ use winstructs::security::SecurityDescriptor;
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::err::Error;
-use crate::warn::{Warning, Warnings};
+use crate::warn::Warning;
 use crate::util;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeySecurityDetail {
+    pub size: u32,
     pub unknown1: u16,
     /* Offsets in bytes, relative from the start of the hive bin's data.
        When a key security item acts as a list header, flink points to the first entry of this list.
@@ -34,7 +34,6 @@ pub struct CellKeySecurityDetail {
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeySecurity {
     pub detail: CellKeySecurityDetail,
-    pub size: u32,
     pub security_descriptor: Vec<u8>,
     pub parse_warnings: Option<Vec<Warning>>
 }
@@ -59,13 +58,13 @@ impl CellKeySecurity {
             input,
             CellKeySecurity {
                 detail: CellKeySecurityDetail {
+                    size: size_abs,
                     unknown1,
                     flink,
                     blink,
                     reference_count,
                     security_descriptor_size,
                 },
-                size: size_abs,
                 security_descriptor: security_descriptor.to_vec(),
                 parse_warnings: None
             },
@@ -75,7 +74,7 @@ impl CellKeySecurity {
 
 impl hive_bin_cell::Cell for CellKeySecurity {
     fn size(&self) -> u32 {
-        self.size
+        self.detail.size
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -83,12 +82,17 @@ impl hive_bin_cell::Cell for CellKeySecurity {
     }
 }
 
-pub fn read_cell_key_security(file_buffer: &[u8], security_key_offset: u32, hbin_offset: u32) -> Result<Vec<SecurityDescriptor>, Error> {
+pub fn read_cell_key_security(
+    file_buffer: &[u8],
+    security_key_offset: u32,
+    hbin_offset: u32
+) -> Result<Vec<SecurityDescriptor>, Error> {
     let mut security_descriptors = Vec::new();
     let mut offset: usize = security_key_offset as usize;
     loop {
         let input = &file_buffer[offset + hbin_offset as usize..];
         let (_, cell_key_security) = CellKeySecurity::from_bytes(input)?;
+        // no perf change on this one
         let res_security_descriptor = SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor));
         match res_security_descriptor {
             Ok(security_descriptor) => {
@@ -98,6 +102,8 @@ pub fn read_cell_key_security(file_buffer: &[u8], security_key_offset: u32, hbin
                 // log error as warning and keep going
             }
         }
+        //(SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor))?);
+
         if cell_key_security.detail.flink == security_key_offset {
             break;
         }
@@ -118,13 +124,13 @@ mod tests {
 
         let expected_output = CellKeySecurity {
             detail: CellKeySecurityDetail {
+                size: 264,
                 unknown1: 0,
                 flink: 232704,
                 blink: 234848,
                 reference_count: 1,
                 security_descriptor_size: 156,
             },
-            size: 264,
             security_descriptor: vec![1, 0, 4, 144, 128, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 2, 0, 108, 0, 4, 0, 0, 0, 0, 3, 36, 0, 63, 0, 15, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 151, 42, 103, 121, 160, 84, 74, 182, 25, 135, 40, 126, 81, 4, 0, 0, 0, 3, 20, 0, 63, 0, 15, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 3, 24, 0, 63, 0, 15, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 0, 3, 20, 0, 25, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0 ],
             parse_warnings: None
         };

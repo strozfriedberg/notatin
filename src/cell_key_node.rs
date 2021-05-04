@@ -1,6 +1,5 @@
 use nom::{
     IResult,
-    Finish,
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32, le_u64},
     branch::alt,
@@ -12,7 +11,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use crate::registry::State;
 use crate::err::Error;
-use crate::warn::{Warning, Warnings};
+use crate::warn::Warnings;
 use crate::util;
 use crate::hive_bin_cell;
 use crate::cell_key_value::CellKeyValue;
@@ -27,6 +26,7 @@ use crate::impl_serialize_for_bitflags;
 #[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNodeDetail {
     pub absolute_file_offset: usize,
+    pub size: u32,
     pub number_of_volatile_sub_keys: u32, // The offset value is in bytes and relative from the start of the hive bin data / Refers to a sub keys list or contains -1 (0xffffffff) if empty.
     pub sub_keys_list_offset: u32, // In bytes, relative from the start of the hive bins data (also, this field may point to an Index root)
     pub volatile_sub_keys_list_offset: i32, // This field has no meaning on a disk (volatile keys are not written to a file)
@@ -53,7 +53,6 @@ pub struct CellKeyNodeDetail {
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
-    pub size: u32,
     pub flags: KeyNodeFlags,
     pub last_key_written_date_and_time: DateTime<Utc>,
     pub access_bits: AccessFlags, // Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
@@ -89,7 +88,6 @@ impl Default for CellKeyNode {
     fn default() -> Self {
         CellKeyNode {
             detail: CellKeyNodeDetail::default(),
-            size: u32::default(),
             flags: KeyNodeFlags::default(),
             last_key_written_date_and_time: Utc::now(),
             access_bits: AccessFlags::default(),
@@ -108,7 +106,7 @@ impl Default for CellKeyNode {
 
 impl hive_bin_cell::Cell for CellKeyNode {
     fn size(&self) -> u32 {
-        self.size
+        self.detail.size
     }
 
     fn name_lowercase(&self) -> Option<String> {
@@ -171,6 +169,7 @@ impl CellKeyNode {
         let cell_key_node = CellKeyNode {
             detail: CellKeyNodeDetail {
                 absolute_file_offset,
+                size: size_abs,
                 number_of_volatile_sub_keys,
                 sub_keys_list_offset,
                 volatile_sub_keys_list_offset,
@@ -185,7 +184,6 @@ impl CellKeyNode {
                 key_name_size,
                 class_name_size,
             },
-            size: size_abs,
             flags,
             last_key_written_date_and_time: timestamp.unwrap(),
             access_bits: AccessFlags::from_bits(access_bits).unwrap_or_default(),
@@ -213,27 +211,20 @@ impl CellKeyNode {
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
-        let res_filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node);
-        match res_filter_flags {
-            Ok(filter_flags) => {
-                if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                    return Ok(None);
-                }
-                if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
-                    cell_key_node.read_sub_keys(state, filter);
-                }
-                if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
-                    cell_key_node.read_values(state, filter);
-                }
-                if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-                    filter.is_complete = true;
-                }
-                return Ok(Some(cell_key_node));
-            }
-            Err(e) => return Err(Error::Any {
-                detail: format!("read_cell_key_node: filter.check_cell {:#?}", e)
-            })
-        };
+        let filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node)?;
+        if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
+            return Ok(None);
+        }
+        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
+            cell_key_node.read_sub_keys(state, filter)?;
+        }
+        if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
+            cell_key_node.read_values(state, filter)?;
+        }
+        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
+            filter.is_complete = true;
+        }
+        return Ok(Some(cell_key_node));
     }
 
     /// Returns a vector of Security Descriptors for the key node.
@@ -275,7 +266,7 @@ impl CellKeyNode {
         Ok(cell_sub_key_offset_list)
     }
 
-    fn read_values<'a>(
+    fn read_values(
         self: &mut CellKeyNode,
         state: &State,
         filter: &mut Filter
@@ -290,7 +281,7 @@ impl CellKeyNode {
                         filter.is_complete = true;
                     }
                     if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                        cell_key_value.read_content(state);
+                        let warnings = cell_key_value.read_content(state);
                         self.sub_values.push(cell_key_value);
                     }
                 }
@@ -457,6 +448,7 @@ mod tests {
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
                 absolute_file_offset: 4128,
+                size: 136,
                 number_of_volatile_sub_keys: 2,
                 sub_keys_list_offset: 73256,
                 volatile_sub_keys_list_offset: -2147476312,
@@ -471,7 +463,6 @@ mod tests {
                 key_name_size: 52,
                 class_name_size: 0,
             },
-            size: 136,
             flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
             last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083).unwrap(),
             access_bits: AccessFlags::empty(),

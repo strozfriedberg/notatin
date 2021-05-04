@@ -1,11 +1,9 @@
 use nom::{
     IResult,
-    Finish,
     bytes::complete::tag,
     bytes::streaming::take,
     number::complete::{le_u32, le_i32, le_u64},
 };
-use std::convert::TryFrom;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use enum_primitive_derive::Primitive;
@@ -13,8 +11,6 @@ use num_traits::FromPrimitive;
 use winstructs::guid::Guid;
 use crate::util;
 use crate::warn::Warnings;
-use crate::filter::Filter;
-use crate::registry::Registry;
 
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
@@ -45,6 +41,7 @@ pub struct FileBaseBlock {
     pub hive_bins_data_size: u32,
     pub clustering_factor: u32, // Logical sector size of the underlying disk in bytes divided by 512
     pub filename: String, // UTF-16LE string (contains a partial file path to the primary file, or a file name of the primary file), used for debugging purposes
+    #[serde(serialize_with = "util::data_as_hex")]
     pub unk2: Vec<u8>,
     pub checksum: u32, // XOR-32 checksum of the previous 508 bytes
     pub reserved: FileBaseBlockReserved,
@@ -120,7 +117,8 @@ pub struct FileBaseBlockReserved {
     pub tm_id: Guid,
     pub signature: u32,
     pub last_reorganized_timestamp: DateTime<Utc>,
-    pub remaining: Vec<u8>//[u8; 3576],
+    #[serde(serialize_with = "util::data_as_hex")]
+    pub remaining: Vec<u8>
 }
 
 impl Eq for FileBaseBlockReserved {}
@@ -144,7 +142,7 @@ impl FileBaseBlockReserved {
         let (input, log_id) = take(16usize)(input)?;
         let (input, flags) = le_u32(input)?;
         let (input, tm_id) = take(16usize)(input)?;
-        let (input, signature) = take(4usize)(input)?;
+        let (input, signature) = le_u32(input)?;
         let (input, last_reorganized_timestamp) = le_u64(input)?;
         let (input, remaining) = take(3512usize)(input)?;
 
@@ -160,7 +158,7 @@ impl FileBaseBlockReserved {
                 log_id: Guid::from_buffer(log_id).unwrap(),
                 flags,
                 tm_id: Guid::from_buffer(tm_id).unwrap(),
-                signature: 1,// signature as u32,
+                signature,
                 last_reorganized_timestamp,
                 remaining: remaining.to_vec()
             },
@@ -180,11 +178,14 @@ pub enum FileBaseBlockReservedFlags {
 mod tests {
     use super::*;
     use nom::error::ErrorKind;
+    use nom::Finish;
     use std::{
         fs::File,
         io::{BufWriter, Write},
     };
     use crate::filter::FindPath;
+    use crate::filter::Filter;
+    use crate::registry::Registry;
 
     #[test]
     fn test_read_big_reg() {

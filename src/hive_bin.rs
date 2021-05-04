@@ -1,4 +1,3 @@
-use nom::Finish;
 use serde::Serialize;
 use crate::registry::State;
 use crate::hive_bin_header::HiveBinHeader;

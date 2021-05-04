@@ -3,15 +3,16 @@ use nom::{
     Finish,
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32},
-    multi::count
+    multi::count,
+    combinator::peek
 };
 use serde::Serialize;
+use crate::err::Error;
 use crate::registry::State;
 use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::cell_value::CellValue;
 use crate::util;
-use crate::err::Error;
 use crate::warn::{Warning, Warnings};
 
 /* List of data segments. Big data is used to reference data larger than 16344 bytes
@@ -21,10 +22,18 @@ pub struct CellBigData {
     pub size: u32,
     pub count: u16,
     pub segment_list_offset: u32, // relative to the start of the hive bin
-    pub parse_warnings: Option<Vec<Warning>>
+    pub parse_warnings: Warnings
 }
 
 impl CellBigData {
+    fn is_big_data_block_internal(input: &[u8]) -> IResult<&[u8], &[u8]> {
+        tag("db")(&input[4..])
+    }
+
+    pub fn is_big_data_block(input: &[u8]) -> bool {
+        CellBigData::is_big_data_block_internal(input).is_ok()
+    }
+
     /// Uses nom to parse a big data (db) hive bin cell.
     pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let start_pos = input.as_ptr() as usize;
@@ -42,47 +51,40 @@ impl CellBigData {
                 size: size_abs,
                 count,
                 segment_list_offset,
-                parse_warnings: None
+                parse_warnings: Warnings::new()
             },
         ))
     }
 
-    pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> (CellValue, Option<Vec<String>>) {
-        match CellBigData::from_bytes(&state.file_buffer[offset..]).finish() {
-            Ok((_, hive_bin_cell_big_data)) => {
-                match CellBigData::parse_big_data_offsets(state, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize).finish() {
-                    Ok((_, data_offsets)) => {
-                        let mut big_data_buffer: Vec<u8> = Vec::new();
-                        let mut data_size_remaining = data_size;
-                        for offset in data_offsets.iter() {
-                            if data_size_remaining > 0 {
-                                match CellBigData::parse_big_data_size(state.file_buffer, *offset as usize + state.hbin_offset).finish() {
-                                    Ok((input, size)) => {
-                                        let mut size_to_read = std::cmp::min(size.abs() as u32, data_size_remaining);
-                                        size_to_read = std::cmp::min(CellKeyValue::BIG_DATA_SIZE_THRESHOLD, size_to_read);
-                                        big_data_buffer.extend_from_slice(&input[..(size_to_read-1) as usize]);
-                                        data_size_remaining -= size_to_read;
-                                    },
-                                    Err(e) => {} //todo: add warning about missing data (error codes?)
-                                }
-                            }
-                        }
-                        return data_type.get_value_content(&big_data_buffer[..]);
-                    },
-                    Err(e) => {}
-                }
-            },
-            Err(e) => {}
+    /*pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> Result<CellValue, Error> {
+        match CellBigData::get_big_data_content_internal(state, offset, data_type, data_size) {
+            Ok(value_content_and_warning) => value_content_and_warning,
+            Err(e) =>  (CellValue::ValueNone, Some(vec![format!("Error getting big data content: {}", e.to_string())]))
         }
-        (CellValue::ValueNone,None)
+    }*/
+
+    pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> Result<CellValue, Error> {
+        let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
+        let (_, data_offsets)           = CellBigData::parse_big_data_offsets(state, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize)?;
+        let mut big_data_buffer: Vec<u8> = Vec::new();
+        let mut data_size_remaining = data_size;
+        for offset in data_offsets.iter() {
+            if data_size_remaining > 0 {
+                let (input, size) = CellBigData::parse_big_data_size(state.file_buffer, *offset as usize + state.hbin_offset)?;
+                let mut size_to_read = std::cmp::min(size.abs() as u32, data_size_remaining);
+                size_to_read = std::cmp::min(CellKeyValue::BIG_DATA_SIZE_THRESHOLD, size_to_read);
+                big_data_buffer.extend_from_slice(&input[..(size_to_read-1) as usize]);
+                data_size_remaining -= size_to_read;
+            }
+        }
+        return data_type.get_value_content(&big_data_buffer[..]);
     }
 
     fn parse_big_data_size(
         file_buffer: &[u8],
         offset: usize,
     ) -> IResult<&[u8], i32> {
-        let (input, size) = le_i32(&file_buffer[offset..])?;
-        Ok((input, size))
+        le_i32(&file_buffer[offset..])
     }
 
     fn parse_big_data_offsets<'a>(
@@ -93,7 +95,6 @@ impl CellBigData {
         let slice: &[u8] = &state.file_buffer[list_offset + (state.hbin_offset as usize)..];
         let (slice, _size) = le_u32(slice)?;
         let (_, list) = count(le_u32, segments_count as usize)(slice)?;
-
         Ok((
             slice,
             list
@@ -124,7 +125,7 @@ mod tests {
             size: 16,
             count: 2,
             segment_list_offset: 472,
-            parse_warnings: None
+            parse_warnings: Warnings::new()
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

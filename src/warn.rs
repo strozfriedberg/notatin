@@ -1,4 +1,5 @@
 use serde::Serialize;
+use crate::err::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Warnings {
@@ -12,7 +13,16 @@ impl Warnings {
         }
     }
 
-    pub fn add_warning(&mut self, warning: Warning) {
+    pub fn add_warning(&mut self, code: WarningCode, text: String) {
+        self.add_warning_internal(
+            Warning {
+                warning_code: code,
+                warning_text: text
+            }
+        );
+    }
+
+    fn add_warning_internal(&mut self, warning: Warning) {
         match &mut self.parse_warnings {
             Some(parse_warnings) => parse_warnings.push(warning),
             None => self.parse_warnings = Some(vec![warning])
@@ -34,6 +44,8 @@ impl Default for Warnings {
 pub enum WarningCode {
     WarningNom,
     WarningConversion,
+    WarningContent,
+    WarningBigDataContent,
     WarningOther
 }
 
