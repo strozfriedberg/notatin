@@ -57,7 +57,8 @@ pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
     pub key_node_flags: KeyNodeFlags,
     pub last_key_written_date_and_time: DateTime<Utc>,
-    pub access_flags: AccessFlags, // Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
+    /// Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
+    pub access_flags: AccessFlags,
     pub parent_key_offset: i32, // Offset of a parent key node in bytes, relative from the start of the hive bins data (this field has no meaning on a disk for a root key node)
     pub number_of_sub_keys: u32,
     pub number_of_key_values: u32,
@@ -69,22 +70,6 @@ pub struct CellKeyNode {
     pub sub_values: Vec<CellKeyValue>,
     pub parse_warnings: Warnings
 }
-
-/*impl Iterator for CellKeyNode {
-    // The return type is `Option<T>`:
-    //     * When the `Iterator` is finished, `None` is returned.
-    //     * Otherwise, the next value is wrapped in `Some` and returned.
-    fn next(&mut self) -> Option<CellKeyNode> {
-        let new_next = self.curr + self.next;
-
-        self.curr = self.next;
-        self.next = new_next;
-
-        // Since there's no endpoint to a Fibonacci sequence, the `Iterator`
-        // will never return `None`, and `Some` is always returned.
-        Some(self.curr)
-    }
-}*/
 
 impl Default for CellKeyNode {
     fn default() -> Self {
@@ -274,6 +259,28 @@ impl CellKeyNode {
         }
         Ok(())
     }
+
+    /// Counts all subkeys and values of the
+    pub fn count_all_keys_and_values(
+        &self
+    ) -> (usize, usize) {
+        self.count_all_keys_and_values_internal(0, 0)
+    }
+
+    fn count_all_keys_and_values_internal(
+        &self,
+        total_keys: usize,
+        total_values: usize
+    ) -> (usize, usize) {
+        let mut total_keys = total_keys + self.sub_keys.len();
+        let mut total_values = total_values + self.sub_values.len();
+        for key in self.sub_keys.iter() {
+            let (k, v) = key.count_all_keys_and_values_internal(total_keys, total_values);
+            total_keys = k;
+            total_values = v;
+        }
+        (total_keys, total_values)
+    }
 }
 
 bitflags! {
@@ -367,7 +374,7 @@ mod tests {
             file_buffer: &f[..]
         };
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
-        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().unwrap(), 0, 0);
+        let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
             (3, 1),
             (keys, values)
@@ -386,7 +393,7 @@ mod tests {
         };
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
 
-        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().unwrap(), 0, 0);
+        let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
             (44, 304),
             (keys, values)
@@ -403,7 +410,7 @@ mod tests {
             file_buffer: &f[..]
         };
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut Filter::new());
-        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().unwrap(), 0, 0);
+        let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
             (2287, 5470),
             (keys, values)

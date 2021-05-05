@@ -52,14 +52,14 @@ impl CellBigData {
 
     pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
         let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
-        let (_, data_offsets)           = CellBigData::parse_big_data_offsets(state, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize)?;
+        let (_, data_offsets)           = hive_bin_cell_big_data.parse_big_data_offsets(state)?;
         let mut big_data_buffer: Vec<u8> = Vec::new();
         let mut data_size_remaining = data_size;
         for offset in data_offsets.iter() {
             if data_size_remaining > 0 {
-                let (input, size) = CellBigData::parse_big_data_size(state.file_buffer, *offset as usize + state.hbin_offset)?;
-                let mut size_to_read = std::cmp::min(size.abs() as u32, data_size_remaining);
-                size_to_read = std::cmp::min(CellKeyValue::BIG_DATA_SIZE_THRESHOLD, size_to_read);
+                let (input, size) = CellBigData::parse_big_data_size(state, *offset)?;
+                let size_to_read = std::cmp::min(size.abs() as u32,
+                                                 std::cmp::min(data_size_remaining, CellKeyValue::BIG_DATA_SIZE_THRESHOLD));
                 big_data_buffer.extend_from_slice(&input[..(size_to_read-1) as usize]);
                 data_size_remaining -= size_to_read;
             }
@@ -67,23 +67,21 @@ impl CellBigData {
         data_type.get_value_content(&big_data_buffer[..], parse_warnings)
     }
 
-    fn parse_big_data_size(
-        file_buffer: &[u8],
-        offset: usize,
-    ) -> IResult<&[u8], i32> {
-        le_i32(&file_buffer[offset..])
+    fn parse_big_data_size<'a>(
+        state: &'a State,
+        offset: u32,
+    ) -> IResult<&'a [u8], i32> {
+        le_i32(&state.file_buffer[state.hbin_offset + offset as usize..])
     }
 
     fn parse_big_data_offsets<'a>(
-        state: &'a State,
-        segments_count: u16,
-        list_offset: usize,
+        &self,
+        state: &'a State
     ) -> IResult<&'a [u8], Vec<u32>> {
-        let slice: &[u8] = &state.file_buffer[list_offset + (state.hbin_offset as usize)..];
-        let (slice, _size) = le_u32(slice)?;
-        let (_, list) = count(le_u32, segments_count as usize)(slice)?;
+        let (input, _size) = le_u32(&state.file_buffer[state.hbin_offset + self.segment_list_offset as usize..])?;
+        let (_, list) = count(le_u32, self.count as usize)(input)?;
         Ok((
-            slice,
+            input,
             list
         ))
     }

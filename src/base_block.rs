@@ -16,7 +16,7 @@ use crate::impl_enum_from_value;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileType {
-    Normal = 0,
+    Primary = 0,
     TransactionLog = 1,
     Unknown = 0x0fffffff
 }
@@ -30,22 +30,30 @@ pub enum FileFormat {
 }
 impl_enum_from_value!{ FileFormat }
 
+// Structure comments adapted from https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block
+
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct FileBaseBlock {
+    /// This number is incremented by 1 in the beginning of a write operation on the primary file.
     pub primary_sequence_number: u32,
+    /// This number is incremented by 1 at the end of a write operation on the primary file. The primary sequence number and the secondary sequence number should be equal after a successful write operation.
     pub secondary_sequence_number: u32,
     pub last_modification_date_and_time: DateTime<Utc>,
     pub major_version: u32,
     pub minor_version: u32,
     pub file_type: FileType,
     pub format: FileFormat,
+    /// Offset of the root cell in bytes, relative from the start of the hive bin's data.
     pub root_cell_offset: i32,
     pub hive_bins_data_size: u32,
-    pub clustering_factor: u32, // Logical sector size of the underlying disk in bytes divided by 512
-    pub filename: String, // UTF-16LE string (contains a partial file path to the primary file, or a file name of the primary file), used for debugging purposes
+    /// Logical sector size of the underlying disk in bytes divided by 512.
+    pub clustering_factor: u32,
+    /// UTF-16LE string (contains a partial file path to the primary file, or a file name of the primary file).
+    pub filename: String,
     #[serde(serialize_with = "util::data_as_hex")]
     pub unk2: Vec<u8>,
-    pub checksum: u32, // XOR-32 checksum of the previous 508 bytes
+    /// XOR-32 checksum of the previous 508 bytes
+    pub checksum: u32,
     pub reserved: FileBaseBlockReserved,
     pub boot_type: u32,
     pub boot_recover: u32,
@@ -53,7 +61,7 @@ pub struct FileBaseBlock {
 }
 
 impl FileBaseBlock {
-    /// Uses nom to parse the registry file header.
+    /// Parses the registry file header.
     pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, _signature) = tag("regf")(input)?;
         let (input, primary_sequence_number) = le_u32(input)?;
@@ -158,8 +166,11 @@ impl FileBaseBlockReserved {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileBaseBlockReservedFlags {
-    KtmLockedHive = 1, // KTM locked the hive (there are pending or anticipated transactions)
-    Ktm2 = 2, // The hive has been defragmented (all its pages are dirty therefore) and it is being written to a disk (Windows 8 and Windows Server 2012 only, this flag is used to speed up hive recovery by reading a transaction log file instead of a primary file); this hive supports the layered keys feature (starting from Insider Preview builds of Windows 10 "Redstone 1")
+    None = 0,
+    /// KTM locked the hive (there are pending or anticipated transactions)
+    KtmLockedHive = 1,
+    /// The hive has been defragmented (all its pages are dirty therefore) and it is being written to a disk (Windows 8 and Windows Server 2012 only, this flag is used to speed up hive recovery by reading a transaction log file instead of a primary file); this hive supports the layered keys feature (starting from Insider Preview builds of Windows 10 "Redstone 1")
+    Ktm2 = 2,
     Unknown = 0x0fffffff
 }
 impl_enum_from_value!{ FileBaseBlockReservedFlags }
@@ -175,14 +186,13 @@ mod tests {
     };
     use crate::filter::Filter;
     use crate::registry::Registry;
-    use crate::filter::FindPath;
 
     #[test]
     fn test_read_big_reg() {
         let f = std::fs::read("test_data/SOFTWARE_1_nfury").unwrap();
 
         let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
+        let (keys, values) = ret.unwrap().hive_bin_root.unwrap().root.count_all_keys_and_values();
         assert_eq!(
             (177876, 293276),
             (keys, values)
@@ -194,7 +204,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
         let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-        let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
+        let (keys, values) = ret.unwrap().hive_bin_root.unwrap().root.count_all_keys_and_values();
         assert_eq!(
             (2287, 5470),
             (keys, values)
@@ -215,7 +225,7 @@ mod tests {
             last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460),
             major_version: 1,
             minor_version: 3,
-            file_type: FileType::Normal,
+            file_type: FileType::Primary,
             format: FileFormat::DirectMemoryLoad,
             root_cell_offset: 32,
             hive_bins_data_size: 1060864,

@@ -10,7 +10,6 @@ use winstructs::{
 };
 use nom::IResult;
 use crate::warn::{Warnings, WarningCode};
-use crate::cell_key_node;
 
 const SIZE_OF_UTF16_CHAR: usize = mem::size_of::<u16>();
 
@@ -81,21 +80,6 @@ pub fn parser_eat_remaining(
     take!(input, cell_size as usize - bytes_consumed)
 }
 
-pub fn count_all_keys_and_values(
-    key_node: &cell_key_node::CellKeyNode,
-    total_keys: usize,
-    total_values: usize
-) -> (usize, usize) {
-    let mut total_keys = total_keys + key_node.sub_keys.len();
-    let mut total_values = total_values + key_node.sub_values.len();
-    for key in key_node.sub_keys.iter() {
-        let (k, v) = count_all_keys_and_values(key, total_keys, total_values);
-        total_keys = k;
-        total_values = v;
-    }
-    (total_keys, total_values)
-}
-
 /// Converts a u64 filetime to a DateTime<Utc>
 pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
     WinTimestamp::new(&filetime.to_le_bytes())
@@ -112,58 +96,6 @@ pub fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Gui
                 Guid::from_buffer(&[0; 16])
             }
         ).expect("Error handled in or_else")
-}
-
-/// Via https://github.com/omerbenamram/mft
-#[macro_export]
-macro_rules! impl_serialize_for_bitflags {
-    ($flags: ident) => {
-        impl serde::ser::Serialize for $flags {
-            fn serialize<S>(&self, serializer: S) -> ::std::result::Result<S::Ok, S::Error>
-            where
-                S: serde::ser::Serializer,
-            {
-                serializer.serialize_str(&format!("{:?}", &self))
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! impl_flags_from_bits {
-    ($bitflag_type: ident, $var_type: ident) => {
-        impl $bitflag_type {
-            fn from_bits_checked(flags: $var_type, parse_warnings: &mut Warnings) -> Self {
-                let flags_mapped = $bitflag_type::from_bits_truncate(flags);
-                if flags != flags_mapped.bits() {
-                    fn f() {}
-                    fn type_name_of<T>(_: T) -> &'static str {
-                        std::any::type_name::<T>()
-                    }
-                    let name = type_name_of(f);
-                    const FOOTER_LEN: usize = "::f".len();
-                    let fn_name = &name[..name.len() - FOOTER_LEN];
-                    parse_warnings.add_warning(WarningCode::WarningUnrecognizedBitflag, &format!("{}: {:#X}", fn_name, flags));
-                }
-                return flags_mapped;
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! impl_enum_from_value {
-    ($enum_type: ident) => {
-        impl $enum_type {
-            pub fn from_value(value: u32, parse_warnings: &mut Warnings) -> Self {
-                $enum_type::from_u32(value)
-                .unwrap_or_else(|| {
-                    parse_warnings.add_warning(WarningCode::WarningConversion, &"Unrecognized $enum_type value");
-                    $enum_type::Unknown
-                })
-            }
-        }
-    }
 }
 
 pub fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S::Ok, S::Error> {
@@ -185,7 +117,6 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::warn::Warning;
-    use bitflags::bitflags;
 
     #[test]
     fn test_get_date_time_from_filetime() {
@@ -258,34 +189,6 @@ mod tests {
             text: "Unit test: unpaired surrogate found: dbff".to_string()
         };
         assert_eq!(&vec![expected_warning], parse_warnings.get_warnings().unwrap(), "1 warning expected");
-    }
-
-    #[test]
-    fn test_from_bits_checked() {
-        bitflags! {
-            pub struct TestFlags: u16 {
-                const TEST_1 = 0x0001;
-                const TEST_2 = 0x0002;
-                const TEST_3 = 0x0003;
-            }
-        }
-        impl_flags_from_bits! { TestFlags, u16 }
-
-        let flag_bits = 0x0001 | 0x0003;
-        let mut parse_warnings = Warnings::default();
-        let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
-        assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_3, flags, "Valid from_bits_checked conversion");
-        assert_eq!(None, parse_warnings.get_warnings(), "Valid from_bits_checked conversion - parse_warnings should be empty");
-
-        let flag_bits = 0xffff;
-        let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
-        assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_2 | TestFlags::TEST_3, flags, "Unmapped bits from_bits_checked conversion");
-        assert_eq!(Some(&vec![
-            Warning {
-                code: WarningCode::WarningUnrecognizedBitflag,
-                text: "rust_parser_2::util::tests::test_from_bits_checked::TestFlags::from_bits_checked: 0xFFFF".to_string()
-            }
-        ]), parse_warnings.get_warnings(), "Unmapped bits from_bits_checked conversion - parse_warnings should contain a warning");
     }
 
     #[test]

@@ -25,5 +25,6 @@ pub mod sub_key_list_lh;
 pub mod sub_key_list_li;
 pub mod sub_key_list_ri;
 pub mod warn;
+pub(crate) mod macros;
 pub(crate) mod tests;
 pub(crate) mod util;
