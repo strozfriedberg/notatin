@@ -158,7 +158,7 @@ impl CellKeyNode {
             key_name = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
         }
         let access_flags = AccessFlags::from_bits_checked(access_bits, &mut parse_warnings);
-        let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time, &mut parse_warnings);
+        let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time);
 
         let size_abs =  size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
@@ -223,7 +223,7 @@ impl CellKeyNode {
             cell_key_node.read_values(state, filter)?;
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-            filter.is_complete = true;
+            filter.set_complete(true);
         }
         Ok(Some(cell_key_node))
     }
@@ -234,10 +234,7 @@ impl CellKeyNode {
         file_buffer: &[u8],
         hbin_offset: u32
     ) -> Result<Vec<SecurityDescriptor>, Error> {
-        match cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset, hbin_offset) {
-            Ok(security_descriptors) => Ok(security_descriptors),
-            Err(e) => Err(e)
-        }
+        cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset, hbin_offset)
     }
 
     fn read_sub_keys(
@@ -247,20 +244,15 @@ impl CellKeyNode {
     ) -> Result<Vec<u32>, Error> {
         let (_, cell_sub_key_offset_list) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset)?;
         for val in cell_sub_key_offset_list.iter() {
-            match CellKeyNode::read(state, &state.file_buffer[(*val as usize)..], self.path.clone(), filter) {
-                Ok(key_node) =>
-                    match key_node {
-                        Some(kn) =>
-                        {
-                            self.sub_keys.push(kn);
-                        },
-                        None => continue
-                    },
-                Err(e) => return Err(Error::Any {
-                    detail: format!("read_sub_keys: hive_bin_header::read_cell_key_node {:#?}", e)
-                })
-            };
-            if filter.is_complete {
+            CellKeyNode::read(
+                state,
+                &state.file_buffer[(*val as usize)..],
+                self.path.clone(),
+                filter
+            )?
+            .map(|kn| self.sub_keys.push(kn));
+
+            if filter.is_complete() {
                 break;
             }
         }
@@ -275,20 +267,13 @@ impl CellKeyNode {
         let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset as usize)?;
         for val in key_values.iter() {
             let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset)..])?;
-            let res_iterate_flags = filter.check_cell(true, &cell_key_value);
-            match res_iterate_flags {
-                Ok(iterate_flags) => {
-                    if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-                        filter.is_complete = true;
-                    }
-                    if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                        cell_key_value.read_content(state);
-                        self.sub_values.push(cell_key_value);
-                    }
-                }
-                Err(e) => return Err(Error::Any {
-                    detail: format!("read_values: filter.check_cell {:#?}", e)
-                })
+            let iterate_flags = filter.check_cell(true, &cell_key_value)?;
+            if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
+                filter.set_complete(true);
+            }
+            if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
+                cell_key_value.read_content(state);
+                self.sub_values.push(cell_key_value);
             }
         }
         Ok(())
@@ -380,10 +365,7 @@ mod tests {
     fn test_cell_key_node_count_all_keys_and_values_with_kv_filter() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
-        let mut filter = Filter {
-            find_path: Some(FindPath::new("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
-            is_complete: false
-        };
+        let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel/Accessibility/HighContrast", "Flags"));
         let state = State {
             file_start_pos: f.as_ptr() as usize,
             hbin_offset: 4096,
@@ -401,10 +383,7 @@ mod tests {
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
-        let mut filter = Filter {
-            find_path: Some(FindPath::new("Software/Microsoft/Office/14.0/Common", None)),
-            is_complete: false
-        };
+        let mut filter = Filter::from_path(FindPath::from_key("Software/Microsoft/Office/14.0/Common"));
         let state = State {
             file_start_pos: f.as_ptr() as usize,
             hbin_offset: 4096,
@@ -428,7 +407,7 @@ mod tests {
             hbin_offset: 4096,
             file_buffer: &f[..]
         };
-        let ret = CellKeyNode::read(&state, slice, String::new(), &mut Filter { ..Default::default() });
+        let ret = CellKeyNode::read(&state, slice, String::new(), &mut Filter::new());
         let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().unwrap(), 0, 0);
         assert_eq!(
             (2287, 5470),
@@ -466,7 +445,7 @@ mod tests {
                 class_name_size: 0,
             },
             key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
-            last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083, &mut Warnings::new()),
+            last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083),
             access_flags: AccessFlags::empty(),
             parent_key_offset: 1536,
             number_of_sub_keys: 11,

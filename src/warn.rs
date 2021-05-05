@@ -33,12 +33,6 @@ impl Warnings {
     }
 }
 
-impl Default for Warnings {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum WarningCode {
     WarningNom,

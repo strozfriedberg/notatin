@@ -3,8 +3,10 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u32, le_u64}
 };
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use crate::registry::State;
+use crate::util;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
@@ -13,7 +15,7 @@ pub struct HiveBinHeader {
     pub size: u32, // Size of the hive bin
     pub unknown1: u32, // 0 most of the time, can contain remnant data
     pub unknown2: u32, // 0 most of the time, can contain remnant data
-    pub timestamp: u64, // Only the root (first) hive bin seems to contain a valid FILETIME
+    pub timestamp: DateTime<Utc>, // Only the root (first) hive bin seems to contain a valid FILETIME
     pub unknown4: u32, // Contains number of bytes
 }
 
@@ -34,7 +36,7 @@ impl HiveBinHeader {
             size,
             unknown1,
             unknown2,
-            timestamp,
+            timestamp: util::get_date_time_from_filetime(timestamp),
             unknown4
         };
 
@@ -65,7 +67,7 @@ mod tests {
             size: 4096,
             unknown1: 0,
             unknown2: 0,
-            timestamp: 129782121007374460,
+            timestamp: util::get_date_time_from_filetime(129782121007374460),
             unknown4: 0
         };
 

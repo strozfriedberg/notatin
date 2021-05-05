@@ -1,9 +1,7 @@
 use std::mem;
-use std::io::Cursor;
 use std::char::REPLACEMENT_CHARACTER;
 use std::fmt::Write;
 use std::string::FromUtf8Error;
-use std::time::SystemTime;
 use serde::ser;
 use chrono::{DateTime, Utc};
 use winstructs::{
@@ -82,26 +80,22 @@ pub fn count_all_keys_and_values(
     (total_keys, total_values)
 }
 
-/// Converts a u64 filetime to a DateTime<Utc>; upon error, logs error to parse_warnings and returns UNIX_EPOCH
-pub fn get_date_time_from_filetime(filetime: u64, parse_warnings: &mut Warnings) -> DateTime<Utc> {
-    match WinTimestamp::from_reader(&mut Cursor::new(filetime.to_le_bytes())) {
-        Ok(win_timestamp) => win_timestamp.to_datetime(),
-        Err(e) => {
-            parse_warnings.add_warning(WarningCode::WarningConversion, e.to_string());
-            DateTime::from(SystemTime::UNIX_EPOCH)
-        }
-    }
+/// Converts a u64 filetime to a DateTime<Utc>
+pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
+    WinTimestamp::new(&filetime.to_le_bytes())
+        .expect("We have the proper size buffer since we are converting from a u64")
+        .to_datetime()
 }
 
 /// Converts a buffer to a guid; upon error, logs error to parse_warnings and returns an null guid
 pub fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Guid {
-    match Guid::from_buffer(buffer) {
-        Ok(guid) => guid,
-        Err(e) => {
-            parse_warnings.add_warning(WarningCode::WarningConversion, e.to_string());
-            Guid::from_buffer(&[0; 16]).unwrap()
-        }
-    }
+    Guid::from_buffer(buffer)
+        .or_else(
+            |err| {
+                parse_warnings.add_warning(WarningCode::WarningConversion, err.to_string());
+                Guid::from_buffer(&[0; 16])
+            }
+        ).expect("Error handled in or_else")
 }
 
 /// Via https://github.com/omerbenamram/mft
@@ -160,10 +154,11 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::warn::Warning;
+    use bitflags::bitflags;
 
     #[test]
     fn test_get_date_time_from_filetime() {
-       assert_eq!(1333727545, get_date_time_from_filetime(129782011451468083, &mut Warnings::new()).timestamp());
+        assert_eq!(1333727545, get_date_time_from_filetime(129782011451468083).timestamp());
     }
 
     #[test]
@@ -178,7 +173,7 @@ mod tests {
         assert_eq!(None, parse_warnings.get_warnings());
 
         let err_guid = get_guid_from_buffer(&raw_guid[..14], &mut parse_warnings);
-        assert_eq!(format!("{}", err_guid), "00000000-0000-0000-0000-000000000000", "Return Guid for error case is incorrect");
+        assert_eq!(format!("{}", err_guid), "00000000-0000-0000-0000-000000000000", "Return Guid for error case");
         let expected_warning = Warning {
             code: WarningCode::WarningConversion,
             text: "An I/O error has occurred".to_string()
@@ -209,4 +204,36 @@ mod tests {
         let expected_strings = vec!["Microsoft Enhanced Cryptographic Provider v1.0", "Microsoft Base Cryptographic Provider v1.0"];
         assert_eq!(expected_strings, strings);
     }
+
+    #[test]
+    fn test_from_bits_checked() {
+        bitflags! {
+            pub struct TestFlags: u16 {
+                const TEST_1 = 0x0001;
+                const TEST_2 = 0x0002;
+                const TEST_3 = 0x0003;
+            }
+        }
+        impl_flags_from_bits! { TestFlags, u16 }
+
+        let flag_bits = 0x0001 | 0x0003;
+        let mut parse_warnings = Warnings::new();
+        let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
+        assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_3, flags, "Valid from_bits_checked conversion");
+        assert_eq!(None, parse_warnings.get_warnings(), "Valid from_bits_checked conversion - parse_warnings should be empty");
+
+        let flag_bits = 0xffff;
+        let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
+        assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_2 | TestFlags::TEST_3, flags, "Unmapped bits from_bits_checked conversion");
+        assert_eq!(Some(&vec![
+            Warning {
+                code: WarningCode::WarningUnrecognizedBitflag,
+                text: "rust_parser_2::util::tests::test_from_bits_checked::TestFlags::from_bits_checked: 0xFFFF".to_string()
+            }
+        ]), parse_warnings.get_warnings(), "Unmapped bits from_bits_checked conversion - parse_warnings should contain a warning");
+
+
+    }
+
+
 }

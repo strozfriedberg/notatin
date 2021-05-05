@@ -45,8 +45,7 @@ pub struct FileBaseBlock {
     pub checksum: u32, // XOR-32 checksum of the previous 508 bytes
     pub reserved: FileBaseBlockReserved,
     pub boot_type: u32,
-    pub boot_recover: u32,
-    pub parse_warnings: Warnings
+    pub boot_recover: u32
 }
 
 impl FileBaseBlock {
@@ -81,14 +80,12 @@ impl FileBaseBlock {
             None => FileFormat::Unknown
         };
 
-        let mut parse_warnings = Warnings::new();
-        let modification_date = util::get_date_time_from_filetime(last_modification_date_and_time, &mut parse_warnings);
         Ok((
             input,
             FileBaseBlock {
                 primary_sequence_number,
                 secondary_sequence_number,
-                last_modification_date_and_time: modification_date,
+                last_modification_date_and_time: util::get_date_time_from_filetime(last_modification_date_and_time),
                 major_version,
                 minor_version,
                 file_type,
@@ -101,8 +98,7 @@ impl FileBaseBlock {
                 checksum,
                 reserved,
                 boot_type,
-                boot_recover,
-                parse_warnings
+                boot_recover
             },
         ))
     }
@@ -152,7 +148,7 @@ impl FileBaseBlockReserved {
             Some(flags) => flags
         };
         let mut parse_warnings = Warnings::new();
-        let last_reorganized_timestamp = util::get_date_time_from_filetime(last_reorganized_timestamp, &mut parse_warnings);
+        let last_reorganized_timestamp = util::get_date_time_from_filetime(last_reorganized_timestamp);
         let rm_id = util::get_guid_from_buffer(rm_id, &mut parse_warnings);
         let log_id = util::get_guid_from_buffer(log_id, &mut parse_warnings);
         let tm_id = util::get_guid_from_buffer(tm_id, &mut parse_warnings);
@@ -191,14 +187,13 @@ mod tests {
     };
     use crate::filter::Filter;
     use crate::registry::Registry;
+    use crate::filter::FindPath;
 
     #[test]
     fn test_read_big_reg() {
         let f = std::fs::read("test_data/SOFTWARE_1_nfury").unwrap();
-        let mut filter = Filter {
-            ..Default::default()
-        };
-        let ret = Registry::from_bytes(&f[..], &mut filter);
+
+        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
         let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
         assert_eq!(
             (177876, 293276),
@@ -210,10 +205,7 @@ mod tests {
     fn test_read_small_reg() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
-        let mut filter = Filter {
-            ..Default::default()
-        };
-        let ret = Registry::from_bytes(&f[..], &mut filter);
+        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
         let (keys, values) = util::count_all_keys_and_values(&ret.unwrap().hive_bin_root.unwrap().root, 0, 0);
         assert_eq!(
             (2287, 5470),
@@ -232,7 +224,7 @@ mod tests {
         let expected_header = FileBaseBlock {
             primary_sequence_number: 10407,
             secondary_sequence_number: 10407,
-            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460, &mut Warnings::new()),
+            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460),
             major_version: 1,
             minor_version: 3,
             file_type: FileType::Normal,
@@ -245,8 +237,7 @@ mod tests {
             checksum: 738555936,
             reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,
             boot_type: 0,
-            boot_recover: 0,
-            parse_warnings: Warnings::new()
+            boot_recover: 0
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_header));
@@ -267,12 +258,20 @@ mod tests {
     #[test]
     fn dump_registry() {
         let f = std::fs::read("test_data/FuseHive").unwrap();
-        let mut filter = Filter {
-            ..Default::default()
-        };
-        let ret = Registry::from_bytes(&f[..], &mut filter);
+        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
 
         let write_file = File::create("out.txt").unwrap();
+        let mut writer = BufWriter::new(&write_file);
+        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
+    }
+
+    #[test]
+    fn dump_registry2() {
+        let f = std::fs::read("test_data/SOFTWARE_lznt1").unwrap();
+        let mut filter = Filter::from_path(FindPath::from_key("Microsoft/Windows NT/CurrentVersion/AppCompatFlags/CIT/System"));
+        let ret = Registry::from_bytes(&f[..], &mut filter);
+
+        let write_file = File::create("out_SOFTWARE_lznt1.txt").unwrap();
         let mut writer = BufWriter::new(&write_file);
         write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
     }

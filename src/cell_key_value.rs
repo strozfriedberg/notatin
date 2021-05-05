@@ -350,7 +350,7 @@ mod tests {
             hbin_offset: 4096,
             file_buffer: &f[..]
         };
-        let key_node = CellKeyNode::read(&state, &f[4416..], String::new(), &mut Filter {..Default::default() }).unwrap().unwrap();
+        let key_node = CellKeyNode::read(&state, &f[4416..], String::new(), &mut Filter::new()).unwrap().unwrap();
 
         assert_eq!(
             "v".to_string(),

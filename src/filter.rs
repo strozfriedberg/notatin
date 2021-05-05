@@ -8,12 +8,34 @@ use crate::impl_serialize_for_bitflags;
 /// Execution will short-circuit for applicable filters (is_complete = true)
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Filter {
-    pub find_path: Option<FindPath>,
-    pub is_complete: bool
+    find_path: Option<FindPath>,
+    is_complete: bool
 }
 
 impl Filter {
-    pub fn check_cell(
+    pub fn new() -> Self {
+        Filter {
+            find_path: None,
+            is_complete: false
+        }
+    }
+
+    pub fn from_path(find_path: FindPath) -> Self {
+        Filter {
+            find_path: Some(find_path),
+            is_complete: false
+        }
+    }
+
+    pub(crate) fn is_complete(self: &Self) -> bool {
+        self.is_complete
+    }
+
+    pub(crate) fn set_complete(self: &mut Self, is_complete: bool) {
+        self.is_complete = is_complete;
+    }
+
+    pub(crate) fn check_cell(
         self: &mut Filter,
         is_first_iteration: bool,
         cell: &dyn hive_bin_cell::Cell
@@ -26,7 +48,7 @@ impl Filter {
         }
     }
 
-    pub fn handle_find_path(
+    pub(crate) fn handle_find_path(
         self: &mut Filter,
         is_first_iteration: bool,
         cell: &dyn hive_bin_cell::Cell
@@ -76,16 +98,18 @@ pub struct FindPath {
 }
 
 impl FindPath {
-    /// Calling ```new``` ensures that search terms are compared case-insensitively
-    pub fn new(key_path: &str, value: Option<String>) -> FindPath {
-        let val_lower: Option<String>;
-        match value {
-            Some(val) => val_lower = Some(val.to_ascii_lowercase()),
-            None => val_lower = None
-        }
+    pub fn from_key(key_path: &str) -> FindPath {
+        FindPath::from_key_value_internal(key_path, None)
+    }
+
+    pub fn from_key_value(key_path: &str, value: &str) -> FindPath {
+        FindPath::from_key_value_internal(key_path, Some(value.to_string()))
+    }
+
+    fn from_key_value_internal(key_path: &str, value: Option<String>) -> FindPath {
         FindPath {
             key_path: PathBuf::from(key_path.to_ascii_lowercase()),
-            value: val_lower
+            value: value.map_or(None, |v| Some(v.to_ascii_lowercase()))
         }
     }
 
@@ -129,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_find_path_build() {
-        let find_path = FindPath::new("First segment/secondSEGMENT", Some(String::from("valueName")));
+        let find_path = FindPath::from_key_value("First segment/secondSEGMENT", "valueName");
         assert_eq!(find_path.key_path, PathBuf::from("first segment/secondsegment"));
         assert_eq!(find_path.value, Some(String::from("valuename")));
     }
@@ -160,7 +184,7 @@ mod tests {
     #[test]
     fn test_check_cell_match_key() {
         let filter = Filter {
-            find_path: Some(FindPath::new("HighContrast", Some(String::from("Flags")))),
+            find_path: Some(FindPath::from_key_value("HighContrast", "Flags")),
             is_complete: false
         };
         let mut key_node = cell_key_node::CellKeyNode {
@@ -184,10 +208,7 @@ mod tests {
 
     #[test]
     fn test_check_cell_match_value() {
-        let filter = Filter {
-            find_path: Some(FindPath::new("", Some(String::from("Flags")))),
-            is_complete: false
-        };
+        let filter = Filter::from_path(FindPath::from_key_value("", "Flags"));
 
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {

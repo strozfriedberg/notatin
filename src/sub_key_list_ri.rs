@@ -29,7 +29,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListRi {
 
 impl SubKeyListRi {
     /// Uses nom to parse an ri sub key list (ri) hive bin cell.
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let start_pos = input.as_ptr() as usize;
         let (input, size)         = le_i32(input)?;
         let (input, _signature)   = tag("ri")(input)?;
@@ -49,16 +49,11 @@ impl SubKeyListRi {
         ))
     }
 
-    pub fn parse_offsets<'a>(&self, state: &'a State) -> IResult<&'a [u8], Vec<u32>> {
+    pub(crate) fn parse_offsets<'a>(&self, state: &'a State) -> IResult<&'a [u8], Vec<u32>> {
         let mut list: Vec<u32> = Vec::new();
         for item in self.items.iter() {
-            let nom_ret_sub_list = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset);
-            match nom_ret_sub_list {
-                Ok((_, mut sub_list)) => {
-                    list.append(&mut sub_list);
-                },
-                Err(e) => { return Err(e) }
-            }
+            let (_, mut sub_list) = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset)?;
+            list.append(&mut sub_list);
         }
         Ok((state.file_buffer, list))
     }

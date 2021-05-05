@@ -7,7 +7,7 @@ mod tests {
     #[test]
     fn python_registry_test_issue22() {
         let f = std::fs::read("test_data/issue22.hive").unwrap();
-        let res_registry = Registry::from_bytes(&f[0..], &mut Filter { ..Default::default() });
+        let res_registry = Registry::from_bytes(&f[0..], &mut Filter::new());
         let registry = res_registry.unwrap();
         let reg_val = registry.hive_bin_root.unwrap().root.sub_values.into_iter().find(|val| val.value_name == "TimeZoneKeyName");
         let expected_value_content = CellValue::ValueString("W. Europe Standard Time".to_string());
