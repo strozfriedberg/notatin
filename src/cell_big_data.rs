@@ -24,12 +24,8 @@ pub struct CellBigData {
 }
 
 impl CellBigData {
-    fn is_big_data_block_internal(input: &[u8]) -> IResult<&[u8], &[u8]> {
-        tag("db")(&input[4..])
-    }
-
     pub fn is_big_data_block(input: &[u8]) -> bool {
-        CellBigData::is_big_data_block_internal(input).is_ok()
+        tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(&input[4..]).map_or(false, |_| true)
     }
 
     /// Uses nom to parse a big data (db) hive bin cell.
@@ -49,7 +45,7 @@ impl CellBigData {
                 size: size_abs,
                 count,
                 segment_list_offset,
-                parse_warnings: Warnings::new()
+                parse_warnings: Warnings::default()
             },
         ))
     }
@@ -116,7 +112,7 @@ mod tests {
             size: 16,
             count: 2,
             segment_list_offset: 472,
-            parse_warnings: Warnings::new()
+            parse_warnings: Warnings::default()
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

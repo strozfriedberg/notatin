@@ -27,11 +27,11 @@ impl Filter {
         }
     }
 
-    pub(crate) fn is_complete(self: &Self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         self.is_complete
     }
 
-    pub(crate) fn set_complete(self: &mut Self, is_complete: bool) {
+    pub(crate) fn set_complete(&mut self, is_complete: bool) {
         self.is_complete = is_complete;
     }
 
@@ -109,7 +109,7 @@ impl FindPath {
     fn from_key_value_internal(key_path: &str, value: Option<String>) -> FindPath {
         FindPath {
             key_path: PathBuf::from(key_path.to_ascii_lowercase()),
-            value: value.map_or(None, |v| Some(v.to_ascii_lowercase()))
+            value: value.map(|v| v.to_ascii_lowercase())
         }
     }
 
@@ -223,7 +223,7 @@ mod tests {
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
             value_content: None,
-            parse_warnings: Warnings::new()
+            parse_warnings: Warnings::default()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
             filter.clone().check_cell(false, &key_value).unwrap(),

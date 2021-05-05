@@ -6,17 +6,17 @@ pub struct Warnings {
 }
 
 impl Warnings {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Warnings {
             parse_warnings: None
         }
     }
 
-    pub(crate) fn add_warning(&mut self, code: WarningCode, text: String) {
+    pub(crate) fn add_warning<T: ToString>(&mut self, code: WarningCode, text: &T) {
         self.add_warning_internal(
             Warning {
                 code,
-                text
+                text: text.to_string()
             }
         );
     }
@@ -30,6 +30,12 @@ impl Warnings {
 
     pub fn get_warnings(&self) -> Option<&Vec<Warning>> {
         self.parse_warnings.as_ref()
+    }
+}
+
+impl Default for Warnings {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

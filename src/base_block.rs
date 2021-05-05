@@ -10,22 +10,25 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use winstructs::guid::Guid;
 use crate::util;
-use crate::warn::Warnings;
+use crate::warn::{WarningCode, Warnings};
+use crate::impl_enum_from_value;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileType {
     Normal = 0,
     TransactionLog = 1,
-    Unknown = 0x0fffffff // todo: log warning
+    Unknown = 0x0fffffff
 }
+impl_enum_from_value!{ FileType }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileFormat {
     DirectMemoryLoad = 1,
-    Unknown = 0x0fffffff // todo: log warning
+    Unknown = 0x0fffffff
 }
+impl_enum_from_value!{ FileFormat }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct FileBaseBlock {
@@ -45,7 +48,8 @@ pub struct FileBaseBlock {
     pub checksum: u32, // XOR-32 checksum of the previous 508 bytes
     pub reserved: FileBaseBlockReserved,
     pub boot_type: u32,
-    pub boot_recover: u32
+    pub boot_recover: u32,
+    pub parse_warnings: Warnings
 }
 
 impl FileBaseBlock {
@@ -69,17 +73,7 @@ impl FileBaseBlock {
         let (input, boot_type) = le_u32(input)?;
         let (input, boot_recover) = le_u32(input)?;
 
-        let filename = util::read_utf16_le_string(filename_bytes, 64);
-
-        let file_type = match FileType::from_u32(file_type_bytes) {
-            Some(file_type) => file_type,
-            None => FileType::Unknown
-        };
-        let format = match FileFormat::from_u32(format_bytes) {
-            Some(format) => format,
-            None => FileFormat::Unknown
-        };
-
+        let mut parse_warnings = Warnings::default();
         Ok((
             input,
             FileBaseBlock {
@@ -88,17 +82,18 @@ impl FileBaseBlock {
                 last_modification_date_and_time: util::get_date_time_from_filetime(last_modification_date_and_time),
                 major_version,
                 minor_version,
-                file_type,
-                format,
+                file_type: FileType::from_value(file_type_bytes, &mut parse_warnings),
+                format: FileFormat::from_value(format_bytes, &mut parse_warnings),
                 root_cell_offset,
                 hive_bins_data_size,
                 clustering_factor,
-                filename,
+                filename: util::read_utf16_le_string(filename_bytes, 64),
                 unk2: unk2.to_vec(),
                 checksum,
                 reserved,
                 boot_type,
-                boot_recover
+                boot_recover,
+                parse_warnings
             },
         ))
     }
@@ -143,24 +138,16 @@ impl FileBaseBlockReserved {
         let (input, last_reorganized_timestamp) = le_u64(input)?;
         let (input, remaining) = take(3512usize)(input)?;
 
-        let flags = match FileBaseBlockReservedFlags::from_u32(flags) {
-            None => FileBaseBlockReservedFlags::None,
-            Some(flags) => flags
-        };
-        let mut parse_warnings = Warnings::new();
-        let last_reorganized_timestamp = util::get_date_time_from_filetime(last_reorganized_timestamp);
-        let rm_id = util::get_guid_from_buffer(rm_id, &mut parse_warnings);
-        let log_id = util::get_guid_from_buffer(log_id, &mut parse_warnings);
-        let tm_id = util::get_guid_from_buffer(tm_id, &mut parse_warnings);
+        let mut parse_warnings = Warnings::default();
         Ok((
             input,
             FileBaseBlockReserved {
-                rm_id,
-                log_id,
-                flags,
-                tm_id,
+                rm_id: util::get_guid_from_buffer(rm_id, &mut parse_warnings),
+                log_id: util::get_guid_from_buffer(log_id, &mut parse_warnings),
+                flags: FileBaseBlockReservedFlags::from_value(flags, &mut parse_warnings),
+                tm_id: util::get_guid_from_buffer(tm_id, &mut parse_warnings),
                 signature,
-                last_reorganized_timestamp,
+                last_reorganized_timestamp: util::get_date_time_from_filetime(last_reorganized_timestamp),
                 remaining: remaining.to_vec(),
                 parse_warnings
             },
@@ -171,10 +158,11 @@ impl FileBaseBlockReserved {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileBaseBlockReservedFlags {
-    None = 0,
     KtmLockedHive = 1, // KTM locked the hive (there are pending or anticipated transactions)
-    Ktm2 = 2 // The hive has been defragmented (all its pages are dirty therefore) and it is being written to a disk (Windows 8 and Windows Server 2012 only, this flag is used to speed up hive recovery by reading a transaction log file instead of a primary file); this hive supports the layered keys feature (starting from Insider Preview builds of Windows 10 "Redstone 1")
+    Ktm2 = 2, // The hive has been defragmented (all its pages are dirty therefore) and it is being written to a disk (Windows 8 and Windows Server 2012 only, this flag is used to speed up hive recovery by reading a transaction log file instead of a primary file); this hive supports the layered keys feature (starting from Insider Preview builds of Windows 10 "Redstone 1")
+    Unknown = 0x0fffffff
 }
+impl_enum_from_value!{ FileBaseBlockReservedFlags }
 
 #[cfg(test)]
 mod tests {
@@ -237,7 +225,8 @@ mod tests {
             checksum: 738555936,
             reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,
             boot_type: 0,
-            boot_recover: 0
+            boot_recover: 0,
+            parse_warnings: Warnings::default()
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_header));

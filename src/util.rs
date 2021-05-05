@@ -50,7 +50,7 @@ pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, err_detail: &str) 
     String::from_utf8(slice.to_vec())
         .or_else(
             |err: FromUtf8Error| -> Result<String, FromUtf8Error> {
-                parse_warnings.add_warning(WarningCode::WarningConversion, format!("{}: {}", err_detail, err.to_string()));
+                parse_warnings.add_warning(WarningCode::WarningConversion, &format!("{}: {}", err_detail, err.to_string()));
                 Ok(String::from("<Invalid string>"))
             }
         ).expect("Error handled in or_else")
@@ -92,7 +92,7 @@ pub fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Gui
     Guid::from_buffer(buffer)
         .or_else(
             |err| {
-                parse_warnings.add_warning(WarningCode::WarningConversion, err.to_string());
+                parse_warnings.add_warning(WarningCode::WarningConversion, &err);
                 Guid::from_buffer(&[0; 16])
             }
         ).expect("Error handled in or_else")
@@ -127,12 +127,27 @@ macro_rules! impl_flags_from_bits {
                     let name = type_name_of(f);
                     const FOOTER_LEN: usize = "::f".len();
                     let fn_name = &name[..name.len() - FOOTER_LEN];
-                    parse_warnings.add_warning(WarningCode::WarningUnrecognizedBitflag, format!("{}: {:#X}", fn_name, flags));
+                    parse_warnings.add_warning(WarningCode::WarningUnrecognizedBitflag, &format!("{}: {:#X}", fn_name, flags));
                 }
                 return flags_mapped;
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! impl_enum_from_value {
+    ($enum_type: ident) => {
+        impl $enum_type {
+            pub fn from_value(value: u32, parse_warnings: &mut Warnings) -> Self {
+                $enum_type::from_u32(value)
+                .unwrap_or_else(|| {
+                    parse_warnings.add_warning(WarningCode::WarningConversion, &"Unrecognized $enum_type value");
+                    $enum_type::Unknown
+                })
+            }
+        }
+    }
 }
 
 pub fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S::Ok, S::Error> {
@@ -166,7 +181,7 @@ mod tests {
         let raw_guid: &[u8] = &[0x25, 0x96, 0x84, 0x54, 0x78, 0x54, 0x94, 0x49,
                                 0xa5, 0xba, 0x3e, 0x3b, 0x3, 0x28, 0xc3, 0xd];
 
-        let mut parse_warnings = Warnings::new();
+        let mut parse_warnings = Warnings::default();
         let guid = get_guid_from_buffer(raw_guid, &mut parse_warnings);
 
         assert_eq!(format!("{}", guid), "54849625-5478-4994-A5BA-3E3B0328C30D");
@@ -183,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_from_utf8() {
-        let mut parse_warnings = Warnings::new();
+        let mut parse_warnings = Warnings::default();
         let good = from_utf8(&[0x74, 0x65, 0x73, 0x74], &mut parse_warnings, "Unit test");
         assert_eq!("test", good);
         assert_eq!(None, parse_warnings.get_warnings());
@@ -217,7 +232,7 @@ mod tests {
         impl_flags_from_bits! { TestFlags, u16 }
 
         let flag_bits = 0x0001 | 0x0003;
-        let mut parse_warnings = Warnings::new();
+        let mut parse_warnings = Warnings::default();
         let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
         assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_3, flags, "Valid from_bits_checked conversion");
         assert_eq!(None, parse_warnings.get_warnings(), "Valid from_bits_checked conversion - parse_warnings should be empty");

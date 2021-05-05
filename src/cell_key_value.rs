@@ -199,7 +199,7 @@ impl CellKeyValue {
             Some(data_type) => data_type
         };
 
-        let mut parse_warnings = Warnings::new();
+        let mut parse_warnings = Warnings::default();
         let value_name;
         if value_name_size == 0 {
             value_name = String::from("(Default)");
@@ -228,7 +228,7 @@ impl CellKeyValue {
                 flags,
                 value_name,
                 value_content: None,
-                parse_warnings: Warnings::new()
+                parse_warnings: Warnings::default()
             },
         ))
     }
@@ -249,7 +249,7 @@ impl CellKeyValue {
                     CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size)
                         .or_else(
                             |err: Error| -> Result<CellValue, Error> {
-                                self.parse_warnings.add_warning(WarningCode::WarningBigDataContent, err.to_string());
+                                self.parse_warnings.add_warning(WarningCode::WarningBigDataContent, &err);
                                 Ok(CellValue::ValueError)
                             }
                         )
@@ -271,7 +271,7 @@ impl CellKeyValue {
         self.data_type.get_value_content(input)
             .or_else(
                 |err: Error| -> Result<CellValue, Error> {
-                    self.parse_warnings.add_warning(WarningCode::WarningContent, err.to_string());
+                    self.parse_warnings.add_warning(WarningCode::WarningContent, &err);
                     Ok(CellValue::ValueError)
                 }
             )
@@ -319,7 +319,7 @@ mod tests {
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             value_name: "IE5_UA_Backup_Flag".to_string(),
             value_content: None,
-            parse_warnings: Warnings::new()
+            parse_warnings: Warnings::default()
 
         };
         let remaining: [u8; 0] = [];

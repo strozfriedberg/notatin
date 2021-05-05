@@ -101,7 +101,7 @@ impl Default for CellKeyNode {
             path: String::default(),
             sub_keys: Vec::default(),
             sub_values: Vec::default(),
-            parse_warnings: Warnings::new()
+            parse_warnings: Warnings::default()
          }
     }
 }
@@ -147,7 +147,7 @@ impl CellKeyNode {
         let (input, class_name_size) = le_u16(input)?;
         let (input, key_name_bytes) = take!(input, key_name_size)?;
 
-        let mut parse_warnings = Warnings::new();
+        let mut parse_warnings = Warnings::default();
         let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut parse_warnings);
 
         let key_name;
@@ -244,13 +244,12 @@ impl CellKeyNode {
     ) -> Result<Vec<u32>, Error> {
         let (_, cell_sub_key_offset_list) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset)?;
         for val in cell_sub_key_offset_list.iter() {
-            CellKeyNode::read(
+             if let Some(kn) = CellKeyNode::read(
                 state,
                 &state.file_buffer[(*val as usize)..],
                 self.path.clone(),
                 filter
-            )?
-            .map(|kn| self.sub_keys.push(kn));
+            )? { self.sub_keys.push(kn) }
 
             if filter.is_complete() {
                 break;
@@ -455,7 +454,7 @@ mod tests {
             path: String::from("\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}"),
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            parse_warnings: Warnings::new()
+            parse_warnings: Warnings::default()
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

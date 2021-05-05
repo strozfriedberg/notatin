@@ -71,7 +71,7 @@ impl SubKeyListLfItem {
         |input: &[u8]| {
             let (input, named_key_offset) = le_u32(input)?;
             let (input, name_hint) = take!(input, 4usize)?;
-            let mut parse_warnings = Warnings::new();
+            let mut parse_warnings = Warnings::default();
             Ok((
                 input,
                 SubKeyListLfItem {
@@ -94,8 +94,8 @@ mod tests {
         let lf = SubKeyListLf {
             size: 64,
             count: 2,
-            items: vec![SubKeyListLfItem { named_key_offset: 12345, name_hint: "aaaa".to_string(), parse_warnings: Warnings::new() },
-                        SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string(), parse_warnings: Warnings::new()  }]
+            items: vec![SubKeyListLfItem { named_key_offset: 12345, name_hint: "aaaa".to_string(), parse_warnings: Warnings::default() },
+                        SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string(), parse_warnings: Warnings::default()  }]
         };
         assert_eq!(lf.size, lf.size());
         assert_eq!(vec![16441, 58417], lf.get_offset_list(4096));
@@ -114,12 +114,12 @@ mod tests {
                 SubKeyListLfItem {
                     named_key_offset: 105464,
                     name_hint: "Scre".to_string(),
-                    parse_warnings: Warnings::new()
+                    parse_warnings: Warnings::default()
                 },
                 SubKeyListLfItem {
                     named_key_offset: 105376,
                     name_hint: "Scre".to_string(),
-                    parse_warnings: Warnings::new()
+                    parse_warnings: Warnings::default()
                 }
             ]
         };
