@@ -28,7 +28,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLf {
 
 impl SubKeyListLf {
     /// Uses nom to parse an lf sub key list (lf) hive bin cell.
-    fn from_bytes_direct(input: &[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], Self> {
         let start_pos = input.as_ptr() as usize;
         let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("lf")(input)?;
@@ -50,7 +50,7 @@ impl SubKeyListLf {
 
     pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
         |input: &[u8]| {
-            let (input, ret) = SubKeyListLf::from_bytes_direct(input)?;
+            let (input, ret) = SubKeyListLf::from_bytes_internal(input)?;
             Ok((
                 input,
                 Box::new(ret)
@@ -105,7 +105,7 @@ mod tests {
     fn test_parse_sub_key_list_lf() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4360..4384];
-        let ret = SubKeyListLf::from_bytes_direct(slice);
+        let ret = SubKeyListLf::from_bytes_internal(slice);
 
         let expected_output = SubKeyListLf {
             size: 24,

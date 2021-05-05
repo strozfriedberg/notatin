@@ -17,7 +17,7 @@ pub struct SubKeyListLh {
 
 impl SubKeyListLh {
     /// Uses nom to parse an lf sub key list (lf) hive bin cell.
-    fn from_bytes_direct(input: &[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], Self> {
         let start_pos = input.as_ptr() as usize;
         let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("lh")(input)?;
@@ -39,7 +39,7 @@ impl SubKeyListLh {
 
     pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
         |input: &[u8]| {
-            let (input, ret) = SubKeyListLh::from_bytes_direct(input)?;
+            let (input, ret) = SubKeyListLh::from_bytes_internal(input)?;
             Ok((
                 input,
                 Box::new(ret)
@@ -102,7 +102,7 @@ mod tests {
     fn test_parse_sub_key_list_lh() {
         let f = std::fs::read("test_data/lh_block").unwrap();
         let slice = &f[..];
-        let ret = SubKeyListLh::from_bytes_direct(slice);
+        let ret = SubKeyListLh::from_bytes_internal(slice);
 
         let expected_output = SubKeyListLh {
             size: 96,

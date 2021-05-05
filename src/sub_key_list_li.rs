@@ -17,12 +17,12 @@ pub struct SubKeyListLi {
 
 impl SubKeyListLi {
     /// Uses nom to parse an lf sub key list (lf) hive bin cell.
-    fn from_bytes_direct(input: &[u8]) -> IResult<&[u8], SubKeyListLi> {
+    fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLi> {
         let start_pos = input.as_ptr() as usize;
-        let (input, size)      = le_i32(input)?;
+        let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("li")(input)?;
-        let (input, count)     = le_u16(input)?;
-        let (input, items)     = nom::multi::count(SubKeyListLiItem::from_bytes(), count.into())(input)?;
+        let (input, count)      = le_u16(input)?;
+        let (input, items)      = nom::multi::count(SubKeyListLiItem::from_bytes(), count.into())(input)?;
 
         let size_abs = size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
@@ -39,7 +39,7 @@ impl SubKeyListLi {
 
     pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
         |input: &[u8]| {
-            let (input, ret) = SubKeyListLi::from_bytes_direct(input)?;
+            let (input, ret) = SubKeyListLi::from_bytes_internal(input)?;
             Ok((
                 input,
                 Box::new(ret)
@@ -98,7 +98,7 @@ mod tests {
     fn test_parse_sub_key_list_li() {
         let f = std::fs::read("test_data/ManySubkeysHive").unwrap();
         let slice = &f[53280..58960];
-        let ret = SubKeyListLi::from_bytes_direct(slice);
+        let ret = SubKeyListLi::from_bytes_internal(slice);
         assert_eq!(true, ret.is_ok());
         let unwrapped = ret.unwrap();
         let remaining = unwrapped.0;

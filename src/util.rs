@@ -14,27 +14,34 @@ use crate::cell_key_node;
 
 const SIZE_OF_UTF16_CHAR: usize = mem::size_of::<u16>();
 
-// todo: failure as warning
-fn read_utf16_le_string_single(slice: &[u8], count: usize) -> String {
+fn from_utf16_le_string_single(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> String {
     let iter = (0..count / SIZE_OF_UTF16_CHAR)
         .map(|i| u16::from_le_bytes([slice[2*i], slice[2*i+1]]));
-    let intermediate = std::char::decode_utf16(iter).map(|r| r.unwrap_or(REPLACEMENT_CHARACTER)).take_while(|c| c != &'\0');
+    let intermediate =
+        std::char::decode_utf16(iter)
+            .map(|r|
+                r.unwrap_or_else(|err| {
+                    parse_warnings.add_warning(WarningCode::WarningConversion, &format!("{}: {}", err_detail, err.to_string()));
+                    REPLACEMENT_CHARACTER
+                })
+            )
+            .take_while(|c| c != &'\0');
     intermediate.collect::<String>()
 }
 
 /// Reads a null-terminated UTF-16 string (REG_SZ)
-pub fn read_utf16_le_string(slice: &[u8], count: usize) -> String {
+pub fn from_utf16_le_string(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> String {
     assert!(count <= slice.len());
-    read_utf16_le_string_single(slice, count)
+    from_utf16_le_string_single(slice, count, parse_warnings, err_detail)
 }
 
 /// Reads a sequence of null-terminated UTF-16 strings, terminated by an empty string (\0). (REG_MULTI_SZ)
-pub fn read_utf16_le_strings(slice: &[u8], count: usize) -> Vec<String> {
+pub fn from_utf16_le_strings(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> Vec<String> {
     let mut strings = Vec::new();
     let mut offset = 0;
 
     while offset < count {
-        let decoded = read_utf16_le_string_single(&slice[offset..], count - offset);
+        let decoded = from_utf16_le_string_single(&slice[offset..], count - offset, parse_warnings, err_detail);
         if decoded.trim().is_empty() {
             break;
         }
@@ -54,6 +61,15 @@ pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, err_detail: &str) 
                 Ok(String::from("<Invalid string>"))
             }
         ).expect("Error handled in or_else")
+}
+
+pub fn string_from_bytes(is_ascii: bool, slice: &[u8], count: u16, parse_warnings: &mut Warnings, err_detail: &str) -> String {
+    if is_ascii {
+        from_utf8(&slice, parse_warnings, err_detail)
+    }
+    else {
+        from_utf16_le_string(slice, (count / 2).into(), parse_warnings, err_detail)
+    }
 }
 
 /// Consumes any padding at the end of a hive bin cell. Used during sequential registry read to find deleted cells.
@@ -157,7 +173,7 @@ pub fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S:
 /// Adapted from https://github.com/omerbenamram/mft
 pub fn to_hex_string(bytes: &[u8]) -> String {
     let len = bytes.len();
-    let mut s = String::with_capacity(len * 2); // Each byte is represented by 2 ascii bytes.
+    let mut s = String::with_capacity(len * 3); // Each byte is represented by 2 ascii bytes.
 
     for byte in bytes {
         write!(s, "{:02X} ", byte).expect("Writing to an allocated string cannot fail");
@@ -215,9 +231,33 @@ mod tests {
     #[test]
     fn test_read_utf16_le_strings() {
         let buffer = [77, 0, 105, 0, 99, 0, 114, 0, 111, 0, 115, 0, 111, 0, 102, 0, 116, 0, 32, 0, 69, 0, 110, 0, 104, 0, 97, 0, 110, 0, 99, 0, 101, 0, 100, 0, 32, 0, 67, 0, 114, 0, 121, 0, 112, 0, 116, 0, 111, 0, 103, 0, 114, 0, 97, 0, 112, 0, 104, 0, 105, 0, 99, 0, 32, 0, 80, 0, 114, 0, 111, 0, 118, 0, 105, 0, 100, 0, 101, 0, 114, 0, 32, 0, 118, 0, 49, 0, 46, 0, 48, 0, 0, 0, 77, 0, 105, 0, 99, 0, 114, 0, 111, 0, 115, 0, 111, 0, 102, 0, 116, 0, 32, 0, 66, 0, 97, 0, 115, 0, 101, 0, 32, 0, 67, 0, 114, 0, 121, 0, 112, 0, 116, 0, 111, 0, 103, 0, 114, 0, 97, 0, 112, 0, 104, 0, 105, 0, 99, 0, 32, 0, 80, 0, 114, 0, 111, 0, 118, 0, 105, 0, 100, 0, 101, 0, 114, 0, 32, 0, 118, 0, 49, 0, 46, 0, 48, 0, 0, 0, 0, 0];
-        let strings = read_utf16_le_strings(&buffer, buffer.len());
+        let mut parse_warnings = Warnings::default();
+        let strings = from_utf16_le_strings(&buffer, buffer.len(), &mut parse_warnings, "unit test");
         let expected_strings = vec!["Microsoft Enhanced Cryptographic Provider v1.0", "Microsoft Base Cryptographic Provider v1.0"];
         assert_eq!(expected_strings, strings);
+    }
+
+    #[test]
+    fn test_string_from_bytes() {
+        let test_str_ascii = "test string";
+        let mut parse_warnings = Warnings::default();
+        let ascii = string_from_bytes(true, test_str_ascii.as_bytes(), test_str_ascii.len() as u16, &mut parse_warnings, "Unit test");
+        assert_eq!(test_str_ascii, ascii, "Ascii conversion");
+        assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
+
+        let test_utf16 = [0x2C, 0x6E, 0x66, 0x8A, 0x57, 0x5B, 0x26, 0x7B, 0x32, 0x4E];
+        let utf16 = string_from_bytes(false, &test_utf16, 2 * test_utf16.len() as u16, &mut parse_warnings, "Unit test");
+        assert_eq!("測試字符串", utf16, "UTF-16 conversion");
+        assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
+
+        let test_utf16 = [0x2C, 0x6E, 0xFF, 0xDB, 0x57, 0x5B, 0x26, 0x7B, 0x32, 0x4E];
+        let utf16 = string_from_bytes(false, &test_utf16, 2 * test_utf16.len() as u16, &mut parse_warnings, "Unit test");
+        assert_eq!(format!("測{}字符串", std::char::REPLACEMENT_CHARACTER), utf16, "UTF-16 conversion - replacement character");
+        let expected_warning = Warning {
+            code: WarningCode::WarningConversion,
+            text: "Unit test: unpaired surrogate found: dbff".to_string()
+        };
+        assert_eq!(&vec![expected_warning], parse_warnings.get_warnings().unwrap(), "1 warning expected");
     }
 
     #[test]
@@ -246,9 +286,10 @@ mod tests {
                 text: "rust_parser_2::util::tests::test_from_bits_checked::TestFlags::from_bits_checked: 0xFFFF".to_string()
             }
         ]), parse_warnings.get_warnings(), "Unmapped bits from_bits_checked conversion - parse_warnings should contain a warning");
-
-
     }
 
-
+    #[test]
+    fn test_to_hex_string() {
+        assert_eq!("00 01 02 03 04 05 FF ", to_hex_string(&[0, 1, 2, 3, 4, 5, 0xff]));
+    }
 }

@@ -150,15 +150,12 @@ impl CellKeyNode {
         let mut parse_warnings = Warnings::default();
         let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut parse_warnings);
 
-        let key_name;
-        if key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME) {
-            key_name = util::from_utf8(&key_name_bytes, &mut parse_warnings, "key_name_bytes");
-        }
-        else {
-            key_name = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
-        }
-        let access_flags = AccessFlags::from_bits_checked(access_bits, &mut parse_warnings);
-        let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time);
+        let key_name = util::string_from_bytes(
+            key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME),
+            key_name_bytes,
+            key_name_size,
+            &mut parse_warnings,
+            "key_name_bytes");
 
         let size_abs =  size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
@@ -186,12 +183,12 @@ impl CellKeyNode {
                 class_name_size,
             },
             key_node_flags,
-            last_key_written_date_and_time: timestamp,
-            access_flags,
+            last_key_written_date_and_time: util::get_date_time_from_filetime(last_key_written_date_and_time),
+            access_flags: AccessFlags::from_bits_checked(access_bits, &mut parse_warnings),
             parent_key_offset,
             number_of_sub_keys,
             number_of_key_values,
-            key_name,
+            key_name: util::string_from_bytes(key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME), key_name_bytes, key_name_size, &mut parse_warnings, "key_name_bytes"),
             allocated: size < 0,
             path,
             sub_keys: Vec::new(),
@@ -333,8 +330,7 @@ pub fn parse_sub_key_list<'a>(
     let slice = &state.file_buffer[list_offset as usize + state.hbin_offset..];
     // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
     // Look for the ri list first and follow the pointers
-    let res_sub_key_list_ri = SubKeyListRi::from_bytes(slice);
-    match res_sub_key_list_ri {
+    match SubKeyListRi::from_bytes(slice) {
         Ok((_, sub_key_list_ri)) => {
             sub_key_list_ri.parse_offsets(state)
         },

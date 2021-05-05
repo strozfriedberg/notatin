@@ -87,7 +87,7 @@ impl FileBaseBlock {
                 root_cell_offset,
                 hive_bins_data_size,
                 clustering_factor,
-                filename: util::read_utf16_le_string(filename_bytes, 64),
+                filename: util::from_utf16_le_string(filename_bytes, 64, &mut parse_warnings, &"Filename"),
                 unk2: unk2.to_vec(),
                 checksum,
                 reserved,
@@ -250,17 +250,6 @@ mod tests {
         let ret = Registry::from_bytes(&f[..], &mut Filter::new());
 
         let write_file = File::create("out.txt").unwrap();
-        let mut writer = BufWriter::new(&write_file);
-        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
-    }
-
-    #[test]
-    fn dump_registry2() {
-        let f = std::fs::read("test_data/SOFTWARE_lznt1").unwrap();
-        let mut filter = Filter::from_path(FindPath::from_key("Microsoft/Windows NT/CurrentVersion/AppCompatFlags/CIT/System"));
-        let ret = Registry::from_bytes(&f[..], &mut filter);
-
-        let write_file = File::create("out_SOFTWARE_lznt1.txt").unwrap();
         let mut writer = BufWriter::new(&write_file);
         write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
     }

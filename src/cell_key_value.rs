@@ -73,14 +73,14 @@ pub enum CellKeyValueDataTypes {
 }
 
 impl CellKeyValueDataTypes {
-    pub fn get_value_content(self, input: &[u8]) -> Result<CellValue, Error> {
+    pub fn get_value_content(self, input: &[u8], parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
         let cv = match self {
             CellKeyValueDataTypes::REG_NONE =>
                 CellValue::ValueNone,
             CellKeyValueDataTypes::REG_SZ |
             CellKeyValueDataTypes::REG_EXPAND_SZ |
             CellKeyValueDataTypes::REG_LINK => CellValue::ValueString(
-                util::read_utf16_le_string(input, input.len())
+                util::from_utf16_le_string(input, input.len(), parse_warnings, &"Get value content")
             ),
             CellKeyValueDataTypes::REG_UINT8 => CellValue::ValueU32(
                 u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32
@@ -112,7 +112,7 @@ impl CellKeyValueDataTypes {
                 input.to_vec()
             ),
             CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::ValueMultiString(
-                util::read_utf16_le_strings(input, input.len())
+                util::from_utf16_le_strings(input, input.len(), parse_warnings, &"Get value content")
             ),
             CellKeyValueDataTypes::REG_RESOURCE_LIST |
             CellKeyValueDataTypes::REG_FILETIME |
@@ -204,11 +204,13 @@ impl CellKeyValue {
         if value_name_size == 0 {
             value_name = String::from("(Default)");
         }
-        else if flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII) {
-            value_name = util::from_utf8(&value_name_bytes, &mut parse_warnings, "value_name_bytes");
-        }
         else {
-            value_name = util::read_utf16_le_string(value_name_bytes, (value_name_size / 2).into());
+            value_name = util::string_from_bytes(
+                flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII),
+                value_name_bytes,
+                value_name_size,
+                &mut parse_warnings,
+                "value_name_bytes");
         }
         let size_abs = size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
@@ -246,7 +248,7 @@ impl CellKeyValue {
             let mut offset = self.detail.data_offset as usize + state.hbin_offset;
             if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size && CellBigData::is_big_data_block(&state.file_buffer[offset..]) {
                 value_content =
-                    CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size)
+                    CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size, &mut self.parse_warnings)
                         .or_else(
                             |err: Error| -> Result<CellValue, Error> {
                                 self.parse_warnings.add_warning(WarningCode::WarningBigDataContent, &err);
@@ -268,7 +270,7 @@ impl CellKeyValue {
     }
 
     fn get_value_content(&mut self, input: &[u8]) -> CellValue {
-        self.data_type.get_value_content(input)
+        self.data_type.get_value_content(input, &mut self.parse_warnings)
             .or_else(
                 |err: Error| -> Result<CellValue, Error> {
                     self.parse_warnings.add_warning(WarningCode::WarningContent, &err);

@@ -53,29 +53,27 @@ impl Filter {
         is_first_iteration: bool,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
-        if let Some(find_path) = &self.find_path { //we don't end up in this function unless find_path.is_some()
-            if let Some(cell_name_lowercase) = cell.name_lowercase() {
+        match cell.name_lowercase() {
+            Some(cell_name_lowercase) => {
+                let find_path = &self.find_path.as_ref().expect("We don't end up in this function unless find_path.is_some()");
                 if !find_path.key_path.as_os_str().is_empty() {
-                    return self.match_key(is_first_iteration, cell_name_lowercase);
-                }
-                if let Some(match_val) = &find_path.value {
-                    if match_val == &cell_name_lowercase {
-                        Ok(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
-                    }
-                    else {
-                        Ok(FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
-                    }
+                    self.match_key(is_first_iteration, cell_name_lowercase)
                 }
                 else {
-                    Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
+                    match &find_path.value {
+                        Some(match_val) => {
+                            if match_val == &cell_name_lowercase {
+                                Ok(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
+                            }
+                            else {
+                                Ok(FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE)
+                            }
+                        },
+                        None =>  Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
+                    }
                 }
-            }
-            else {
-                Err(Error::Any{detail: String::from("Missing cell name")})
-            }
-        }
-        else {
-            Err(Error::Any{detail: String::from("Missing find_path")})
+            },
+            None => Err(Error::Any{detail: String::from("Missing cell name")})
         }
     }
 

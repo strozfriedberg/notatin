@@ -50,7 +50,7 @@ impl CellBigData {
         ))
     }
 
-    pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> Result<CellValue, Error> {
+    pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
         let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
         let (_, data_offsets)           = CellBigData::parse_big_data_offsets(state, hive_bin_cell_big_data.count, hive_bin_cell_big_data.segment_list_offset as usize)?;
         let mut big_data_buffer: Vec<u8> = Vec::new();
@@ -64,7 +64,7 @@ impl CellBigData {
                 data_size_remaining -= size_to_read;
             }
         }
-        data_type.get_value_content(&big_data_buffer[..])
+        data_type.get_value_content(&big_data_buffer[..], parse_warnings)
     }
 
     fn parse_big_data_size(
