@@ -21,7 +21,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLf {
         self.size
     }
 
-    fn get_offset_list(&self, hbin_offset: u32, parse_warnings: &mut Warnings) -> Vec<u32> {
+    fn get_offset_list(&self, hbin_offset: u32) -> Vec<u32> {
         self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
     }
 }
@@ -98,7 +98,7 @@ mod tests {
                         SubKeyListLfItem { named_key_offset: 54321, name_hint: "zzzz".to_string(), parse_warnings: Warnings::new()  }]
         };
         assert_eq!(lf.size, lf.size());
-        assert_eq!(vec![16441, 58417], lf.get_offset_list(4096, &mut Warnings::new()));
+        assert_eq!(vec![16441, 58417], lf.get_offset_list(4096));
     }
 
     #[test]

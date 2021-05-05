@@ -1,7 +1,6 @@
 use bitflags::bitflags;
 use std::path::{Path, PathBuf};
 use crate::err::Error;
-use crate::warn::Warnings;
 use crate::hive_bin_cell;
 use crate::impl_serialize_for_bitflags;
 
@@ -63,7 +62,7 @@ impl Filter {
             Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
         }
         else {
-            self.find_path.as_mut().unwrap().check_key_match(&key_name) // self.find_path was checked previously
+            self.find_path.as_mut().expect("self.find_path was checked previously").check_key_match(&key_name)
         }
     }
 }
@@ -124,6 +123,7 @@ impl_serialize_for_bitflags! {FilterFlags}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::warn::Warnings;
     use crate::cell_key_node;
     use crate::cell_key_value;
 

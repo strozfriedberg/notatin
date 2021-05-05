@@ -1,4 +1,4 @@
-use serde::{ser, Serialize};
+use serde::Serialize;
 use crate::util;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]

@@ -6,7 +6,6 @@ use nom::{
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::util;
-use crate::warn::Warnings;
 
 // Subkeys list
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -54,7 +53,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLi {
         self.size
     }
 
-    fn get_offset_list(&self, hbin_offset: u32, parse_warnings: &mut Warnings) -> Vec<u32> {
+    fn get_offset_list(&self, hbin_offset: u32) -> Vec<u32> {
         self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
     }
 }
@@ -92,7 +91,7 @@ mod tests {
                         SubKeyListLiItem { named_key_offset: 54321 }]
         };
         assert_eq!(li.size, li.size());
-        assert_eq!(vec![16441, 58417], li.get_offset_list(4096, &mut Warnings::new()));
+        assert_eq!(vec![16441, 58417], li.get_offset_list(4096));
     }
 
     #[test]

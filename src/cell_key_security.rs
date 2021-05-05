@@ -90,19 +90,10 @@ pub fn read_cell_key_security(
     let mut security_descriptors = Vec::new();
     let mut offset: usize = security_key_offset as usize;
     loop {
-        let input = &file_buffer[offset + hbin_offset as usize..];
-        let (_, cell_key_security) = CellKeySecurity::from_bytes(input)?;
-        // no perf change on this one
-        let res_security_descriptor = SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor));
-        match res_security_descriptor {
-            Ok(security_descriptor) => {
-                security_descriptors.push(security_descriptor);
-            },
-            Err(e) => {
-                // log error as warning and keep going
-            }
-        }
-        //(SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor))?);
+        let (_, cell_key_security) = CellKeySecurity::from_bytes(&file_buffer[offset + hbin_offset as usize..])?;
+        security_descriptors.push(
+            SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor))?
+        );
 
         if cell_key_security.detail.flink == security_key_offset {
             break;

@@ -11,7 +11,7 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use serde::Serialize;
 use crate::err::Error;
-use crate::warn::{Warning, Warnings, WarningCode};
+use crate::warn::{Warnings, WarningCode};
 use crate::util;
 use crate::registry::State;
 use crate::hive_bin_cell;
@@ -22,6 +22,7 @@ use crate::impl_serialize_for_bitflags;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum CellKeyValueDataTypes {
     REG_NONE                       = 0x0000,
     REG_SZ                         = 0x0001,
@@ -243,7 +244,7 @@ impl CellKeyValue {
         let value_content;
         if self.detail.data_size & DATA_IS_RESIDENT_MASK == 0 {
             let mut offset = self.detail.data_offset as usize + state.hbin_offset;
-            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size {//} && CellBigData::is_big_data_block(&state.file_buffer[offset..]) {
+            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size && CellBigData::is_big_data_block(&state.file_buffer[offset..]) {
                 value_content =
                     CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size)
                         .or_else(
@@ -252,7 +253,7 @@ impl CellKeyValue {
                                 Ok(CellValue::ValueError)
                             }
                         )
-                        .unwrap();
+                        .expect("Error handled in or_else");
             }
             else {
                 offset += mem::size_of_val(&self.detail.size);
@@ -274,7 +275,7 @@ impl CellKeyValue {
                     Ok(CellValue::ValueError)
                 }
             )
-            .unwrap()
+            .expect("Error handled in or_else")
     }
 }
 
@@ -350,7 +351,6 @@ mod tests {
             file_buffer: &f[..]
         };
         let key_node = CellKeyNode::read(&state, &f[4416..], String::new(), &mut Filter {..Default::default() }).unwrap().unwrap();
-        let t=3;
 
         assert_eq!(
             "v".to_string(),

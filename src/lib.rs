@@ -24,6 +24,6 @@ pub mod sub_key_list_lf;
 pub mod sub_key_list_lh;
 pub mod sub_key_list_li;
 pub mod sub_key_list_ri;
-pub mod tests;
-pub mod util;
 pub mod warn;
+pub(crate) mod tests;
+pub(crate) mod util;

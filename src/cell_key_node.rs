@@ -148,8 +148,7 @@ impl CellKeyNode {
         let (input, key_name_bytes) = take!(input, key_name_size)?;
 
         let mut parse_warnings = Warnings::new();
-        let key_node_flags = KeyNodeFlags::from_bits(flags).unwrap_or_default();
-        //let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut parse_warnings);
+        let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut parse_warnings);
 
         let key_name;
         if key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME) {
@@ -158,8 +157,7 @@ impl CellKeyNode {
         else {
             key_name = util::read_utf16_le_string(key_name_bytes, (key_name_size / 2).into());
         }
-        //let access_flags = AccessFlags::from_bits_checked(access_bits, &mut parse_warnings);
-        let access_flags = AccessFlags::from_bits(access_bits).unwrap_or_default();
+        let access_flags = AccessFlags::from_bits_checked(access_bits, &mut parse_warnings);
         let timestamp = util::get_date_time_from_filetime(last_key_written_date_and_time, &mut parse_warnings);
 
         let size_abs =  size.abs() as u32;
@@ -247,7 +245,7 @@ impl CellKeyNode {
         state: &State,
         filter: &mut Filter
     ) -> Result<Vec<u32>, Error> {
-        let (_, cell_sub_key_offset_list) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset, &mut self.parse_warnings)?;
+        let (_, cell_sub_key_offset_list) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset)?;
         for val in cell_sub_key_offset_list.iter() {
             match CellKeyNode::read(state, &state.file_buffer[(*val as usize)..], self.path.clone(), filter) {
                 Ok(key_node) =>
@@ -284,7 +282,7 @@ impl CellKeyNode {
                         filter.is_complete = true;
                     }
                     if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                        let warnings = cell_key_value.read_content(state);
+                        cell_key_value.read_content(state);
                         self.sub_values.push(cell_key_value);
                     }
                 }
@@ -346,8 +344,7 @@ fn parse_key_values<'a>(
 pub fn parse_sub_key_list<'a>(
     state: &'a State,
     count: u32,
-    list_offset: u32,
-    parse_warnings: &mut Warnings
+    list_offset: u32
 ) -> IResult<&'a[u8], Vec<u32>> {
     let slice = &state.file_buffer[list_offset as usize + state.hbin_offset..];
     // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
@@ -363,7 +360,7 @@ pub fn parse_sub_key_list<'a>(
                      SubKeyListLh::from_bytes(),
                      SubKeyListLi::from_bytes(),
                     ))(slice)?;
-            let list = cell_sub_key_list.get_offset_list(state.hbin_offset as u32, parse_warnings);
+            let list = cell_sub_key_list.get_offset_list(state.hbin_offset as u32);
             if count > 0 { assert_eq!(list.len(), count as usize, "SubKeyList offset list doesn't match expected count"); }
             Ok((
                 remaining,

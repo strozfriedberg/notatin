@@ -9,10 +9,8 @@ use serde::Serialize;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use winstructs::guid::Guid;
-use std::time::SystemTime;
-use crate::err::Error;
 use crate::util;
-use crate::warn::{Warnings, WarningCode};
+use crate::warn::Warnings;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
@@ -155,13 +153,16 @@ impl FileBaseBlockReserved {
         };
         let mut parse_warnings = Warnings::new();
         let last_reorganized_timestamp = util::get_date_time_from_filetime(last_reorganized_timestamp, &mut parse_warnings);
+        let rm_id = util::get_guid_from_buffer(rm_id, &mut parse_warnings);
+        let log_id = util::get_guid_from_buffer(log_id, &mut parse_warnings);
+        let tm_id = util::get_guid_from_buffer(tm_id, &mut parse_warnings);
         Ok((
             input,
             FileBaseBlockReserved {
-                rm_id: Guid::from_buffer(rm_id).unwrap(),
-                log_id: Guid::from_buffer(log_id).unwrap(),
+                rm_id,
+                log_id,
                 flags,
-                tm_id: Guid::from_buffer(tm_id).unwrap(),
+                tm_id,
                 signature,
                 last_reorganized_timestamp,
                 remaining: remaining.to_vec(),
@@ -188,7 +189,6 @@ mod tests {
         fs::File,
         io::{BufWriter, Write},
     };
-    use crate::filter::FindPath;
     use crate::filter::Filter;
     use crate::registry::Registry;
 
@@ -219,17 +219,6 @@ mod tests {
             (2287, 5470),
             (keys, values)
         );
-    }
-
-    #[test]
-    fn test_read_base_block() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
-        let mut filter = Filter {
-            find_path: Some(FindPath::new("Control Panel/Accessibility/HighContrast", Some(String::from("Flags")))),
-            is_complete: false
-        };
-        let ret = Registry::from_bytes(&f[0..], &mut filter);
     }
 
     #[test]
@@ -285,6 +274,6 @@ mod tests {
 
         let write_file = File::create("out.txt").unwrap();
         let mut writer = BufWriter::new(&write_file);
-        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap());
+        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
     }
 }

@@ -1,10 +1,8 @@
 use nom::{
     IResult,
-    Finish,
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32},
-    multi::count,
-    combinator::peek
+    multi::count
 };
 use serde::Serialize;
 use crate::err::Error;
@@ -13,7 +11,7 @@ use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::cell_value::CellValue;
 use crate::util;
-use crate::warn::{Warning, Warnings};
+use crate::warn::Warnings;
 
 /* List of data segments. Big data is used to reference data larger than 16344 bytes
    When the Minor version field of the base block is greater than 3, it has the following structure: */
