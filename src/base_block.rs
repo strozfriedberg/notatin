@@ -44,7 +44,7 @@ pub struct FileBaseBlock {
     pub file_type: FileType,
     pub format: FileFormat,
     /// Offset of the root cell in bytes, relative from the start of the hive bin's data.
-    pub root_cell_offset: i32,
+    pub root_cell_offset_relative: i32,
     pub hive_bins_data_size: u32,
     /// Logical sector size of the underlying disk in bytes divided by 512.
     pub clustering_factor: u32,
@@ -71,7 +71,7 @@ impl FileBaseBlock {
         let (input, minor_version) = le_u32(input)?;
         let (input, file_type_bytes) = le_u32(input)?;
         let (input, format_bytes) = le_u32(input)?;
-        let (input, root_cell_offset) = le_i32(input)?;
+        let (input, root_cell_offset_relative) = le_i32(input)?;
         let (input, hive_bins_data_size) = le_u32(input)?;
         let (input, clustering_factor) = le_u32(input)?;
         let (input, filename_bytes) = take(64usize)(input)?;
@@ -92,7 +92,7 @@ impl FileBaseBlock {
                 minor_version,
                 file_type: FileType::from_value(file_type_bytes, &mut parse_warnings),
                 format: FileFormat::from_value(format_bytes, &mut parse_warnings),
-                root_cell_offset,
+                root_cell_offset_relative,
                 hive_bins_data_size,
                 clustering_factor,
                 filename: util::from_utf16_le_string(filename_bytes, 64, &mut parse_warnings, &"Filename"),
@@ -197,7 +197,7 @@ mod tests {
             minor_version: 3,
             file_type: FileType::Primary,
             format: FileFormat::DirectMemoryLoad,
-            root_cell_offset: 32,
+            root_cell_offset_relative: 32,
             hive_bins_data_size: 1060864,
             clustering_factor: 1,
             filename: "\\??\\C:\\Users\\nfury\\ntuser.dat".to_string(),

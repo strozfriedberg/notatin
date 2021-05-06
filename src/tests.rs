@@ -14,7 +14,7 @@ mod tests {
         let mut reg_val = reg_val.unwrap();
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         reg_val.read_content(&state);

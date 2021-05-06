@@ -159,7 +159,7 @@ impl_serialize_for_bitflags! {CellKeyValueFlags}
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValueDetail {
-    pub absolute_file_offset: usize,
+    pub file_offset_absolute: usize,
     pub size: u32,
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
     pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
@@ -181,7 +181,7 @@ impl CellKeyValue {
     pub const BIG_DATA_SIZE_THRESHOLD: u32 = 16344;
 
     pub fn from_bytes<'a>(state: &State, input: &'a [u8]) -> IResult<&'a [u8], Self> {
-        let absolute_file_offset = state.get_file_offset(input);
+        let file_offset_absolute = state.get_file_offset(input);
         let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("vk")(input)?;
@@ -219,7 +219,7 @@ impl CellKeyValue {
             input,
             CellKeyValue {
                 detail: CellKeyValueDetail {
-                    absolute_file_offset,
+                    file_offset_absolute,
                     size: size_abs,
                     value_name_size,
                     data_size,
@@ -245,7 +245,7 @@ impl CellKeyValue {
         const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
         let value_content;
         if self.detail.data_size & DATA_IS_RESIDENT_MASK == 0 {
-            let mut offset = self.detail.data_offset as usize + state.hbin_offset;
+            let mut offset = self.detail.data_offset as usize + state.hbin_offset_absolute;
             if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size && CellBigData::is_big_data_block(&state.file_buffer[offset..]) {
                 value_content =
                     CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size, &mut self.parse_warnings)
@@ -304,13 +304,13 @@ mod tests {
 
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         let ret = CellKeyValue::from_bytes(&state, slice);
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
-                absolute_file_offset: 4400,
+                file_offset_absolute: 4400,
                 size: 48,
                 value_name_size: 18,
                 data_size: 8,
@@ -334,7 +334,7 @@ mod tests {
 
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         cell_key_value.read_content(&state);
@@ -349,7 +349,7 @@ mod tests {
         let f = std::fs::read("test_data/FuseHive").unwrap();
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         let key_node = CellKeyNode::read(&state, &f[4416..], String::new(), &mut Filter::new()).unwrap().unwrap();

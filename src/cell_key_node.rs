@@ -27,14 +27,14 @@ use crate::impl_flags_from_bits;
 
 #[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNodeDetail {
-    pub absolute_file_offset: usize,
+    pub file_offset_absolute: usize,
     pub size: u32,
     pub number_of_volatile_sub_keys: u32, // The offset value is in bytes and relative from the start of the hive bin data / Refers to a sub keys list or contains -1 (0xffffffff) if empty.
-    pub sub_keys_list_offset: u32, // In bytes, relative from the start of the hive bins data (also, this field may point to an Index root)
-    pub volatile_sub_keys_list_offset: i32, // This field has no meaning on a disk (volatile keys are not written to a file)
-    pub key_values_list_offset: i32,
-    pub security_key_offset: u32,
-    pub class_name_offset: i32,
+    pub sub_keys_list_offset_relative: u32, // In bytes, relative from the start of the hive bins data (also, this field may point to an Index root)
+    pub volatile_sub_keys_list_offset_relative: i32, // This field has no meaning on a disk (volatile keys are not written to a file)
+    pub key_values_list_offset_relative: i32,
+    pub security_key_offset_relative: u32,
+    pub class_name_offset_relative: i32,
     /*  Starting from Windows Vista, Windows Server 2003 SP2, and Windows XP SP3, the Largest subkey name length field has been split
         into 4 bit fields (the offsets below are relative from the beginning of the old Largest subkey name length field,
         i.e. the first bit field starts within the byte at the lowest address):
@@ -59,7 +59,8 @@ pub struct CellKeyNode {
     pub last_key_written_date_and_time: DateTime<Utc>,
     /// Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
     pub access_flags: AccessFlags,
-    pub parent_key_offset: i32, // Offset of a parent key node in bytes, relative from the start of the hive bins data (this field has no meaning on a disk for a root key node)
+    /// Offset of a parent key node in bytes, relative from the start of the hive bin's data (this field has no meaning on a disk for a root key node)
+    pub parent_key_offset_relative: i32,
     pub number_of_sub_keys: u32,
     pub number_of_key_values: u32,
     pub key_name: String, // ASCII (extended) string or UTF-16LE string,
@@ -78,7 +79,7 @@ impl Default for CellKeyNode {
             key_node_flags: KeyNodeFlags::default(),
             last_key_written_date_and_time: DateTime::from(SystemTime::UNIX_EPOCH),
             access_flags: AccessFlags::default(),
-            parent_key_offset: i32::default(),
+            parent_key_offset_relative: i32::default(),
             number_of_sub_keys: u32::default(),
             number_of_key_values: u32::default(),
             key_name: String::default(),
@@ -107,22 +108,22 @@ impl CellKeyNode {
         input: &'a [u8],
         cur_path: String
     ) -> IResult<&'a [u8], Self> {
-        let absolute_file_offset = state.get_file_offset(input);
+        let file_offset_absolute = state.get_file_offset(input);
         let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("nk")(input)?;
         let (input, flags) = le_u16(input)?;
         let (input, last_key_written_date_and_time) = le_u64(input)?;
         let (input, access_bits) = le_u32(input)?;
-        let (input, parent_key_offset) = le_i32(input)?;
+        let (input, parent_key_offset_relative) = le_i32(input)?;
         let (input, number_of_sub_keys) = le_u32(input)?;
         let (input, number_of_volatile_sub_keys) = le_u32(input)?;
-        let (input, sub_keys_list_offset) = le_u32(input)?;
-        let (input, volatile_sub_keys_list_offset) = le_i32(input)?;
+        let (input, sub_keys_list_offset_relative) = le_u32(input)?;
+        let (input, volatile_sub_keys_list_offset_relative) = le_i32(input)?;
         let (input, number_of_key_values) = le_u32(input)?;
-        let (input, key_values_list_offset) = le_i32(input)?;
-        let (input, security_key_offset) = le_u32(input)?;
-        let (input, class_name_offset) = le_i32(input)?;
+        let (input, key_values_list_offset_relative) = le_i32(input)?;
+        let (input, security_key_offset_relative) = le_u32(input)?;
+        let (input, class_name_offset_relative) = le_i32(input)?;
         let (input, largest_sub_key_name_size) = le_u32(input)?;
         let (input, largest_sub_key_class_name_size) = le_u32(input)?;
         let (input, largest_value_name_size) = le_u32(input)?;
@@ -151,14 +152,14 @@ impl CellKeyNode {
 
         let cell_key_node = CellKeyNode {
             detail: CellKeyNodeDetail {
-                absolute_file_offset,
+                file_offset_absolute,
                 size: size_abs,
                 number_of_volatile_sub_keys,
-                sub_keys_list_offset,
-                volatile_sub_keys_list_offset,
-                key_values_list_offset,
-                security_key_offset,
-                class_name_offset,
+                sub_keys_list_offset_relative,
+                volatile_sub_keys_list_offset_relative,
+                key_values_list_offset_relative,
+                security_key_offset_relative,
+                class_name_offset_relative,
                 largest_sub_key_name_size,
                 largest_sub_key_class_name_size,
                 largest_value_name_size,
@@ -170,7 +171,7 @@ impl CellKeyNode {
             key_node_flags,
             last_key_written_date_and_time: util::get_date_time_from_filetime(last_key_written_date_and_time),
             access_flags: AccessFlags::from_bits_checked(access_bits, &mut parse_warnings),
-            parent_key_offset,
+            parent_key_offset_relative,
             number_of_sub_keys,
             number_of_key_values,
             key_name: util::string_from_bytes(key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME), key_name_bytes, key_name_size, &mut parse_warnings, "key_name_bytes"),
@@ -214,9 +215,9 @@ impl CellKeyNode {
     pub fn read_security_key(
         self: &mut CellKeyNode,
         file_buffer: &[u8],
-        hbin_offset: u32
+        hbin_offset_absolute: u32
     ) -> Result<Vec<SecurityDescriptor>, Error> {
-        cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset, hbin_offset)
+        cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset_relative, hbin_offset_absolute)
     }
 
     fn read_sub_keys(
@@ -224,8 +225,8 @@ impl CellKeyNode {
         state: &State,
         filter: &mut Filter
     ) -> Result<Vec<u32>, Error> {
-        let (_, cell_sub_key_offset_list) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset)?;
-        for val in cell_sub_key_offset_list.iter() {
+        let (_, cell_sub_key_offsets_absolute) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
+        for val in cell_sub_key_offsets_absolute.iter() {
              if let Some(kn) = CellKeyNode::read(
                 state,
                 &state.file_buffer[(*val as usize)..],
@@ -237,7 +238,7 @@ impl CellKeyNode {
                 break;
             }
         }
-        Ok(cell_sub_key_offset_list)
+        Ok(cell_sub_key_offsets_absolute)
     }
 
     fn read_values(
@@ -245,9 +246,9 @@ impl CellKeyNode {
         state: &State,
         filter: &mut Filter
     ) -> Result<(), Error> {
-        let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset as usize)?;
+        let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
         for val in key_values.iter() {
-            let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset)..])?;
+            let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset_absolute)..])?;
             let iterate_flags = filter.check_cell(true, &cell_key_value)?;
             if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
                 filter.set_complete(true);
@@ -318,9 +319,9 @@ impl_flags_from_bits! { KeyNodeFlags, u16 }
 fn parse_key_values<'a>(
     state: &'a State,
     key_values_count: u32,
-    list_offset: usize
+    list_offset_relative: usize
 ) -> IResult<&'a[u8], Vec<u32>> {
-    let slice: &[u8] = &state.file_buffer[list_offset + state.hbin_offset..];
+    let slice: &[u8] = &state.file_buffer[list_offset_relative + state.hbin_offset_absolute..];
     let (slice, _size) = le_u32(slice)?;
     let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
     Ok((
@@ -332,9 +333,9 @@ fn parse_key_values<'a>(
 pub fn parse_sub_key_list<'a>(
     state: &'a State,
     count: u32,
-    list_offset: u32
+    list_offset_relative: u32
 ) -> IResult<&'a[u8], Vec<u32>> {
-    let slice = &state.file_buffer[list_offset as usize + state.hbin_offset..];
+    let slice = &state.file_buffer[list_offset_relative as usize + state.hbin_offset_absolute..];
     // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
     // Look for the ri list first and follow the pointers
     match SubKeyListRi::from_bytes(slice) {
@@ -347,7 +348,7 @@ pub fn parse_sub_key_list<'a>(
                      SubKeyListLh::from_bytes(),
                      SubKeyListLi::from_bytes(),
                     ))(slice)?;
-            let list = cell_sub_key_list.get_offset_list(state.hbin_offset as u32);
+            let list = cell_sub_key_list.get_offset_list(state.hbin_offset_absolute as u32);
             if count > 0 { assert_eq!(list.len(), count as usize, "SubKeyList offset list doesn't match expected count"); }
             Ok((
                 remaining,
@@ -370,7 +371,7 @@ mod tests {
         let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel/Accessibility/HighContrast", "Flags"));
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
@@ -388,7 +389,7 @@ mod tests {
         let mut filter = Filter::from_path(FindPath::from_key("Software/Microsoft/Office/14.0/Common"));
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
@@ -406,7 +407,7 @@ mod tests {
         let slice = &f[4128..4264];
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut Filter::new());
@@ -424,20 +425,20 @@ mod tests {
 
         let state = State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset: 4096,
+            hbin_offset_absolute: 4096,
             file_buffer: &f[..]
         };
         let ret = CellKeyNode::from_bytes(&state, slice, String::new());
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
-                absolute_file_offset: 4128,
+                file_offset_absolute: 4128,
                 size: 136,
                 number_of_volatile_sub_keys: 2,
-                sub_keys_list_offset: 73256,
-                volatile_sub_keys_list_offset: -2147476312,
-                key_values_list_offset: -1,
-                security_key_offset: 1376,
-                class_name_offset: -1,
+                sub_keys_list_offset_relative: 73256,
+                volatile_sub_keys_list_offset_relative: -2147476312,
+                key_values_list_offset_relative: -1,
+                security_key_offset_relative: 1376,
+                class_name_offset_relative: -1,
                 largest_sub_key_name_size: 40,
                 largest_sub_key_class_name_size: 0,
                 largest_value_name_size: 0,
@@ -449,7 +450,7 @@ mod tests {
             key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
             last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083),
             access_flags: AccessFlags::empty(),
-            parent_key_offset: 1536,
+            parent_key_offset_relative: 1536,
             number_of_sub_keys: 11,
             number_of_key_values: 0,
             key_name: "CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}".to_string(),

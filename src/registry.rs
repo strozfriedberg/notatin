@@ -12,7 +12,7 @@ use crate::err::Error;
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct State<'a> { // todo: this isn't actually state.  that's a terrible name.  improve!
     pub file_start_pos: usize,
-    pub hbin_offset: usize,
+    pub hbin_offset_absolute: usize,
     pub file_buffer: &'a[u8]
 }
 
@@ -35,7 +35,7 @@ impl Registry {
         let (input, file_base_block) = FileBaseBlock::from_bytes(file_buffer)?;
         let state = State {
             file_start_pos,
-            hbin_offset: input.as_ptr() as usize - file_start_pos,
+            hbin_offset_absolute: input.as_ptr() as usize - file_start_pos,
             file_buffer
         };
         Ok(Registry {

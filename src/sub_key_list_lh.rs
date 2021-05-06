@@ -53,27 +53,27 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLh {
         self.size
     }
 
-    fn get_offset_list(&self, hbin_offset: u32) -> Vec<u32> {
-        self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
+    fn get_offset_list(&self, hbin_offset_absolute: u32) -> Vec<u32> {
+        self.items.iter().map(|x| x.named_key_offset_relative + hbin_offset_absolute).collect()
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLhItem {
-    pub named_key_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
+    pub named_key_offset_relative: u32, // The offset value is in bytes and relative from the start of the hive bin data
     pub name_hash: u32, // Hash of a key name string (used to speed up lookups). A different hash function is used for different sub key list types.
 }
 
 impl SubKeyListLhItem {
     fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
         |input: &[u8]| {
-            let (input, named_key_offset) = le_u32(input)?;
+            let (input, named_key_offset_relative) = le_u32(input)?;
             let (input, name_hash) = le_u32(input)?;
 
             Ok((
                 input,
                 SubKeyListLhItem {
-                    named_key_offset,
+                    named_key_offset_relative,
                     name_hash
                 },
             ))
@@ -91,8 +91,8 @@ mod tests {
         let lh = SubKeyListLh {
             size: 64,
             count: 2,
-            items: vec![SubKeyListLhItem { named_key_offset: 12345, name_hash: 1111 },
-                        SubKeyListLhItem { named_key_offset: 54321, name_hash: 2222 }]
+            items: vec![SubKeyListLhItem { named_key_offset_relative: 12345, name_hash: 1111 },
+                        SubKeyListLhItem { named_key_offset_relative: 54321, name_hash: 2222 }]
         };
         assert_eq!(lh.size, lh.size());
         assert_eq!(vec![16441, 58417], lh.get_offset_list(4096));
@@ -108,14 +108,14 @@ mod tests {
             size: 96,
             count: 8,
             items: vec![
-                SubKeyListLhItem {named_key_offset:4600, name_hash:129374869},
-                SubKeyListLhItem {named_key_offset:7008, name_hash:97615},
-                SubKeyListLhItem {named_key_offset:7536, name_hash:397082278},
-                SubKeyListLhItem {named_key_offset:7192, name_hash:2451360315},
-                SubKeyListLhItem {named_key_offset:7440, name_hash:235888890},
-                SubKeyListLhItem {named_key_offset:6376, name_hash:2289207844},
-                SubKeyListLhItem {named_key_offset:7096, name_hash:2868760012},
-                SubKeyListLhItem {named_key_offset:7352, name_hash:123397}
+                SubKeyListLhItem {named_key_offset_relative:4600, name_hash:129374869},
+                SubKeyListLhItem {named_key_offset_relative:7008, name_hash:97615},
+                SubKeyListLhItem {named_key_offset_relative:7536, name_hash:397082278},
+                SubKeyListLhItem {named_key_offset_relative:7192, name_hash:2451360315},
+                SubKeyListLhItem {named_key_offset_relative:7440, name_hash:235888890},
+                SubKeyListLhItem {named_key_offset_relative:6376, name_hash:2289207844},
+                SubKeyListLhItem {named_key_offset_relative:7096, name_hash:2868760012},
+                SubKeyListLhItem {named_key_offset_relative:7352, name_hash:123397}
             ]
         };
 

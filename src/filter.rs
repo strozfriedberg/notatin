@@ -210,7 +210,7 @@ mod tests {
 
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
-                absolute_file_offset: 0,
+                file_offset_absolute: 0,
                 size: 48,
                 value_name_size: 18,
                 data_size: 8,

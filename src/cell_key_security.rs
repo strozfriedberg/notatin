@@ -85,12 +85,12 @@ impl hive_bin_cell::Cell for CellKeySecurity {
 pub fn read_cell_key_security(
     file_buffer: &[u8],
     security_key_offset: u32,
-    hbin_offset: u32
+    hbin_offset_absolute: u32
 ) -> Result<Vec<SecurityDescriptor>, Error> {
     let mut security_descriptors = Vec::new();
     let mut offset: usize = security_key_offset as usize;
     loop {
-        let (_, cell_key_security) = CellKeySecurity::from_bytes(&file_buffer[offset + hbin_offset as usize..])?;
+        let (_, cell_key_security) = CellKeySecurity::from_bytes(&file_buffer[offset + hbin_offset_absolute as usize..])?;
         security_descriptors.push(
             SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor))?
         );

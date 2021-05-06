@@ -19,7 +19,7 @@ use crate::warn::Warnings;
 pub struct CellBigData {
     pub size: u32,
     pub count: u16,
-    pub segment_list_offset: u32, // relative to the start of the hive bin
+    pub segment_list_offset_relative: u32, // relative to the start of the hive bin
     pub parse_warnings: Warnings
 }
 
@@ -34,7 +34,7 @@ impl CellBigData {
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("db")(input)?;
         let (input, count) = le_u16(input)?;
-        let (input, segment_list_offset) = le_u32(input)?;
+        let (input, segment_list_offset_relative) = le_u32(input)?;
 
         let size_abs = size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
@@ -44,7 +44,7 @@ impl CellBigData {
             CellBigData {
                 size: size_abs,
                 count,
-                segment_list_offset,
+                segment_list_offset_relative,
                 parse_warnings: Warnings::default()
             },
         ))
@@ -52,10 +52,10 @@ impl CellBigData {
 
     pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
         let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
-        let (_, data_offsets)           = hive_bin_cell_big_data.parse_big_data_offsets(state)?;
+        let (_, data_offsets_absolute)           = hive_bin_cell_big_data.parse_big_data_offsets(state)?;
         let mut big_data_buffer: Vec<u8> = Vec::new();
         let mut data_size_remaining = data_size;
-        for offset in data_offsets.iter() {
+        for offset in data_offsets_absolute.iter() {
             if data_size_remaining > 0 {
                 let (input, size) = CellBigData::parse_big_data_size(state, *offset)?;
                 let size_to_read = std::cmp::min(size.abs() as u32,
@@ -71,14 +71,14 @@ impl CellBigData {
         state: &'a State,
         offset: u32,
     ) -> IResult<&'a [u8], i32> {
-        le_i32(&state.file_buffer[state.hbin_offset + offset as usize..])
+        le_i32(&state.file_buffer[state.hbin_offset_absolute + offset as usize..])
     }
 
     fn parse_big_data_offsets<'a>(
         &self,
         state: &'a State
     ) -> IResult<&'a [u8], Vec<u32>> {
-        let (input, _size) = le_u32(&state.file_buffer[state.hbin_offset + self.segment_list_offset as usize..])?;
+        let (input, _size) = le_u32(&state.file_buffer[state.hbin_offset_absolute + self.segment_list_offset_relative as usize..])?;
         let (_, list) = count(le_u32, self.count as usize)(input)?;
         Ok((
             input,
@@ -109,7 +109,7 @@ mod tests {
         let expected_output = CellBigData {
             size: 16,
             count: 2,
-            segment_list_offset: 472,
+            segment_list_offset_relative: 472,
             parse_warnings: Warnings::default()
         };
         let remaining: [u8; 0] = [0; 0];

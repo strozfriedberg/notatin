@@ -53,24 +53,24 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLi {
         self.size
     }
 
-    fn get_offset_list(&self, hbin_offset: u32) -> Vec<u32> {
-        self.items.iter().map(|x| x.named_key_offset + hbin_offset).collect()
+    fn get_offset_list(&self, hbin_offset_absolute: u32) -> Vec<u32> {
+        self.items.iter().map(|x| x.named_key_offset_relative + hbin_offset_absolute).collect()
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct SubKeyListLiItem {
-    pub named_key_offset: u32, // The offset value is in bytes and relative from the start of the hive bin data
+    pub named_key_offset_relative: u32, // The offset value is in bytes and relative from the start of the hive bin data
 }
 
 impl SubKeyListLiItem {
     fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
         |input: &[u8]| {
-            let (input, named_key_offset) = le_u32(input)?;
+            let (input, named_key_offset_relative) = le_u32(input)?;
             Ok((
                 input,
                 SubKeyListLiItem {
-                    named_key_offset
+                    named_key_offset_relative
                 },
             ))
         }
@@ -87,8 +87,8 @@ mod tests {
         let li = SubKeyListLi {
             size: 64,
             count: 2,
-            items: vec![SubKeyListLiItem { named_key_offset: 12345 },
-                        SubKeyListLiItem { named_key_offset: 54321 }]
+            items: vec![SubKeyListLiItem { named_key_offset_relative: 12345 },
+                        SubKeyListLiItem { named_key_offset_relative: 54321 }]
         };
         assert_eq!(li.size, li.size());
         assert_eq!(vec![16441, 58417], li.get_offset_list(4096));

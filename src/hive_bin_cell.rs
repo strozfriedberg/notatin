@@ -28,7 +28,7 @@ impl PartialEq for dyn Cell {
 
 pub trait CellSubKeyList {
     fn size(&self) -> u32;
-    fn get_offset_list(&self, hbin_offset: u32) -> Vec<u32>;
+    fn get_offset_list(&self, hbin_offset_absolute: u32) -> Vec<u32>;
 }
 
 impl Debug for dyn CellSubKeyList {
