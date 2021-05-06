@@ -1,5 +1,3 @@
-use crate::warn::{Warnings, WarningCode};
-
 /// Via https://github.com/omerbenamram/mft
 #[macro_export]
 macro_rules! impl_serialize_for_bitflags {
@@ -55,9 +53,8 @@ macro_rules! impl_enum_from_value {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::warn::Warning;
     use bitflags::bitflags;
+    use crate::warn::{Warning, Warnings, WarningCode};
 
     #[test]
     fn test_from_bits_checked() {
@@ -82,7 +79,7 @@ mod tests {
         assert_eq!(Some(&vec![
             Warning {
                 code: WarningCode::WarningUnrecognizedBitflag,
-                text: "rust_parser_2::macros::tests::test_from_bits_checked::TestFlags::from_bits_checked: 0xFFFF".to_string()
+                text: "notatin::macros::tests::test_from_bits_checked::TestFlags::from_bits_checked: 0xFFFF".to_string()
             }
         ]), parse_warnings.get_warnings(), "Unmapped bits from_bits_checked conversion - parse_warnings should contain a warning");
     }

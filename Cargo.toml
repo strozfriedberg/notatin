@@ -1,5 +1,5 @@
 [package]
-name = "rust_parser_2"
+name = "notatin"
 version = "0.1.0"
 authors = ["kimberly.stone <kimberly.stone@aon.com>"]
 edition = "2018"

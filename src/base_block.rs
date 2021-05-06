@@ -180,36 +180,6 @@ mod tests {
     use super::*;
     use nom::error::ErrorKind;
     use nom::Finish;
-    use std::{
-        fs::File,
-        io::{BufWriter, Write},
-    };
-    use crate::filter::Filter;
-    use crate::registry::Registry;
-
-    #[test]
-    fn test_read_big_reg() {
-        let f = std::fs::read("test_data/SOFTWARE_1_nfury").unwrap();
-
-        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-        let (keys, values) = ret.unwrap().hive_bin_root.unwrap().root.count_all_keys_and_values();
-        assert_eq!(
-            (177876, 293276),
-            (keys, values)
-        );
-    }
-
-    #[test]
-    fn test_read_small_reg() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
-        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-        let (keys, values) = ret.unwrap().hive_bin_root.unwrap().root.count_all_keys_and_values();
-        assert_eq!(
-            (2287, 5470),
-            (keys, values)
-        );
-    }
 
     #[test]
     fn test_parse_base_block() {
@@ -252,15 +222,5 @@ mod tests {
             expected_error,
             ret
         );
-    }
-
-    #[test]
-    fn dump_registry() {
-        let f = std::fs::read("test_data/FuseHive").unwrap();
-        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-
-        let write_file = File::create("out.txt").unwrap();
-        let mut writer = BufWriter::new(&write_file);
-        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
     }
 }
