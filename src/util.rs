@@ -181,6 +181,11 @@ mod tests {
         assert_eq!("測試字符串", utf16, "UTF-16 conversion");
         assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
 
+        let test_4byte_utf16 = [0x28, 0x00, 0x01, 0xD8, 0x37, 0xDC, 0x29, 0x00];
+        let utf16 = string_from_bytes(false, &test_4byte_utf16, 2 * test_4byte_utf16.len() as u16, &mut parse_warnings, "Unit test");
+        assert_eq!("(𐐷)", utf16, "UTF-16 4-byte char conversion");
+        assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
+
         let test_utf16 = [0x2C, 0x6E, 0xFF, 0xDB, 0x57, 0x5B, 0x26, 0x7B, 0x32, 0x4E];
         let utf16 = string_from_bytes(false, &test_utf16, 2 * test_utf16.len() as u16, &mut parse_warnings, "Unit test");
         assert_eq!(format!("測{}字符串", std::char::REPLACEMENT_CHARACTER), utf16, "UTF-16 conversion - replacement character");
