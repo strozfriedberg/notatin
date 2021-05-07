@@ -369,11 +369,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel/Accessibility/HighContrast", "Flags"));
-        let state = State {
-            file_start_pos: f.as_ptr() as usize,
-            hbin_offset_absolute: 4096,
-            file_buffer: &f[..]
-        };
+        let state = State::new(&f, 4096);
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
         let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
@@ -387,11 +383,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         let mut filter = Filter::from_path(FindPath::from_key("Software/Microsoft/Office/14.0/Common"));
-        let state = State {
-            file_start_pos: f.as_ptr() as usize,
-            hbin_offset_absolute: 4096,
-            file_buffer: &f[..]
-        };
+        let state = State::new(&f, 4096);
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
 
         let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
@@ -405,11 +397,7 @@ mod tests {
     fn test_cell_key_node_count_all_keys_and_values() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
-        let state = State {
-            file_start_pos: f.as_ptr() as usize,
-            hbin_offset_absolute: 4096,
-            file_buffer: &f[..]
-        };
+        let state = State::new(&f, 4096);
         let ret = CellKeyNode::read(&state, slice, String::new(), &mut Filter::new());
         let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
@@ -423,11 +411,7 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
 
-        let state = State {
-            file_start_pos: f.as_ptr() as usize,
-            hbin_offset_absolute: 4096,
-            file_buffer: &f[..]
-        };
+        let state = State::new(&f, 4096);
         let ret = CellKeyNode::from_bytes(&state, slice, String::new());
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {

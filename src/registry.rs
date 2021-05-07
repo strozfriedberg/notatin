@@ -9,14 +9,22 @@ use crate::err::Error;
     https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-primary-files
 */
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct State<'a> { // todo: this isn't actually state.  that's a terrible name.  improve!
+#[derive(Debug, Eq, PartialEq)]
+pub struct State<'a> {
     pub file_start_pos: usize,
     pub hbin_offset_absolute: usize,
     pub file_buffer: &'a[u8]
 }
 
-impl State<'_> {
+impl<'a> State<'a> {
+    pub fn new(f: &'a[u8], hbin_offset_absolute: usize) -> Self {
+        State {
+            file_start_pos: f.as_ptr() as usize,
+            hbin_offset_absolute: hbin_offset_absolute,
+            file_buffer: &f[..]
+        }
+    }
+
     pub fn get_file_offset(&self, input: &[u8]) -> usize {
         input.as_ptr() as usize - self.file_start_pos
     }
@@ -33,11 +41,7 @@ impl Registry {
     pub fn from_bytes(file_buffer: &[u8], filter: &mut Filter) -> Result<Self, Error> {
         let file_start_pos = file_buffer.as_ptr() as usize;
         let (input, file_base_block) = FileBaseBlock::from_bytes(file_buffer)?;
-        let state = State {
-            file_start_pos,
-            hbin_offset_absolute: input.as_ptr() as usize - file_start_pos,
-            file_buffer
-        };
+        let state = State::new(&file_buffer, input.as_ptr() as usize - file_start_pos);
         Ok(Registry {
             header: file_base_block,
             hive_bin_root: HiveBin::read(&state, &input, String::new(), filter)?
