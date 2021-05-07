@@ -69,7 +69,11 @@ pub struct CellKeyNode {
     pub path: String,
     pub sub_keys: Vec<CellKeyNode>,
     pub sub_values: Vec<CellKeyValue>,
-    pub parse_warnings: Warnings
+    pub parse_warnings: Warnings,
+
+    pub cell_sub_key_offsets_absolute: Vec<u32>,
+
+    pub(crate) track_returned: u32
 }
 
 impl Default for CellKeyNode {
@@ -87,7 +91,9 @@ impl Default for CellKeyNode {
             path: String::default(),
             sub_keys: Vec::default(),
             sub_values: Vec::default(),
-            parse_warnings: Warnings::default()
+            parse_warnings: Warnings::default(),
+            cell_sub_key_offsets_absolute: Vec::new(),
+            track_returned: 0
          }
     }
 }
@@ -179,7 +185,9 @@ impl CellKeyNode {
             path,
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            parse_warnings
+            parse_warnings,
+            cell_sub_key_offsets_absolute: Vec::new(),
+            track_returned: 0,
         };
 
         Ok((
@@ -188,57 +196,77 @@ impl CellKeyNode {
         ))
     }
 
+    pub fn get_children() {
+
+    }
+
     pub fn read<'a>(
-        state: &State,
+        state: &mut State,
         input: &'a [u8],
         cur_path: String,
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
+
+        //println! ("push: {}", cell_key_node.path);
+        //state.cell_key_node_stack.push(cell_key_node);
+
         let filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok(None);
         }
-        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
-            cell_key_node.read_sub_keys(state, filter)?;
-        }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
             cell_key_node.read_values(state, filter)?;
+        }
+        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
+            //cell_key_node.read_sub_keys(state, filter)?;
+            //println! ("push: {}", cell_key_node.path);
+            //push_subkeys(state, input, cur_path, filter);
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
             filter.set_complete(true);
         }
+       // state.cell_key_node_stack.push(cell_key_node);
+
         Ok(Some(cell_key_node))
     }
 
-    /// Returns a vector of Security Descriptors for the key node.
-    pub fn read_security_key(
-        self: &mut CellKeyNode,
-        file_buffer: &[u8],
-        hbin_offset_absolute: u32
-    ) -> Result<Vec<SecurityDescriptor>, Error> {
-        cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset_relative, hbin_offset_absolute)
-    }
-
-    fn read_sub_keys(
-        self: &mut CellKeyNode,
-        state: &State,
+    /*pub fn push_subkeys<'a>(
+        state: &mut State,
+        input: &'a [u8],
+        cur_path: String,
         filter: &mut Filter
-    ) -> Result<Vec<u32>, Error> {
+    ) /*-> Result<Option<Self>, Error> */{
+
+    }*/
+
+    pub(crate) fn read_sub_keys(
+        self: &mut CellKeyNode,
+        state: &mut State,
+        filter: &mut Filter
+    ) -> Result<Vec<CellKeyNode>, Error> {
         let (_, cell_sub_key_offsets_absolute) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
+        let mut children = Vec::new();
         for val in cell_sub_key_offsets_absolute.iter() {
-             if let Some(kn) = CellKeyNode::read(
+             /*if let Some(kn) = CellKeyNode::read(
                 state,
                 &state.file_buffer[(*val as usize)..],
                 self.path.clone(),
                 filter
-            )? { self.sub_keys.push(kn) }
+            )? { self.sub_keys.push(kn) }*/
+            children.push(CellKeyNode::read(
+                state,
+                &state.file_buffer[(*val as usize)..],
+                self.path.clone(),
+                filter
+            )?.unwrap());
 
             if filter.is_complete() {
                 break;
             }
         }
-        Ok(cell_sub_key_offsets_absolute)
+        //self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
+        Ok(children)
     }
 
     fn read_values(
@@ -259,6 +287,15 @@ impl CellKeyNode {
             }
         }
         Ok(())
+    }
+
+    /// Returns a vector of Security Descriptors for the key node.
+    pub fn read_security_key(
+        self: &mut CellKeyNode,
+        file_buffer: &[u8],
+        hbin_offset_absolute: u32
+    ) -> Result<Vec<SecurityDescriptor>, Error> {
+        cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset_relative, hbin_offset_absolute)
     }
 
     /// Counts all subkeys and values of the
@@ -369,8 +406,8 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel/Accessibility/HighContrast", "Flags"));
-        let state = State::new(&f, 4096);
-        let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
+        let mut state = State::new(&f, 4096);
+        let ret = CellKeyNode::read(&mut state, slice, String::new(), &mut filter);
         let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
             (3, 1),
@@ -383,8 +420,8 @@ mod tests {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
         let mut filter = Filter::from_path(FindPath::from_key("Software/Microsoft/Office/14.0/Common"));
-        let state = State::new(&f, 4096);
-        let ret = CellKeyNode::read(&state, slice, String::new(), &mut filter);
+        let mut state = State::new(&f, 4096);
+        let ret = CellKeyNode::read(&mut state, slice, String::new(), &mut filter);
 
         let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
@@ -397,8 +434,8 @@ mod tests {
     fn test_cell_key_node_count_all_keys_and_values() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
-        let state = State::new(&f, 4096);
-        let ret = CellKeyNode::read(&state, slice, String::new(), &mut Filter::new());
+        let mut state = State::new(&f, 4096);
+        let ret = CellKeyNode::read(&mut state, slice, String::new(), &mut Filter::new());
         let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
         assert_eq!(
             (2287, 5470),
@@ -442,7 +479,9 @@ mod tests {
             path: String::from("\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}"),
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
-            parse_warnings: Warnings::default()
+            parse_warnings: Warnings::default(),
+            cell_sub_key_offsets_absolute: Vec::new(),
+            track_returned: 0,
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

@@ -3,6 +3,8 @@ use crate::base_block::FileBaseBlock;
 use crate::hive_bin::HiveBin;
 use crate::filter::Filter;
 use crate::err::Error;
+use crate::cell_key_node::CellKeyNode;
+use crate::hive_bin_header::HiveBinHeader;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -13,7 +15,9 @@ use crate::err::Error;
 pub struct State<'a> {
     pub file_start_pos: usize,
     pub hbin_offset_absolute: usize,
-    pub file_buffer: &'a[u8]
+    pub file_buffer: &'a[u8],
+
+    pub cell_key_node_stack: Vec<CellKeyNode>
 }
 
 impl<'a> State<'a> {
@@ -21,13 +25,91 @@ impl<'a> State<'a> {
         State {
             file_start_pos: f.as_ptr() as usize,
             hbin_offset_absolute: hbin_offset_absolute,
-            file_buffer: &f[..]
+            file_buffer: &f[..],
+            cell_key_node_stack: Vec::new()
         }
     }
 
     pub fn get_file_offset(&self, input: &[u8]) -> usize {
         input.as_ptr() as usize - self.file_start_pos
     }
+}
+
+#[derive(Debug)]
+pub struct Parser<'a> {
+    pub state: &'a mut State<'a>,
+    pub filter: &'a mut Filter,
+    pub s1: Vec<CellKeyNode>,
+    pub s2: Vec<CellKeyNode>,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(state: &'a mut State<'a>, filter: &'a mut Filter) -> Self {
+        Parser {
+            state,
+            filter,
+            s1: Vec::new(),
+            s2: Vec::new()
+        }
+    }
+
+    pub fn init(&mut self) {
+        let file_start_pos = self.state.file_buffer.as_ptr() as usize;
+        let (input, file_base_block) = FileBaseBlock::from_bytes(self.state.file_buffer).unwrap();
+        let mut state = State::new(&self.state.file_buffer, input.as_ptr() as usize - file_start_pos);
+
+        let (input, hive_bin_header) = HiveBinHeader::from_bytes(&state, input).unwrap();
+        let mut filter = Filter::new();
+        let cell_key_node_root = CellKeyNode::read(&mut state, input,String::new(), &mut filter).unwrap().unwrap();
+        self.s1.push(cell_key_node_root);
+    }
+}
+
+impl Iterator for Parser<'_> {
+    type Item = CellKeyNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Create two stacks
+        //let mut s1: Vec<CellKeyNode> = Vec::new();
+        //let mut s2: Vec<CellKeyNode> = Vec::new();
+
+        // push root to first stack
+        // Run while first stack is not empty
+        while !self.s1.is_empty() {
+            // first check to see if we are done with anything on s2; if so, we can pop, return it, and carry on.
+            if !self.s2.is_empty() {
+                let last = self.s2.last().unwrap();
+                if last.track_returned == last.number_of_sub_keys {
+                    let node = self.s2.pop().unwrap();
+                    //println! ("return {}", node.path);
+                    //continue;
+                    return Some(node);
+                }
+            }
+            let mut node = self.s1.pop().unwrap();
+            // push all children of node to s1
+            if node.number_of_sub_keys > 0 {
+                let children = node.read_sub_keys(&mut self.state, &mut self.filter).unwrap();
+                for child in children {
+                    self.s1.push(child);
+                }
+            }
+            if !self.s2.is_empty() {
+                let last = self.s2.last_mut().unwrap();
+                last.track_returned += 1;
+            }
+            self.s2.push(node);
+        }
+
+        // Handle remaining elements
+        while !self.s2.is_empty() {
+            let node = self.s2.pop().unwrap();
+            //println! ("return {}", node.path);
+            return Some(node);
+        }
+        return None;
+    }
+
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -41,22 +123,36 @@ impl Registry {
     pub fn from_bytes(file_buffer: &[u8], filter: &mut Filter) -> Result<Self, Error> {
         let file_start_pos = file_buffer.as_ptr() as usize;
         let (input, file_base_block) = FileBaseBlock::from_bytes(file_buffer)?;
-        let state = State::new(&file_buffer, input.as_ptr() as usize - file_start_pos);
+        let mut state = State::new(&file_buffer, input.as_ptr() as usize - file_start_pos);
         Ok(Registry {
             header: file_base_block,
-            hive_bin_root: HiveBin::read(&state, &input, String::new(), filter)?
+            hive_bin_root: HiveBin::read(&mut state, &input, String::new(), filter)?
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::{
         fs::File,
         io::{BufWriter, Write},
     };
     use crate::filter::Filter;
     use crate::registry::Registry;
+
+    #[test]
+    fn test_parser_iterator() {
+        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
+
+        let mut state = State::new(&f, 4096);
+        let mut filter = Filter::new();
+        let mut parser = Parser::new(&mut state, &mut filter);
+        parser.init();
+        for cell in parser {
+            println!("{}", cell.path);
+        }
+    }
 
     #[test]
     fn test_read_big_reg() {
