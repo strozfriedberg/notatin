@@ -19,44 +19,13 @@ impl HiveBin {
         filter: &mut Filter
     ) -> Result<Option<HiveBin>, Error> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(state, input)?;
-        let res = CellKeyNode::read(state, input, path, filter)?;
-        //HiveBin::postOrderIterative(state, filter, res.unwrap());
-
-        /*
-
+        CellKeyNode::read(state, input, path, filter)?
             .map_or(
                 Ok(None),
                 |hbr| Ok(Some(HiveBin {
                     header: hive_bin_header,
                     root: hbr
                 }))
-            );*/
-        loop {
-            match state.cell_key_node_stack.pop() {
-                Some(mut cell_key_node) => {
-                    println! ("pop: {}", cell_key_node.path);
-
-                    for val in cell_key_node.cell_sub_key_offsets_absolute.iter() {
-                        /*if let Some(kn) = CellKeyNode::read(
-                           state,
-                           &state.file_buffer[(*val as usize)..],
-                           self.path.clone(),
-                           filter
-                       )? { self.sub_keys.push(kn) }*/
-
-                       CellKeyNode::read(
-                           state,
-                           &state.file_buffer[(*val as usize)..],
-                           cell_key_node.path.clone(),
-                           filter
-                       )?;
-                    }
-
-                    //cell_key_node.read_sub_keys(state, filter)?
-                },
-                None => break
-            };
-        }
-        Ok(None)
+            )
     }
 }

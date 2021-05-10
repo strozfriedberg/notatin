@@ -207,10 +207,6 @@ impl CellKeyNode {
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
-
-        //println! ("push: {}", cell_key_node.path);
-        //state.cell_key_node_stack.push(cell_key_node);
-
         let filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok(None);
@@ -220,25 +216,13 @@ impl CellKeyNode {
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
             //cell_key_node.read_sub_keys(state, filter)?;
-            //println! ("push: {}", cell_key_node.path);
-            //push_subkeys(state, input, cur_path, filter);
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
             filter.set_complete(true);
         }
-       // state.cell_key_node_stack.push(cell_key_node);
 
         Ok(Some(cell_key_node))
     }
-
-    /*pub fn push_subkeys<'a>(
-        state: &mut State,
-        input: &'a [u8],
-        cur_path: String,
-        filter: &mut Filter
-    ) /*-> Result<Option<Self>, Error> */{
-
-    }*/
 
     pub(crate) fn read_sub_keys(
         self: &mut CellKeyNode,
@@ -265,7 +249,7 @@ impl CellKeyNode {
                 break;
             }
         }
-        //self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
+        self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
         Ok(children)
     }
 
@@ -296,7 +280,7 @@ impl CellKeyNode {
         hbin_offset_absolute: u32
     ) -> Result<Vec<SecurityDescriptor>, Error> {
         cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset_relative, hbin_offset_absolute)
-    }
+     }
 
     /// Counts all subkeys and values of the
     pub fn count_all_keys_and_values(

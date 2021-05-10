@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Eq, PartialEq)]
 pub enum Error {
     #[error("An error has occurred in the Nom library: {}", detail)]
     Nom { detail: String },
