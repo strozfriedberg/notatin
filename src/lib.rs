@@ -8,6 +8,7 @@ extern crate enum_primitive_derive;
 extern crate winstructs;
 extern crate chrono;
 extern crate serde;
+extern crate md5;
 pub mod base_block;
 pub mod cell_big_data;
 pub mod cell_key_node;

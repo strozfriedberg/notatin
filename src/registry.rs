@@ -1,4 +1,6 @@
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use serde::Serialize;
+use md5;
 use crate::base_block::FileBaseBlock;
 use crate::hive_bin::HiveBin;
 use crate::filter::Filter;
@@ -67,6 +69,8 @@ impl<'a> Parser<'a> {
         let (input, base_block) = FileBaseBlock::from_bytes(self.state.file_buffer)?;
         self.base_block = Some(base_block);
         self.state.hbin_offset_absolute = input.as_ptr() as usize - file_start_pos;
+        self.state.key_complete = false;
+        self.state.value_complete = false;
 
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
@@ -80,7 +84,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Counts all subkeys and values of the
+    /// Counts all subkeys and values
     pub fn count_all_keys_and_values(
         &mut self
     ) -> (usize, usize) {
@@ -161,6 +165,18 @@ mod tests {
             (2288, 5470),
             (keys, values)
         );
+
+        let res = parser.init();
+        assert_eq!(Ok(true), res);
+        let mut md5_context =  md5::Context::new();
+        for key in parser {
+            md5_context.consume(key.path);
+        }
+        assert_eq!(
+           "41acb14f8fff78e14f400e60e2b7dade",
+           format!("{:x}", md5_context.compute()),
+           "Expected hash of paths doesn't match"
+        );
     }
 
     #[test]
@@ -217,6 +233,21 @@ mod tests {
             (4, 1),
             (keys, values)
         );
+
+        let res = parser.init();
+        assert_eq!(
+            Ok(true),
+            res
+        );
+        let mut md5_context =  md5::Context::new();
+        for key in parser {
+            md5_context.consume(key.path);
+        }
+        assert_eq!(
+           "2f0c1e14b72a26f61bdaf7128895b976",
+           format!("{:x}", md5_context.compute()),
+           "Expected hash of paths doesn't match"
+        );
     }
 
     #[test]
@@ -229,11 +260,26 @@ mod tests {
             Ok(true),
             res
         );
-
         let (keys, values) = parser.count_all_keys_and_values();
         assert_eq!(
             (45, 304),
-            (keys, values)
+            (keys, values),
+            "key and/or value count doesn't match expected"
+        );
+
+        let res = parser.init();
+        assert_eq!(
+            Ok(true),
+            res
+        );
+        let mut md5_context =  md5::Context::new();
+        for key in parser {
+            md5_context.consume(key.path);
+        }
+        assert_eq!(
+           "5a319fb51c30b1f0f59a77a11558c3a9",
+           format!("{:x}", md5_context.compute()),
+           "Expected hash of paths doesn't match"
         );
     }
 
