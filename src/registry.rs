@@ -24,7 +24,7 @@ pub struct State<'a> {
     // filter evaulation
     pub value_complete: bool,
     pub key_complete: bool,
-    pub root_key_path_offset: usize
+    pub root_key_path_offset: usize // path filters don't include the root name, but the cell key's paths do. This is the length of that root name so we can index into the string directly
 }
 
 impl<'a> State<'a> {
@@ -89,7 +89,7 @@ impl<'a> Parser<'a> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
 
-        let (kn, _) = CellKeyNode::read(&mut self.state, input, &String::new(), &Filter::new())?; // we pass in a null filter for the root since it should always match
+        let (kn, _) = CellKeyNode::read(&mut self.state, input, &String::new(), &Filter::new())?; // we pass in a null filter for the root since matches by definition
         match kn {
             Some(cell_key_node_root) => {
                 self.stack_to_traverse.push(cell_key_node_root);
@@ -130,7 +130,7 @@ impl Iterator for Parser<'_> {
 
             let mut node = self.stack_to_traverse.pop().expect("We just checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
-                let children = node.read_sub_keys(&mut self.state, &mut self.filter).unwrap();
+                let children = node.read_sub_keys(&mut self.state, &self.filter).unwrap();
                 self.stack_to_traverse.extend(children);
             }
             if !self.stack_to_return.is_empty() {
