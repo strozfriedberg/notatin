@@ -1,6 +1,4 @@
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use serde::Serialize;
-use md5;
 use crate::base_block::FileBaseBlock;
 use crate::hive_bin::HiveBin;
 use crate::filter::Filter;
@@ -28,8 +26,8 @@ impl<'a> State<'a> {
     pub fn new(f: &'a[u8], hbin_offset_absolute: usize) -> Self {
         State {
             file_start_pos: f.as_ptr() as usize,
-            hbin_offset_absolute: hbin_offset_absolute,
-            file_buffer: &f[..],
+            hbin_offset_absolute,
+            file_buffer: f,
             cell_key_node_stack: Vec::new(),
             value_complete: false,
             key_complete: false
@@ -115,11 +113,10 @@ impl Iterator for Parser<'_> {
             self.s2.push(node);
         }
 
-        // Handle any remaining elements
-        while !self.s2.is_empty() {
+        if !self.s2.is_empty() {
             return Some(self.s2.pop().expect("We just checked that s2 wasn't empty"));
         }
-        return None;
+        None
     }
 }
 
@@ -150,6 +147,7 @@ mod tests {
         io::{BufWriter, Write},
     };
     use crate::filter::{Filter, FindPath};
+    use md5;
 
     #[test]
     fn test_parser_iterator() {

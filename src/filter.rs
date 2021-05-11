@@ -1,5 +1,4 @@
 use bitflags::bitflags;
-use std::path::{Path, PathBuf};
 use crate::err::Error;
 use crate::hive_bin_cell;
 use crate::impl_serialize_for_bitflags;
@@ -47,37 +46,6 @@ impl Filter {
             }
         }
         self.root_key_path_offset
-    }
-
-    pub(crate) fn compare_path(
-        &mut self,
-        key_path: &str
-    ) -> Result<bool, Error> {
-        if self.root_key_path_offset == 0 {
-            assert_eq!(&key_path[..1], "\\");
-            match key_path[1..].find('\\') {
-                Some(second_backslash) => self.root_key_path_offset = second_backslash + 2,
-                None => return Err(Error::Any{detail: String::from("Malformed key_path")})
-            }
-        }
-
-        let key_path_iterator = key_path[self.root_key_path_offset..].split('\\'); // key path can be shorter and match
-        let mut filter_iterator = self.find_path.as_ref().expect("we shouldn't be in this method unless we have a find_path").key_path.split('\\');
-        let mut filter_path_segment = filter_iterator.next();
-        for key_path_segment in key_path_iterator {
-            match filter_path_segment {
-                Some(fps) => {
-                    if fps != key_path_segment.to_ascii_lowercase() {
-                        return Ok(false);
-                        }
-                    else {
-                        filter_path_segment = filter_iterator.next();
-                    }
-                },
-                None => return Ok(false)
-            }
-        }
-        return Ok(true);
     }
 
     pub(crate) fn check_cell(
@@ -150,7 +118,7 @@ impl FindPath {
 
     fn from_key_value_internal(key_path: &str, value: Option<String>) -> FindPath {
         FindPath {
-            key_path: String::from(key_path.to_ascii_lowercase()),
+            key_path: key_path.to_ascii_lowercase(),
             value: value.map(|v| v.to_ascii_lowercase())
         }
     }
@@ -202,15 +170,6 @@ mod tests {
     use crate::warn::Warnings;
     use crate::cell_key_node;
     use crate::cell_key_value;
-
-    #[test]
-    fn test_compare_path() {
-        let mut filter = Filter::from_path(FindPath::from_key("Software\\Microsoft\\Office\\14.0\\Common"));
-        assert_eq!(Ok(true), filter.compare_path("\\{49ede77f-4b2f-45b8-b1f8-5bc740182bdf}\\Software\\Microsoft"));
-        assert_eq!(Ok(true), filter.compare_path("\\{49ede77f-4b2f-45b8-b1f8-5bc740182bdf}\\Software\\Microsoft\\Office\\14.0\\Common"));
-        assert_eq!(Ok(false), filter.compare_path("\\{49ede77f-4b2f-45b8-b1f8-5bc740182bdf}\\Software\\Microsoft\\Office\\14.0\\Common\\Too\\much"));
-        assert_eq!(Ok(false), filter.compare_path("\\{49ede77f-4b2f-45b8-b1f8-5bc740182bdf}\\Software\\Microsoft\\no\\match"));
-    }
 
     #[test]
     fn test_find_path_build() {

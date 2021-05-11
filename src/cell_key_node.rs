@@ -203,7 +203,7 @@ impl CellKeyNode {
         cur_path: String,
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
-        let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
+        let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path)?;
         let filter_flags = filter.check_cell(state, &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok(None);
@@ -260,7 +260,7 @@ impl CellKeyNode {
                 cell_key_value.read_content(state);
                 self.sub_values.push(cell_key_value);
             }
-            if state.value_complete == true {
+            if state.value_complete {
                 break;
             }
         }
