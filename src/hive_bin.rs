@@ -15,7 +15,7 @@ impl HiveBin {
     pub fn read(
         state: &mut State,
         input: &[u8],
-        path: String,
+        path: &String,
         filter: &mut Filter
     ) -> Result<Option<HiveBin>, Error> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(state, input)?;

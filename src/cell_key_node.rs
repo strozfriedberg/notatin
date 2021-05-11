@@ -73,6 +73,8 @@ pub struct CellKeyNode {
 
     #[serde(skip_serializing)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
+    #[serde(skip_serializing)]
+    pub(crate) track_returned: u32
 }
 
 impl Default for CellKeyNode {
@@ -91,7 +93,8 @@ impl Default for CellKeyNode {
             sub_keys: Vec::default(),
             sub_values: Vec::default(),
             parse_warnings: Warnings::default(),
-            cell_sub_key_offsets_absolute: Vec::new()
+            cell_sub_key_offsets_absolute: Vec::new(),
+            track_returned: 0
          }
     }
 }
@@ -114,7 +117,7 @@ impl CellKeyNode {
     pub fn from_bytes<'a> (
         state: &State,
         input: &'a [u8],
-        cur_path: String
+        cur_path: &String
     ) -> IResult<&'a [u8], Self> {
         let file_offset_absolute = state.get_file_offset(input);
         let start_pos = input.as_ptr() as usize;
@@ -154,7 +157,7 @@ impl CellKeyNode {
         let size_abs =  size.abs() as u32;
         let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
-        let mut path = cur_path;
+        let mut path = cur_path.to_owned();
         path.push('\\');
         path += &key_name;
 
@@ -188,7 +191,8 @@ impl CellKeyNode {
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
             parse_warnings,
-            cell_sub_key_offsets_absolute: Vec::new()
+            cell_sub_key_offsets_absolute: Vec::new(),
+            track_returned: 0
         };
 
         Ok((
@@ -200,7 +204,7 @@ impl CellKeyNode {
     pub fn read<'a>(
         state: &mut State,
         input: &'a [u8],
-        cur_path: String,
+        cur_path: &String,
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path)?;
@@ -230,7 +234,7 @@ impl CellKeyNode {
              if let Some(kn) = CellKeyNode::read(
                 state,
                 &state.file_buffer[(*val as usize)..],
-                self.path.clone(),
+                &self.path,
                 filter
             )? { children.push(kn) }
 
@@ -398,7 +402,7 @@ mod tests {
         let slice = &f[4128..4264];
 
         let state = State::new(&f, 4096);
-        let ret = CellKeyNode::from_bytes(&state, slice, String::new());
+        let ret = CellKeyNode::from_bytes(&state, slice, &String::new());
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
                 file_offset_absolute: 4128,
@@ -429,7 +433,8 @@ mod tests {
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
             parse_warnings: Warnings::default(),
-            cell_sub_key_offsets_absolute: Vec::new()
+            cell_sub_key_offsets_absolute: Vec::new(),
+            track_returned: 0
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));
@@ -439,7 +444,7 @@ mod tests {
         );
 
         let slice = &f[0..10];
-        let ret = CellKeyNode::from_bytes(&state, slice, String::new());
+        let ret = CellKeyNode::from_bytes(&state, slice, &String::new());
         let remaining = &f[4..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {input: remaining, code: ErrorKind::Tag}));
         assert_eq!(

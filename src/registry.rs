@@ -73,7 +73,7 @@ impl<'a> Parser<'a> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
 
-        match CellKeyNode::read(&mut self.state, input,String::new(), &mut Filter::new())? { // we pass in a null filter for the root since it should always match
+        match CellKeyNode::read(&mut self.state, input, &String::new(), &mut Filter::new())? { // we pass in a null filter for the root since it should always match
             Some(cell_key_node_root) => {
                 self.s1.push(cell_key_node_root);
                 Ok(true)
@@ -104,19 +104,32 @@ impl Iterator for Parser<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         // Run while first stack is not empty
         while !self.s1.is_empty() {
+            // first check to see if we are done with anything on s2; if so, we can pop, return it, and carry on (otherwise we'd push every node onto the stack before returning anything)
+            if !self.s2.is_empty() {
+                let last = self.s2.last().expect("We checked that s2 wasn't empty");
+                if last.track_returned == last.number_of_sub_keys {
+                    return Some(self.s2.pop().expect("We just checked that s2 wasn't empty"));
+                }
+            }
+
             let mut node = self.s1.pop().expect("We just checked that s1 wasn't empty");
             // push all children of node to s1
             if node.number_of_sub_keys > 0 {
                 let children = node.read_sub_keys(&mut self.state, &mut self.filter).unwrap();
                 self.s1.extend(children);
             }
+            if !self.s2.is_empty() {
+                let last = self.s2.last_mut().expect("We checked that s2 wasn't empty");
+                last.track_returned += 1;
+            }
             self.s2.push(node);
         }
 
+        // Handle any remaining elements
         if !self.s2.is_empty() {
             return Some(self.s2.pop().expect("We just checked that s2 wasn't empty"));
         }
-        None
+        return None;
     }
 }
 
@@ -134,7 +147,7 @@ impl Registry {
         let mut state = State::new(&file_buffer, input.as_ptr() as usize - file_start_pos);
         Ok(Registry {
             header: file_base_block,
-            hive_bin_root: HiveBin::read(&mut state, &input, String::new(), filter)?
+            hive_bin_root: HiveBin::read(&mut state, &input, &String::new(), filter)?
         })
     }
 }
