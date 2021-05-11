@@ -43,8 +43,8 @@ impl<'a> State<'a> {
 pub struct Parser<'a> {
     pub state: State<'a>,
     pub filter: &'a mut Filter,
-    pub s1: Vec<CellKeyNode>,
-    pub s2: Vec<CellKeyNode>,
+    pub stack_to_traverse: Vec<CellKeyNode>,
+    pub stack_to_return: Vec<CellKeyNode>,
     pub base_block: Option<FileBaseBlock>,
     pub hive_bin_header: Option<HiveBinHeader>
 
@@ -55,8 +55,8 @@ impl<'a> Parser<'a> {
         Parser {
             state: State::new(&file_buffer, 0),
             filter,
-            s1: Vec::new(),
-            s2: Vec::new(),
+            stack_to_traverse: Vec::new(),
+            stack_to_return: Vec::new(),
             base_block: None,
             hive_bin_header: None
         }
@@ -75,7 +75,7 @@ impl<'a> Parser<'a> {
 
         match CellKeyNode::read(&mut self.state, input, &String::new(), &mut Filter::new())? { // we pass in a null filter for the root since it should always match
             Some(cell_key_node_root) => {
-                self.s1.push(cell_key_node_root);
+                self.stack_to_traverse.push(cell_key_node_root);
                 Ok(true)
             },
             None => Ok(false)
@@ -89,7 +89,6 @@ impl<'a> Parser<'a> {
         let mut keys = 0;
         let mut values = 0;
         for key in self {
-            println!("{}", key.path);
             keys += 1;
             values += key.sub_values.len();
         }
@@ -102,32 +101,31 @@ impl Iterator for Parser<'_> {
 
     // iterative post-order traversal
     fn next(&mut self) -> Option<Self::Item> {
-        // Run while first stack is not empty
-        while !self.s1.is_empty() {
-            // first check to see if we are done with anything on s2; if so, we can pop, return it, and carry on (otherwise we'd push every node onto the stack before returning anything)
-            if !self.s2.is_empty() {
-                let last = self.s2.last().expect("We checked that s2 wasn't empty");
+        while !self.stack_to_traverse.is_empty() {
+            // first check to see if we are done with anything on stack_to_return;
+            // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
+            if !self.stack_to_return.is_empty() {
+                let last = self.stack_to_return.last().expect("We checked that s2 wasn't empty");
                 if last.track_returned == last.number_of_sub_keys {
-                    return Some(self.s2.pop().expect("We just checked that s2 wasn't empty"));
+                    return Some(self.stack_to_return.pop().expect("We just checked that s2 wasn't empty"));
                 }
             }
 
-            let mut node = self.s1.pop().expect("We just checked that s1 wasn't empty");
-            // push all children of node to s1
+            let mut node = self.stack_to_traverse.pop().expect("We just checked that s1 wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let children = node.read_sub_keys(&mut self.state, &mut self.filter).unwrap();
-                self.s1.extend(children);
+                self.stack_to_traverse.extend(children);
             }
-            if !self.s2.is_empty() {
-                let last = self.s2.last_mut().expect("We checked that s2 wasn't empty");
+            if !self.stack_to_return.is_empty() {
+                let last = self.stack_to_return.last_mut().expect("We checked that s2 wasn't empty");
                 last.track_returned += 1;
             }
-            self.s2.push(node);
+            self.stack_to_return.push(node);
         }
 
         // Handle any remaining elements
-        if !self.s2.is_empty() {
-            return Some(self.s2.pop().expect("We just checked that s2 wasn't empty"));
+        if !self.stack_to_return.is_empty() {
+            return Some(self.stack_to_return.pop().expect("We just checked that s2 wasn't empty"));
         }
         return None;
     }
@@ -184,7 +182,7 @@ mod tests {
             md5_context.consume(key.path);
         }
         assert_eq!(
-           "41acb14f8fff78e14f400e60e2b7dade",
+           "25c1c64894d5107d43d9edd3b17b1a9e",
            format!("{:x}", md5_context.compute()),
            "Expected hash of paths doesn't match"
         );
@@ -288,7 +286,7 @@ mod tests {
             md5_context.consume(key.path);
         }
         assert_eq!(
-           "5a319fb51c30b1f0f59a77a11558c3a9",
+           "6ced711ecdfe62f4ae7f219f3e8341ef",
            format!("{:x}", md5_context.compute()),
            "Expected hash of paths doesn't match"
         );
