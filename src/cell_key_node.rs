@@ -73,9 +73,6 @@ pub struct CellKeyNode {
 
     #[serde(skip_serializing)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
-
-    #[serde(skip_serializing)]
-    pub(crate) track_returned: u32
 }
 
 impl Default for CellKeyNode {
@@ -94,8 +91,7 @@ impl Default for CellKeyNode {
             sub_keys: Vec::default(),
             sub_values: Vec::default(),
             parse_warnings: Warnings::default(),
-            cell_sub_key_offsets_absolute: Vec::new(),
-            track_returned: 0
+            cell_sub_key_offsets_absolute: Vec::new()
          }
     }
 }
@@ -192,18 +188,13 @@ impl CellKeyNode {
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
             parse_warnings,
-            cell_sub_key_offsets_absolute: Vec::new(),
-            track_returned: 0,
+            cell_sub_key_offsets_absolute: Vec::new()
         };
 
         Ok((
             input,
             cell_key_node
         ))
-    }
-
-    pub fn get_children() {
-
     }
 
     pub fn read<'a>(
@@ -213,15 +204,12 @@ impl CellKeyNode {
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
-        let filter_flags = filter.check_cell(state, cur_path.is_empty(), &cell_key_node)?;
+        let filter_flags = filter.check_cell(state, &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok(None);
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
             cell_key_node.read_values(state, filter)?;
-        }
-        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS) && cell_key_node.number_of_sub_keys > 0 {
-            //cell_key_node.read_sub_keys(state, filter)?;
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
             filter.set_complete(true);
@@ -263,7 +251,7 @@ impl CellKeyNode {
         let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
         for val in key_values.iter() {
             let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset_absolute)..])?;
-            let iterate_flags = filter.check_cell(state, true, &cell_key_value)?;
+            let iterate_flags = filter.check_cell(state, &cell_key_value)?;
             if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
                 filter.set_complete(true);
                 state.value_complete = true;
@@ -441,8 +429,7 @@ mod tests {
             sub_keys: Vec::new(),
             sub_values: Vec::new(),
             parse_warnings: Warnings::default(),
-            cell_sub_key_offsets_absolute: Vec::new(),
-            track_returned: 0,
+            cell_sub_key_offsets_absolute: Vec::new()
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));

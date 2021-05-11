@@ -11,7 +11,7 @@ use crate::registry::State;
 pub struct Filter {
     find_path: Option<FindPath>,
     is_complete: bool,
-    root_key_name_offset: usize
+    root_key_path_offset: usize
 }
 
 impl Filter {
@@ -19,7 +19,7 @@ impl Filter {
         Filter {
             find_path: None,
             is_complete: false,
-            root_key_name_offset: 0
+            root_key_path_offset: 0
         }
     }
 
@@ -27,7 +27,7 @@ impl Filter {
         Filter {
             find_path: Some(find_path),
             is_complete: false,
-            root_key_name_offset: 0
+            root_key_path_offset: 0
         }
     }
 
@@ -39,29 +39,29 @@ impl Filter {
         self.is_complete = is_complete;
     }
 
-    pub(crate) fn get_root_name_offset(&mut self, key_path: &str) -> usize {
-        if self.root_key_name_offset == 0 {
+    pub(crate) fn get_root_path_offset(&mut self, key_path: &str) -> usize {
+        if self.root_key_path_offset == 0 {
             match key_path[1..].find('\\') {
-                Some(second_backslash) => self.root_key_name_offset = second_backslash + 2,
+                Some(second_backslash) => self.root_key_path_offset = second_backslash + 2,
                 None => return 0
             }
         }
-        self.root_key_name_offset
+        self.root_key_path_offset
     }
 
     pub(crate) fn compare_path(
         &mut self,
         key_path: &str
     ) -> Result<bool, Error> {
-        if self.root_key_name_offset == 0 {
+        if self.root_key_path_offset == 0 {
             assert_eq!(&key_path[..1], "\\");
             match key_path[1..].find('\\') {
-                Some(second_backslash) => self.root_key_name_offset = second_backslash + 2,
+                Some(second_backslash) => self.root_key_path_offset = second_backslash + 2,
                 None => return Err(Error::Any{detail: String::from("Malformed key_path")})
             }
         }
 
-        let key_path_iterator = key_path[self.root_key_name_offset..].split('\\'); // key path can be shorter and match
+        let key_path_iterator = key_path[self.root_key_path_offset..].split('\\'); // key path can be shorter and match
         let mut filter_iterator = self.find_path.as_ref().expect("we shouldn't be in this method unless we have a find_path").key_path.split('\\');
         let mut filter_path_segment = filter_iterator.next();
         for key_path_segment in key_path_iterator {
@@ -83,11 +83,10 @@ impl Filter {
     pub(crate) fn check_cell(
         self: &mut Filter,
         state: &State,
-        is_first_iteration: bool,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
         if !state.key_complete && !self.is_complete() && self.find_path.is_some()  {
-            self.handle_find_path(is_first_iteration, cell)
+            self.handle_find_path(cell)
         }
         else {
             Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
@@ -96,14 +95,13 @@ impl Filter {
 
     pub(crate) fn handle_find_path(
         self: &mut Filter,
-        is_first_iteration: bool,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
         match cell.lowercase() {
             Some(cell_lowercase) => {
                 let find_path = &self.find_path.as_ref().expect("We don't end up in this function unless find_path.is_some()");
                 if cell.is_key() && !find_path.key_path.is_empty() {
-                    self.match_key(is_first_iteration, cell_lowercase)
+                    self.match_key(cell_lowercase)
                 }
                 else {
                     match &find_path.value {
@@ -123,18 +121,13 @@ impl Filter {
         }
     }
 
-    fn match_key(self: &mut Filter, is_first_iteration: bool, key_path: String) -> Result<FilterFlags, Error> {
-        /*if is_first_iteration { // skip the first iteration; it's the root hive name and therefore always matches
-            Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
-        }
-        else {*/
-            let key_name_offset = self.get_root_name_offset(&key_path);
-            self.find_path.as_mut().expect("self.find_path was checked previously")
-                .check_key_match(
-                    &key_path,
-                    key_name_offset
-                )
-       // }
+    fn match_key(self: &mut Filter, key_path: String) -> Result<FilterFlags, Error> {
+        let key_path_offset = self.get_root_path_offset(&key_path);
+        self.find_path.as_mut().expect("self.find_path was checked previously")
+            .check_key_match(
+                &key_path,
+                key_path_offset
+            )
     }
 }
 
@@ -235,17 +228,17 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
-            filter.clone().check_cell(&state, false, &key_node).unwrap(),
+            filter.clone().check_cell(&state, &key_node).unwrap(),
             "check_cell: Same case key match failed");
 
         key_node.path = String::from("Highcontrast");
         assert_eq!(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
-            filter.clone().check_cell(&state, false, &key_node).unwrap(),
+            filter.clone().check_cell(&state, &key_node).unwrap(),
             "check_cell: Different case key match failed");
 
         key_node.path = String::from("badVal");
         assert_eq!(FilterFlags::FILTER_NO_MATCH,
-            filter.clone().check_cell(&state, false, &key_node).unwrap(),
+            filter.clone().check_cell(&state, &key_node).unwrap(),
             "check_cell: No match key match failed");
     }
 
@@ -269,17 +262,17 @@ mod tests {
             parse_warnings: Warnings::default()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
-            filter.clone().check_cell(&state, false, &key_value).unwrap(),
+            filter.clone().check_cell(&state, &key_value).unwrap(),
             "check_cell: Same case value match failed");
 
         key_value.value_name = String::from("flags");
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
-            filter.clone().check_cell(&state, false, &key_value).unwrap(),
+            filter.clone().check_cell(&state, &key_value).unwrap(),
             "check_cell: Different case value match failed");
 
         key_value.value_name = String::from("NoMatch");
         assert_eq!(FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
-            filter.clone().check_cell(&state, false, &key_value).unwrap(),
+            filter.clone().check_cell(&state, &key_value).unwrap(),
             "check_cell: No match value match failed");
     }
 }

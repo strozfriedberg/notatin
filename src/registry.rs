@@ -98,32 +98,22 @@ impl<'a> Parser<'a> {
 impl Iterator for Parser<'_> {
     type Item = CellKeyNode;
 
+    // iterative post-order traversal
     fn next(&mut self) -> Option<Self::Item> {
         // Run while first stack is not empty
         while !self.s1.is_empty() {
-            // first check to see if we are done with anything on s2; if so, we can pop, return it, and carry on.
-            if !self.s2.is_empty() {
-                let last = self.s2.last().expect("We checked that s2 wasn't empty");
-                if last.track_returned == last.number_of_sub_keys {
-                    return Some(self.s2.pop().expect("We checked that s2 wasn't empty"));
-                }
-            }
-            let mut node = self.s1.pop().expect("We checked that s1 wasn't empty");
+            let mut node = self.s1.pop().expect("We just checked that s1 wasn't empty");
             // push all children of node to s1
             if node.number_of_sub_keys > 0 {
                 let children = node.read_sub_keys(&mut self.state, &mut self.filter).unwrap();
                 self.s1.extend(children);
-            }
-            if !self.s2.is_empty() {
-                let last = self.s2.last_mut().expect("We checked that s2 wasn't empty");
-                last.track_returned += 1;
             }
             self.s2.push(node);
         }
 
         // Handle any remaining elements
         while !self.s2.is_empty() {
-            return Some(self.s2.pop().expect("We checked that s2 wasn't empty"));
+            return Some(self.s2.pop().expect("We just checked that s2 wasn't empty"));
         }
         return None;
     }
