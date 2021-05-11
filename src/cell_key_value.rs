@@ -286,8 +286,12 @@ impl hive_bin_cell::Cell for CellKeyValue {
         self.detail.size
     }
 
-    fn name_lowercase(&self) -> Option<String> {
+    fn lowercase(&self) -> Option<String> {
         Some(self.value_name.clone().to_ascii_lowercase())
+    }
+
+    fn is_key(&self) -> bool {
+        false
     }
 }
 

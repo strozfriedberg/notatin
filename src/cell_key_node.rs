@@ -71,8 +71,10 @@ pub struct CellKeyNode {
     pub sub_values: Vec<CellKeyValue>,
     pub parse_warnings: Warnings,
 
+    #[serde(skip_serializing)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
 
+    #[serde(skip_serializing)]
     pub(crate) track_returned: u32
 }
 
@@ -103,8 +105,12 @@ impl hive_bin_cell::Cell for CellKeyNode {
         self.detail.size
     }
 
-    fn name_lowercase(&self) -> Option<String> {
-        Some(self.key_name.clone().to_ascii_lowercase())
+    fn lowercase(&self) -> Option<String> {
+        Some(self.path.clone().to_ascii_lowercase())
+    }
+
+    fn is_key(&self) -> bool {
+        true
     }
 }
 
@@ -207,7 +213,7 @@ impl CellKeyNode {
         filter: &mut Filter
     ) -> Result<Option<Self>, Error> {
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path.clone())?;
-        let filter_flags = filter.check_cell(cur_path.is_empty(), &cell_key_node)?;
+        let filter_flags = filter.check_cell(state, cur_path.is_empty(), &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok(None);
         }
@@ -219,6 +225,7 @@ impl CellKeyNode {
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
             filter.set_complete(true);
+            state.key_complete = true;
         }
 
         Ok(Some(cell_key_node))
@@ -232,20 +239,15 @@ impl CellKeyNode {
         let (_, cell_sub_key_offsets_absolute) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
         let mut children = Vec::new();
         for val in cell_sub_key_offsets_absolute.iter() {
-             /*if let Some(kn) = CellKeyNode::read(
+             if let Some(kn) = CellKeyNode::read(
                 state,
                 &state.file_buffer[(*val as usize)..],
                 self.path.clone(),
                 filter
-            )? { self.sub_keys.push(kn) }*/
-            children.push(CellKeyNode::read(
-                state,
-                &state.file_buffer[(*val as usize)..],
-                self.path.clone(),
-                filter
-            )?.unwrap());
+            )? { children.push(kn) }
 
             if filter.is_complete() {
+                filter.set_complete(false);
                 break;
             }
         }
@@ -255,19 +257,23 @@ impl CellKeyNode {
 
     fn read_values(
         self: &mut CellKeyNode,
-        state: &State,
+        state: &mut State,
         filter: &mut Filter
     ) -> Result<(), Error> {
         let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
         for val in key_values.iter() {
             let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset_absolute)..])?;
-            let iterate_flags = filter.check_cell(true, &cell_key_value)?;
+            let iterate_flags = filter.check_cell(state, true, &cell_key_value)?;
             if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
                 filter.set_complete(true);
+                state.value_complete = true;
             }
             if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
                 cell_key_value.read_content(state);
                 self.sub_values.push(cell_key_value);
+            }
+            if state.value_complete == true {
+                break;
             }
         }
         Ok(())
@@ -385,36 +391,7 @@ mod tests {
     use nom::error::ErrorKind;
     use crate::filter::FindPath;
 
-    #[test]
-    fn test_cell_key_node_count_all_keys_and_values_with_kv_filter() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let slice = &f[4128..4264];
-        let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel/Accessibility/HighContrast", "Flags"));
-        let mut state = State::new(&f, 4096);
-        let ret = CellKeyNode::read(&mut state, slice, String::new(), &mut filter);
-        let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
-        assert_eq!(
-            (3, 1),
-            (keys, values)
-        );
-    }
-
-    #[test]
-    fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let slice = &f[4128..4264];
-        let mut filter = Filter::from_path(FindPath::from_key("Software/Microsoft/Office/14.0/Common"));
-        let mut state = State::new(&f, 4096);
-        let ret = CellKeyNode::read(&mut state, slice, String::new(), &mut filter);
-
-        let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
-        assert_eq!(
-            (44, 304),
-            (keys, values)
-        );
-    }
-
-    #[test]
+   /* #[test]
     fn test_cell_key_node_count_all_keys_and_values() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[4128..4264];
@@ -425,7 +402,7 @@ mod tests {
             (2287, 5470),
             (keys, values)
         );
-    }
+    }*/
 
     #[test]
     fn test_parse_cell_key_node() {

@@ -77,8 +77,12 @@ impl hive_bin_cell::Cell for CellKeySecurity {
         self.detail.size
     }
 
-    fn name_lowercase(&self) -> Option<String> {
+    fn lowercase(&self) -> Option<String> {
         None
+    }
+
+    fn is_key(&self) -> bool {
+        false
     }
 }
 

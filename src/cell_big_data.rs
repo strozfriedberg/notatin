@@ -92,8 +92,12 @@ impl hive_bin_cell::Cell for CellBigData {
         self.size
     }
 
-    fn name_lowercase(&self) -> Option<String> {
+    fn lowercase(&self) -> Option<String> {
         None
+    }
+
+    fn is_key(&self) -> bool {
+        false
     }
 }
 

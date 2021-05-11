@@ -17,7 +17,9 @@ pub struct State<'a> {
     pub hbin_offset_absolute: usize,
     pub file_buffer: &'a[u8],
 
-    pub cell_key_node_stack: Vec<CellKeyNode>
+    pub cell_key_node_stack: Vec<CellKeyNode>,
+    pub value_complete: bool,
+    pub key_complete: bool
 }
 
 impl<'a> State<'a> {
@@ -26,7 +28,9 @@ impl<'a> State<'a> {
             file_start_pos: f.as_ptr() as usize,
             hbin_offset_absolute: hbin_offset_absolute,
             file_buffer: &f[..],
-            cell_key_node_stack: Vec::new()
+            cell_key_node_stack: Vec::new(),
+            value_complete: false,
+            key_complete: false
         }
     }
 
@@ -67,7 +71,7 @@ impl<'a> Parser<'a> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
 
-        match CellKeyNode::read(&mut self.state, input,String::new(), &mut self.filter)? {
+        match CellKeyNode::read(&mut self.state, input,String::new(), &mut Filter::new())? { // we pass in a null filter for the root since it should always match
             Some(cell_key_node_root) => {
                 self.s1.push(cell_key_node_root);
                 Ok(true)
@@ -83,6 +87,7 @@ impl<'a> Parser<'a> {
         let mut keys = 0;
         let mut values = 0;
         for key in self {
+            println!("{}", key.path);
             keys += 1;
             values += key.sub_values.len();
         }
@@ -150,8 +155,7 @@ mod tests {
         fs::File,
         io::{BufWriter, Write},
     };
-    use crate::filter::Filter;
-    use crate::registry::Registry;
+    use crate::filter::{Filter, FindPath};
 
     #[test]
     fn test_parser_iterator() {
@@ -173,8 +177,6 @@ mod tests {
     fn test_read_big_reg() {
         let f = std::fs::read("test_data/SOFTWARE_1_nfury").unwrap();
 
-        //let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-        //let (keys, values) = ret.unwrap().hive_bin_root.unwrap().root.count_all_keys_and_values();
         let mut filter = Filter::new();
         let mut parser = Parser::new(&f, &mut filter);
         let res = parser.init();
@@ -194,9 +196,6 @@ mod tests {
     fn test_read_small_reg() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
-        //let ret = Registry::from_bytes(&f[..], &mut Filter::new());
-        //let (keys, values) = ret.unwrap().hive_bin_root.unwrap().root.count_all_keys_and_values();
-
         let mut filter = Filter::new();
         let mut parser = Parser::new(&f, &mut filter);
         let res = parser.init();
@@ -213,12 +212,57 @@ mod tests {
     }
 
     #[test]
-    fn dump_registry() {
-        let f = std::fs::read("test_data/FuseHive").unwrap();
-        let ret = Registry::from_bytes(&f[..], &mut Filter::new());
+    fn test_cell_key_node_count_all_keys_and_values_with_kv_filter() {
+        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
+        let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel\\Accessibility\\HighContrast", "Flags"));
+        let mut parser = Parser::new(&f, &mut filter);
+        let res = parser.init();
+        assert_eq!(
+            Ok(true),
+            res
+        );
 
-        let write_file = File::create("out.txt").unwrap();
+        let (keys, values) = parser.count_all_keys_and_values();
+        assert_eq!(
+            (4, 1),
+            (keys, values)
+        );
+    }
+
+    #[test]
+    fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
+        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
+        let mut filter = Filter::from_path(FindPath::from_key("Software\\Microsoft\\Office\\14.0\\Common"));
+        let mut parser = Parser::new(&f, &mut filter);
+        let res = parser.init();
+        assert_eq!(
+            Ok(true),
+            res
+        );
+
+        let (keys, values) = parser.count_all_keys_and_values();
+        assert_eq!(
+            (45, 304),
+            (keys, values)
+        );
+    }
+
+    #[test]
+    fn dump_registry() {
+        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
+
+        let write_file = File::create("NTUSER.DAT_iterative.jsonl").unwrap();
         let mut writer = BufWriter::new(&write_file);
-        write!(&mut writer, "{}", serde_json::to_string_pretty(&ret.unwrap()).unwrap()).expect("panic upon failure");
+
+        let mut filter = Filter::new();
+        let mut parser = Parser::new(&f, &mut filter);
+        let res = parser.init();
+        assert_eq!(
+            Ok(true),
+            res
+        );
+        for key in parser {
+            writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
+        }
     }
 }
