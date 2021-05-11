@@ -117,7 +117,7 @@ impl CellKeyNode {
     pub fn from_bytes<'a> (
         state: &State,
         input: &'a [u8],
-        cur_path: &String
+        cur_path: &str
     ) -> IResult<&'a [u8], Self> {
         let file_offset_absolute = state.get_file_offset(input);
         let start_pos = input.as_ptr() as usize;
@@ -204,44 +204,45 @@ impl CellKeyNode {
     pub fn read<'a>(
         state: &mut State,
         input: &'a [u8],
-        cur_path: &String,
-        filter: &mut Filter
-    ) -> Result<Option<Self>, Error> {
+        cur_path: &str,
+        filter: &Filter
+    ) -> Result<(Option<Self>, bool), Error> {
+        let mut found_key = false;
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path)?;
         let filter_flags = filter.check_cell(state, &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-            return Ok(None);
+            return Ok((None, found_key));
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
             cell_key_node.read_values(state, filter)?;
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-            filter.set_complete(true);
+            found_key = true;
             state.key_complete = true;
         }
 
-        Ok(Some(cell_key_node))
+        Ok((Some(cell_key_node), found_key))
     }
 
     pub(crate) fn read_sub_keys(
         self: &mut CellKeyNode,
         state: &mut State,
-        filter: &mut Filter
+        filter: &Filter
     ) -> Result<Vec<CellKeyNode>, Error> {
         let (_, cell_sub_key_offsets_absolute) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
         let mut children = Vec::new();
         for val in cell_sub_key_offsets_absolute.iter() {
-             if let Some(kn) = CellKeyNode::read(
+            if let (Some(kn), stop_loop) = CellKeyNode::read(
                 state,
                 &state.file_buffer[(*val as usize)..],
                 &self.path,
                 filter
-            )? { children.push(kn) }
-
-            if filter.is_complete() {
-                filter.set_complete(false);
-                break;
-            }
+            )? {
+                children.push(kn);
+                if stop_loop {
+                    break;
+                }
+             }
         }
         self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
         Ok(children)
@@ -250,14 +251,13 @@ impl CellKeyNode {
     fn read_values(
         self: &mut CellKeyNode,
         state: &mut State,
-        filter: &mut Filter
+        filter: &Filter
     ) -> Result<(), Error> {
         let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
         for val in key_values.iter() {
             let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset_absolute)..])?;
             let iterate_flags = filter.check_cell(state, &cell_key_value)?;
             if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-                filter.set_complete(true);
                 state.value_complete = true;
             }
             if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
@@ -381,20 +381,6 @@ pub fn parse_sub_key_list<'a>(
 mod tests {
     use super::*;
     use nom::error::ErrorKind;
-    use crate::filter::FindPath;
-
-   /* #[test]
-    fn test_cell_key_node_count_all_keys_and_values() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let slice = &f[4128..4264];
-        let mut state = State::new(&f, 4096);
-        let ret = CellKeyNode::read(&mut state, slice, String::new(), &mut Filter::new());
-        let (keys, values) = ret.unwrap().unwrap().count_all_keys_and_values();
-        assert_eq!(
-            (2287, 5470),
-            (keys, values)
-        );
-    }*/
 
     #[test]
     fn test_parse_cell_key_node() {

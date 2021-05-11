@@ -13,13 +13,18 @@ use crate::hive_bin_header::HiveBinHeader;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct State<'a> {
+    // file info
     pub file_start_pos: usize,
     pub hbin_offset_absolute: usize,
     pub file_buffer: &'a[u8],
 
+    // parser iteration
     pub cell_key_node_stack: Vec<CellKeyNode>,
+
+    // filter evaulation
     pub value_complete: bool,
-    pub key_complete: bool
+    pub key_complete: bool,
+    pub root_key_path_offset: usize
 }
 
 impl<'a> State<'a> {
@@ -30,19 +35,30 @@ impl<'a> State<'a> {
             file_buffer: f,
             cell_key_node_stack: Vec::new(),
             value_complete: false,
-            key_complete: false
+            key_complete: false,
+            root_key_path_offset: 0
         }
     }
 
     pub fn get_file_offset(&self, input: &[u8]) -> usize {
         input.as_ptr() as usize - self.file_start_pos
     }
+
+    pub(crate) fn get_root_path_offset(&mut self, key_path: &str) -> usize {
+        if self.root_key_path_offset == 0 {
+            match key_path[1..].find('\\') {
+                Some(second_backslash) => self.root_key_path_offset = second_backslash + 2,
+                None => return 0
+            }
+        }
+        self.root_key_path_offset
+    }
 }
 
 #[derive(Debug)]
 pub struct Parser<'a> {
     pub state: State<'a>,
-    pub filter: &'a mut Filter,
+    pub filter: &'a Filter,
     pub stack_to_traverse: Vec<CellKeyNode>,
     pub stack_to_return: Vec<CellKeyNode>,
     pub base_block: Option<FileBaseBlock>,
@@ -51,7 +67,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(file_buffer: &'a[u8], filter: &'a mut Filter) -> Self {
+    pub fn new(file_buffer: &'a[u8], filter: &'a Filter) -> Self {
         Parser {
             state: State::new(&file_buffer, 0),
             filter,
@@ -73,7 +89,8 @@ impl<'a> Parser<'a> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
 
-        match CellKeyNode::read(&mut self.state, input, &String::new(), &mut Filter::new())? { // we pass in a null filter for the root since it should always match
+        let (kn, _) = CellKeyNode::read(&mut self.state, input, &String::new(), &Filter::new())?; // we pass in a null filter for the root since it should always match
+        match kn {
             Some(cell_key_node_root) => {
                 self.stack_to_traverse.push(cell_key_node_root);
                 Ok(true)
@@ -105,19 +122,19 @@ impl Iterator for Parser<'_> {
             // first check to see if we are done with anything on stack_to_return;
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
             if !self.stack_to_return.is_empty() {
-                let last = self.stack_to_return.last().expect("We checked that s2 wasn't empty");
+                let last = self.stack_to_return.last().expect("We checked that stack_to_return wasn't empty");
                 if last.track_returned == last.number_of_sub_keys {
-                    return Some(self.stack_to_return.pop().expect("We just checked that s2 wasn't empty"));
+                    return Some(self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty"));
                 }
             }
 
-            let mut node = self.stack_to_traverse.pop().expect("We just checked that s1 wasn't empty");
+            let mut node = self.stack_to_traverse.pop().expect("We just checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let children = node.read_sub_keys(&mut self.state, &mut self.filter).unwrap();
                 self.stack_to_traverse.extend(children);
             }
             if !self.stack_to_return.is_empty() {
-                let last = self.stack_to_return.last_mut().expect("We checked that s2 wasn't empty");
+                let last = self.stack_to_return.last_mut().expect("We checked that stack_to_return wasn't empty");
                 last.track_returned += 1;
             }
             self.stack_to_return.push(node);
@@ -125,29 +142,16 @@ impl Iterator for Parser<'_> {
 
         // Handle any remaining elements
         if !self.stack_to_return.is_empty() {
-            return Some(self.stack_to_return.pop().expect("We just checked that s2 wasn't empty"));
+            return Some(self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty"));
         }
-        return None;
+        None
     }
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct Registry {
+pub(crate) struct Registry {
     pub header: FileBaseBlock,
     pub hive_bin_root: Option<HiveBin>
-}
-
-impl Registry {
-    /// Reads a Windows registry; returns a Registry object containing the information from the header and a tree of parsed hive bins
-    pub fn from_bytes(file_buffer: &[u8], filter: &mut Filter) -> Result<Self, Error> {
-        let file_start_pos = file_buffer.as_ptr() as usize;
-        let (input, file_base_block) = FileBaseBlock::from_bytes(file_buffer)?;
-        let mut state = State::new(&file_buffer, input.as_ptr() as usize - file_start_pos);
-        Ok(Registry {
-            header: file_base_block,
-            hive_bin_root: HiveBin::read(&mut state, &input, &String::new(), filter)?
-        })
-    }
 }
 
 #[cfg(test)]

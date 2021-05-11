@@ -1,6 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use notatin::filter::Filter;
-use notatin::registry::Registry;
 use notatin::registry::Parser;
 
 fn test_read_small_reg() {
@@ -9,7 +8,7 @@ fn test_read_small_reg() {
     let mut filter = Filter::new();
 
     let mut parser = Parser::new(&f, &mut filter);
-    parser.init();
+    parser.init().expect("should be Ok");
     for _key in parser {
     }
 }

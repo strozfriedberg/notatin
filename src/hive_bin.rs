@@ -15,12 +15,12 @@ impl HiveBin {
     pub fn read(
         state: &mut State,
         input: &[u8],
-        path: &String,
-        filter: &mut Filter
+        path: &str,
+        filter: &Filter
     ) -> Result<Option<HiveBin>, Error> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(state, input)?;
-        CellKeyNode::read(state, input, path, filter)?
-            .map_or(
+        let (kn, _) = CellKeyNode::read(state, input, path, filter)?;
+        kn.map_or(
                 Ok(None),
                 |hbr| Ok(Some(HiveBin {
                     header: hive_bin_header,

@@ -344,8 +344,8 @@ mod tests {
     fn test_parse_big_data() {
         let f = std::fs::read("test_data/FuseHive").unwrap();
         let mut state = State::new(&f, 4096);
-        let key_node = CellKeyNode::read(&mut state, &f[4416..], &String::new(), &mut Filter::new()).unwrap().unwrap();
-
+        let (key_node, _) = CellKeyNode::read(&mut state, &f[4416..], &String::new(), &Filter::new()).unwrap();
+        let key_node = key_node.unwrap();
         assert_eq!(
             "v".to_string(),
             key_node.sub_values[1].value_name
