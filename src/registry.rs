@@ -1,6 +1,6 @@
+use std::path::Path;
 use serde::Serialize;
 use crate::base_block::FileBaseBlock;
-use crate::hive_bin::HiveBin;
 use crate::filter::Filter;
 use crate::err::Error;
 use crate::cell_key_node::CellKeyNode;
@@ -12,11 +12,12 @@ use crate::hive_bin_header::HiveBinHeader;
 */
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct State<'a> {
+pub struct State {
     // file info
     pub file_start_pos: usize,
     pub hbin_offset_absolute: usize,
-    pub file_buffer: &'a[u8],
+  //  pub file_buffer_orig: &'a[u8],
+    pub file_buffer: Vec<u8>,
 
     // parser iteration
     pub cell_key_node_stack: Vec<CellKeyNode>,
@@ -27,12 +28,14 @@ pub struct State<'a> {
     pub root_key_path_offset: usize // path filters don't include the root name, but the cell key's paths do. This is the length of that root name so we can index into the string directly
 }
 
-impl<'a> State<'a> {
-    pub fn new(f: &'a[u8], hbin_offset_absolute: usize) -> Self {
+impl State {
+    pub fn new(filename: impl AsRef<Path>, hbin_offset_absolute: usize) -> Self {
+        let file_buffer = std::fs::read(filename).unwrap();
+        let slice = &file_buffer;
         State {
-            file_start_pos: f.as_ptr() as usize,
+            file_start_pos: slice.as_ptr() as usize,
             hbin_offset_absolute,
-            file_buffer: f,
+            file_buffer,
             cell_key_node_stack: Vec::new(),
             value_complete: false,
             key_complete: false,
@@ -57,7 +60,7 @@ impl<'a> State<'a> {
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    pub state: State<'a>,
+    pub state: State,
     pub filter: &'a Filter,
     pub stack_to_traverse: Vec<CellKeyNode>,
     pub stack_to_return: Vec<CellKeyNode>,
@@ -67,9 +70,11 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(file_buffer: &'a[u8], filter: &'a Filter) -> Self {
+    //filename: impl AsRef<Path>
+    pub fn new(filename: impl AsRef<Path>, filter: &'a Filter) -> Self {
+    //pub fn new(file_buffer: &'a[u8], filter: &'a Filter) -> Self {
         Parser {
-            state: State::new(&file_buffer, 0),
+            state: State::new(filename, 0),
             filter,
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
@@ -78,9 +83,22 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /*pub fn new_boxed(file_buffer: &'a[u8], boxed: Box::<&'a [u8]>, filter: &'a Filter) -> Self {
+        let mut state = State::new(&file_buffer, 0);
+        state.file_buffer = boxed;
+        Parser {
+            state,
+            filter,
+            stack_to_traverse: Vec::new(),
+            stack_to_return: Vec::new(),
+            base_block: None,
+            hive_bin_header: None
+        }
+    }*/
+
     pub fn init(&mut self) -> Result<bool, Error> {
         let file_start_pos = self.state.file_buffer.as_ptr() as usize;
-        let (input, base_block) = FileBaseBlock::from_bytes(self.state.file_buffer)?;
+        let (input, base_block) = FileBaseBlock::from_bytes(&self.state.file_buffer)?;
         self.base_block = Some(base_block);
         self.state.hbin_offset_absolute = input.as_ptr() as usize - file_start_pos;
         self.state.key_complete = false;
@@ -89,7 +107,8 @@ impl<'a> Parser<'a> {
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
 
-        let (kn, _) = CellKeyNode::read(&mut self.state, input, &String::new(), &Filter::new())?; // we pass in a null filter for the root since matches by definition
+        let offset = self.state.get_file_offset(input);
+        let (kn, _) = CellKeyNode::read(&mut self.state, offset, &String::new(), &Filter::new())?; // we pass in a null filter for the root since matches by definition
         match kn {
             Some(cell_key_node_root) => {
                 self.stack_to_traverse.push(cell_key_node_root);
@@ -151,7 +170,6 @@ impl Iterator for Parser<'_> {
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct Registry {
     pub header: FileBaseBlock,
-    pub hive_bin_root: Option<HiveBin>
 }
 
 #[cfg(test)]
@@ -166,10 +184,8 @@ mod tests {
 
     #[test]
     fn test_parser_iterator() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
         let mut filter = Filter::new();
-        let mut parser = Parser::new(&f, &mut filter);
+        let mut parser = Parser::new("test_data/NTUSER.DAT", &mut filter);
         let res = parser.init();
         assert_eq!(Ok(true), res);
 
@@ -194,10 +210,8 @@ mod tests {
 
     #[test]
     fn test_read_big_reg() {
-        let f = std::fs::read("test_data/SOFTWARE_1_nfury").unwrap();
-
         let mut filter = Filter::new();
-        let mut parser = Parser::new(&f, &mut filter);
+        let mut parser = Parser::new("test_data/SOFTWARE_1_nfury", &mut filter);
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -213,10 +227,8 @@ mod tests {
 
     #[test]
     fn test_read_small_reg() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
         let mut filter = Filter::new();
-        let mut parser = Parser::new(&f, &mut filter);
+        let mut parser = Parser::new("test_data/NTUSER.DAT", &mut filter);
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -232,9 +244,8 @@ mod tests {
 
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_kv_filter() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let mut filter = Filter::from_path(FindPath::from_key_value("Control Panel\\Accessibility\\HighContrast", "Flags"));
-        let mut parser = Parser::new(&f, &mut filter);
+        let mut parser = Parser::new("test_data/NTUSER.DAT", &mut filter);
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -265,9 +276,8 @@ mod tests {
 
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let mut filter = Filter::from_path(FindPath::from_key("Software\\Microsoft\\Office\\14.0\\Common"));
-        let mut parser = Parser::new(&f, &mut filter);
+        let mut parser = Parser::new("test_data/NTUSER.DAT", &mut filter);
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -298,13 +308,11 @@ mod tests {
 
     #[test]
     fn dump_registry() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
         let write_file = File::create("NTUSER.DAT_iterative.jsonl").unwrap();
         let mut writer = BufWriter::new(&write_file);
 
         let mut filter = Filter::new();
-        let mut parser = Parser::new(&f, &mut filter);
+        let mut parser = Parser::new("test_data/NTUSER.DAT", &mut filter);
         let res = parser.init();
         assert_eq!(
             Ok(true),

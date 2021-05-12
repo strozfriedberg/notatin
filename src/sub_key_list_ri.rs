@@ -8,6 +8,7 @@ use crate::registry::State;
 use crate::hive_bin_cell;
 use crate::cell_key_node;
 use crate::util;
+use crate::err::Error;
 
 // List of subkeys lists (used to subdivide subkeys lists)
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -49,13 +50,13 @@ impl SubKeyListRi {
         ))
     }
 
-    pub(crate) fn parse_offsets<'a>(&self, state: &'a State) -> IResult<&'a [u8], Vec<u32>> {
+    pub(crate) fn parse_offsets(&self, state: &State) -> Result<Vec<u32>, Error> {
         let mut list: Vec<u32> = Vec::new();
         for item in self.items.iter() {
-            let (_, mut sub_list) = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset_relative)?;
+            let mut sub_list = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset_relative)?;
             list.append(&mut sub_list);
         }
-        Ok((state.file_buffer, list))
+        Ok(list)
     }
 }
 

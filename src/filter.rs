@@ -173,7 +173,16 @@ mod tests {
     #[test]
     fn test_check_cell_match_key() {
         let filter = Filter::from_path(FindPath::from_key_value("HighContrast", "Flags"));
-        let mut state = State::new(&[0;0], 0);
+        let mut state = State {
+            file_start_pos: 0,
+            hbin_offset_absolute: 0,
+           // file_buffer_orig: &[0;0],
+            file_buffer: Vec::new(),
+            cell_key_node_stack: Vec::new(),
+            value_complete: false,
+            key_complete: false,
+            root_key_path_offset: 0
+        };
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
             ..Default::default()
@@ -196,7 +205,16 @@ mod tests {
     #[test]
     fn test_check_cell_match_value() {
         let filter = Filter::from_path(FindPath::from_key_value("", "Flags"));
-        let mut state = State::new(&[0;0], 0);
+        let mut state = State {
+            file_start_pos: 0,
+            hbin_offset_absolute: 0,
+           // file_buffer_orig: &[0;0],
+            file_buffer: Vec::new(),
+            cell_key_node_stack: Vec::new(),
+            value_complete: false,
+            key_complete: false,
+            root_key_path_offset: 0
+        };
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
                 file_offset_absolute: 0,

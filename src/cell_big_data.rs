@@ -67,10 +67,10 @@ impl CellBigData {
         data_type.get_value_content(&big_data_buffer[..], parse_warnings)
     }
 
-    fn parse_big_data_size<'a>(
-        state: &'a State,
+    fn parse_big_data_size(
+        state: &State,
         offset: u32,
-    ) -> IResult<&'a [u8], i32> {
+    ) -> IResult<&[u8], i32> {
         le_i32(&state.file_buffer[state.hbin_offset_absolute + offset as usize..])
     }
 

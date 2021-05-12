@@ -303,11 +303,8 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_value() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let slice = &f[4400..4448];
-
-        let state = State::new(&f, 4096);
-        let ret = CellKeyValue::from_bytes(&state, slice);
+        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let ret = CellKeyValue::from_bytes(&state, &state.file_buffer[4400..4448]);
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
                 file_offset_absolute: 4400,
@@ -332,7 +329,7 @@ mod tests {
         );
         let (_, mut cell_key_value) = ret.unwrap();
 
-        let state = State::new(&f, 4096);
+        let state = State::new("test_data/NTUSER.DAT", 4096);
         cell_key_value.read_content(&state);
         assert_eq!(
             CellValue::ValueString("5.0".to_string()),
@@ -342,9 +339,8 @@ mod tests {
 
     #[test]
     fn test_parse_big_data() {
-        let f = std::fs::read("test_data/FuseHive").unwrap();
-        let mut state = State::new(&f, 4096);
-        let (key_node, _) = CellKeyNode::read(&mut state, &f[4416..], &String::new(), &Filter::new()).unwrap();
+        let mut state = State::new("test_data/FuseHive", 4096);
+        let (key_node, _) = CellKeyNode::read(&mut state, 4416, &String::new(), &Filter::new()).unwrap();
         let key_node = key_node.unwrap();
         assert_eq!(
             "v".to_string(),

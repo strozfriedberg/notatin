@@ -17,7 +17,6 @@ pub mod cell_key_value;
 pub mod cell_value;
 pub mod err;
 pub mod filter;
-pub mod hive_bin;
 pub mod hive_bin_cell;
 pub mod hive_bin_header;
 pub mod registry;

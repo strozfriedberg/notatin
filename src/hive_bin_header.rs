@@ -60,9 +60,8 @@ mod tests {
 
     #[test]
     fn test_parse_hive_bin_header() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let state = State::new(&f, 4096);
-        let ret = HiveBinHeader::from_bytes(&state, &f[4096..4128]);
+        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let ret = HiveBinHeader::from_bytes(&state, &state.file_buffer[4096..4128]);
 
         let expected_output = HiveBinHeader {
             file_offset_absolute: 4096,

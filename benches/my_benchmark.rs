@@ -3,11 +3,8 @@ use notatin::filter::Filter;
 use notatin::registry::Parser;
 
 fn test_read_small_reg() {
-    let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
     let mut filter = Filter::new();
-
-    let mut parser = Parser::new(&f, &mut filter);
+    let mut parser = Parser::new("test_data/NTUSER.DAT", &mut filter);
     parser.init().expect("should be Ok");
     for _key in parser {
     }

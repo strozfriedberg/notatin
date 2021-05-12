@@ -201,13 +201,14 @@ impl CellKeyNode {
         ))
     }
 
-    pub fn read<'a>(
+    pub fn read(
         state: &mut State,
-        input: &'a [u8],
+        offset: usize,//input: &'a [u8],
         cur_path: &str,
         filter: &Filter
     ) -> Result<(Option<Self>, bool), Error> {
         let mut found_key = false;
+        let input = &state.file_buffer[offset..];
         let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path)?;
         let filter_flags = filter.check_cell(state, &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
@@ -229,12 +230,12 @@ impl CellKeyNode {
         state: &mut State,
         filter: &Filter
     ) -> Result<Vec<CellKeyNode>, Error> {
-        let (_, cell_sub_key_offsets_absolute) = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
+        let cell_sub_key_offsets_absolute = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
         let mut children = Vec::new();
         for val in cell_sub_key_offsets_absolute.iter() {
             if let (Some(kn), stop_loop) = CellKeyNode::read(
                 state,
-                &state.file_buffer[(*val as usize)..],
+                *val as usize,//&state.file_buffer[(*val as usize)..],
                 &self.path,
                 filter
             )? {
@@ -335,11 +336,11 @@ bitflags! {
 impl_serialize_for_bitflags! { KeyNodeFlags }
 impl_flags_from_bits! { KeyNodeFlags, u16 }
 
-fn parse_key_values<'a>(
-    state: &'a State,
+fn parse_key_values(
+    state: &State,
     key_values_count: u32,
     list_offset_relative: usize
-) -> IResult<&'a[u8], Vec<u32>> {
+) -> IResult<&[u8], Vec<u32>> {
     let slice: &[u8] = &state.file_buffer[list_offset_relative + state.hbin_offset_absolute..];
     let (slice, _size) = le_u32(slice)?;
     let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
@@ -349,11 +350,11 @@ fn parse_key_values<'a>(
     ))
 }
 
-pub fn parse_sub_key_list<'a>(
-    state: &'a State,
+pub fn parse_sub_key_list(
+    state: &State,
     count: u32,
     list_offset_relative: u32
-) -> IResult<&'a[u8], Vec<u32>> {
+) -> Result<Vec<u32>, Error> {
     let slice = &state.file_buffer[list_offset_relative as usize + state.hbin_offset_absolute..];
     // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
     // Look for the ri list first and follow the pointers
@@ -362,17 +363,14 @@ pub fn parse_sub_key_list<'a>(
             sub_key_list_ri.parse_offsets(state)
         },
         Err(_) => {
-            let (remaining, cell_sub_key_list) =
+            let (_, cell_sub_key_list) =
                 alt((SubKeyListLf::from_bytes(),
                      SubKeyListLh::from_bytes(),
                      SubKeyListLi::from_bytes(),
                     ))(slice)?;
             let list = cell_sub_key_list.get_offset_list(state.hbin_offset_absolute as u32);
             if count > 0 { assert_eq!(list.len(), count as usize, "SubKeyList offset list doesn't match expected count"); }
-            Ok((
-                remaining,
-                list
-            ))
+            Ok(list)
         }
     }
 }
@@ -384,11 +382,8 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_node() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let slice = &f[4128..4264];
-
-        let state = State::new(&f, 4096);
-        let ret = CellKeyNode::from_bytes(&state, slice, &String::new());
+        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let ret = CellKeyNode::from_bytes(&state, &state.file_buffer[4128..4264], &String::new());
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
                 file_offset_absolute: 4128,
@@ -429,9 +424,9 @@ mod tests {
             ret
         );
 
-        let slice = &f[0..10];
+        let slice = &state.file_buffer[0..10];
         let ret = CellKeyNode::from_bytes(&state, slice, &String::new());
-        let remaining = &f[4..10];
+        let remaining = &state.file_buffer[4..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {input: remaining, code: ErrorKind::Tag}));
         assert_eq!(
             expected_error,
