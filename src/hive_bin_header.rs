@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn test_parse_hive_bin_header() {
-        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let state = State::from_path("test_data/NTUSER.DAT", 4096).unwrap();
         let ret = HiveBinHeader::from_bytes(&state, &state.file_buffer[4096..4128]);
 
         let expected_output = HiveBinHeader {

@@ -10,6 +10,8 @@ pub enum Error {
     Conversion { detail: String },
     #[error("An error has occurred in StripPrefix: {}", detail)]
     StripPrefix { detail: String },
+    #[error("An IO error has occurred: {}", detail)]
+    Io { detail: String },
     #[error("An error has occurred: {}", detail)]
     Any { detail: String },
 }
@@ -35,5 +37,11 @@ impl From<std::array::TryFromSliceError> for Error {
 impl From<std::path::StripPrefixError> for Error {
     fn from(error: std::path::StripPrefixError) -> Self {
         Error::StripPrefix{ detail: format!("{:#?}", error.to_string()) }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Error::Io{ detail: format!("{:#?}", error.to_string()) }
     }
 }

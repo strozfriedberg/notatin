@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_value() {
-        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let state = State::from_path("test_data/NTUSER.DAT", 4096).unwrap();
         let ret = CellKeyValue::from_bytes(&state, &state.file_buffer[4400..4448]);
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
@@ -329,7 +329,7 @@ mod tests {
         );
         let (_, mut cell_key_value) = ret.unwrap();
 
-        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let state = State::from_path("test_data/NTUSER.DAT", 4096).unwrap();
         cell_key_value.read_content(&state);
         assert_eq!(
             CellValue::ValueString("5.0".to_string()),
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_parse_big_data() {
-        let mut state = State::new("test_data/FuseHive", 4096);
+        let mut state = State::from_path("test_data/FuseHive", 4096).unwrap();
         let (key_node, _) = CellKeyNode::read(&mut state, 4416, &String::new(), &Filter::new()).unwrap();
         let key_node = key_node.unwrap();
         assert_eq!(

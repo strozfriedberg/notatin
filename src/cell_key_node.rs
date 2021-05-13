@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_node() {
-        let state = State::new("test_data/NTUSER.DAT", 4096);
+        let state = State::from_path("test_data/NTUSER.DAT", 4096).unwrap();
         let ret = CellKeyNode::from_bytes(&state, &state.file_buffer[4128..4264], &String::new());
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
