@@ -30,8 +30,8 @@ pub struct State {
 
 impl State {
     pub fn from_path(filename: impl AsRef<Path>, hbin_offset_absolute: usize) -> Result<Self, Error> {
-        let file_buffer = std::fs::read(filename)?;
-        State::from_read_seek(Cursor::new(file_buffer), hbin_offset_absolute)
+        let fh = std::fs::File::open(filename)?;
+        State::from_read_seek(fh, hbin_offset_absolute)
     }
 
     pub fn from_read_seek<T: ReadSeek>(mut data: T, hbin_offset_absolute: usize) -> Result<Self, Error> {
