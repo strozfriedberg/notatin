@@ -25,7 +25,7 @@ use crate::filter::{Filter, FilterFlags};
 use crate::impl_serialize_for_bitflags;
 use crate::impl_flags_from_bits;
 
-#[derive(Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNodeDetail {
     pub file_offset_absolute: usize,
     pub size: u32,
@@ -52,7 +52,7 @@ pub struct CellKeyNodeDetail {
     pub class_name_size: u16,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
     pub key_node_flags: KeyNodeFlags,
@@ -235,7 +235,7 @@ impl CellKeyNode {
         for val in cell_sub_key_offsets_absolute.iter() {
             if let (Some(kn), stop_loop) = CellKeyNode::read(
                 state,
-                *val as usize,//&state.file_buffer[(*val as usize)..],
+                *val as usize,
                 &self.path,
                 filter
             )? {

@@ -91,7 +91,7 @@ impl Filter {
 /// The value name is optional; if only a key path is specified all subkeys and values will be returned.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FindPath {
-    key_path: String,//PathBuf,
+    key_path: String,
     value: Option<String>
 }
 
@@ -176,7 +176,6 @@ mod tests {
         let mut state = State {
             file_start_pos: 0,
             hbin_offset_absolute: 0,
-           // file_buffer_orig: &[0;0],
             file_buffer: Vec::new(),
             cell_key_node_stack: Vec::new(),
             value_complete: false,
@@ -208,7 +207,6 @@ mod tests {
         let mut state = State {
             file_start_pos: 0,
             hbin_offset_absolute: 0,
-           // file_buffer_orig: &[0;0],
             file_buffer: Vec::new(),
             cell_key_node_stack: Vec::new(),
             value_complete: false,

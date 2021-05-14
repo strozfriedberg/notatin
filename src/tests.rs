@@ -6,7 +6,7 @@ mod tests {
 
     #[test]
     fn python_registry_test_issue22() {
-        let mut parser = Parser::from_path("test_data/issue22.hive", Filter::new()).unwrap();
+        let mut parser = Parser::from_path("test_data/issue22.hive").unwrap();
         let res = parser.init();
         assert_eq!(Ok(true), res);
 

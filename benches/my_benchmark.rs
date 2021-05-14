@@ -3,7 +3,7 @@ use notatin::filter::Filter;
 use notatin::registry::Parser;
 
 fn test_read_small_reg() {
-    let mut parser = Parser::from_path("test_data/NTUSER.DAT", Filter::new()).unwrap();
+    let mut parser = Parser::from_path("test_data/NTUSER.DAT").unwrap();
     parser.init().expect("should be Ok");
     for _key in parser {
     }

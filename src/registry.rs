@@ -1,4 +1,4 @@
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 use serde::Serialize;
 use crate::base_block::FileBaseBlock;
@@ -12,7 +12,7 @@ use crate::hive_bin_header::HiveBinHeader;
     https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-primary-files
 */
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct State {
     // file info
     pub file_start_pos: usize,
@@ -72,40 +72,53 @@ pub trait ReadSeek: Read + Seek {
 
 impl<T: Read + Seek> ReadSeek for T {}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Parser {
     pub state: State,
     pub filter: Filter,
     pub stack_to_traverse: Vec<CellKeyNode>,
     pub stack_to_return: Vec<CellKeyNode>,
     pub base_block: Option<FileBaseBlock>,
-    pub hive_bin_header: Option<HiveBinHeader>
+    pub hive_bin_header: Option<HiveBinHeader>,
+
+    is_init: bool
 }
 
 impl Parser {
-    pub fn from_path(filename: impl AsRef<Path>, filter: Filter) -> Result<Self, Error> {
+    pub fn from_path(filename: impl AsRef<Path>) -> Result<Self, Error> {
+        Self::from_path_filtered(filename, Filter::new())
+    }
+
+    pub fn from_path_filtered(filename: impl AsRef<Path>, filter: Filter) -> Result<Self, Error> {
         Ok(Parser {
             state: State::from_path(filename, 0)?,
             filter,
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
             base_block: None,
-            hive_bin_header: None
+            hive_bin_header: None,
+            is_init: false
         })
     }
 
-    pub fn from_read_seek<T: ReadSeek>(data: T, filter: Filter) -> Result<Self, Error> {
+    pub fn from_read_seek<T: ReadSeek>(data: T) -> Result<Self, Error> {
+        Self::from_read_seek_filtered(data, Filter::new())
+    }
+
+    pub fn from_read_seek_filtered<T: ReadSeek>(data: T, filter: Filter) -> Result<Self, Error> {
         Ok(Parser {
             state: State::from_read_seek(data, 0)?,
             filter,
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
             base_block: None,
-            hive_bin_header: None
+            hive_bin_header: None,
+            is_init: false
         })
     }
 
     pub fn init(&mut self) -> Result<bool, Error> {
+        self.is_init = true;
         let file_start_pos = self.state.file_buffer.as_ptr() as usize;
         let (input, base_block) = FileBaseBlock::from_bytes(&self.state.file_buffer)?;
         self.base_block = Some(base_block);
@@ -193,7 +206,7 @@ mod tests {
 
     #[test]
     fn test_parser_iterator() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", Filter::new()).unwrap();
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT").unwrap();
         let res = parser.init();
         assert_eq!(Ok(true), res);
 
@@ -218,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_read_big_reg() {
-        let mut parser = Parser::from_path("test_data/SOFTWARE_1_nfury", Filter::new()).unwrap();
+        let mut parser = Parser::from_path("test_data/SOFTWARE_1_nfury").unwrap();
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -234,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_read_small_reg() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", Filter::new()).unwrap();
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT").unwrap();
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -251,7 +264,7 @@ mod tests {
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_kv_filter() {
         let filter = Filter::from_path(FindPath::from_key_value("Control Panel\\Accessibility\\HighContrast", "Flags"));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", filter).unwrap();
+        let mut parser = Parser::from_path_filtered("test_data/NTUSER.DAT", filter).unwrap();
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -282,8 +295,8 @@ mod tests {
 
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let filter = Filter::from_path(FindPath::from_key("Software\\Microsoft\\Office\\14.0\\Common"));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", filter).unwrap();
+        let filter = Filter::from_path(FindPath::from_key(&"Software\\Microsoft\\Office\\14.0\\Common".to_string()));
+        let mut parser = Parser::from_path_filtered("test_data/NTUSER.DAT", filter).unwrap();
         let res = parser.init();
         assert_eq!(
             Ok(true),
@@ -317,7 +330,7 @@ mod tests {
         let write_file = File::create("NTUSER.DAT_iterative.jsonl").unwrap();
         let mut writer = BufWriter::new(&write_file);
 
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", Filter::new()).unwrap();
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT").unwrap();
         let res = parser.init();
         assert_eq!(
             Ok(true),

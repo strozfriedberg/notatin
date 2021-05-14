@@ -157,7 +157,7 @@ bitflags! {
 }
 impl_serialize_for_bitflags! {CellKeyValueFlags}
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValueDetail {
     pub file_offset_absolute: usize,
     pub size: u32,
@@ -167,7 +167,7 @@ pub struct CellKeyValueDetail {
     pub padding: u16,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValue {
     pub detail: CellKeyValueDetail,
     pub data_type: CellKeyValueDataTypes,
@@ -250,7 +250,7 @@ impl CellKeyValue {
                 value_content =
                     CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size, &mut self.parse_warnings)
                         .or_else(
-                            |err: Error| -> Result<CellValue, Error> {
+                            |err| -> Result<CellValue, Error> {
                                 self.parse_warnings.add_warning(WarningCode::WarningBigDataContent, &err);
                                 Ok(CellValue::ValueError)
                             }
@@ -272,7 +272,7 @@ impl CellKeyValue {
     fn get_value_content(&mut self, input: &[u8]) -> CellValue {
         self.data_type.get_value_content(input, &mut self.parse_warnings)
             .or_else(
-                |err: Error| -> Result<CellValue, Error> {
+                |err| -> Result<CellValue, Error> {
                     self.parse_warnings.add_warning(WarningCode::WarningContent, &err);
                     Ok(CellValue::ValueError)
                 }

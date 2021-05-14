@@ -32,7 +32,7 @@ impl_enum_from_value!{ FileFormat }
 
 // Structure comments adapted from https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileBaseBlock {
     /// This number is incremented by 1 in the beginning of a write operation on the primary file.
     pub primary_sequence_number: u32,
@@ -108,7 +108,7 @@ impl FileBaseBlock {
 }
 
 // Relevant to win10+. See https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block for additional info in this area
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FileBaseBlockReserved {
     pub rm_id: Guid,
     pub log_id: Guid,

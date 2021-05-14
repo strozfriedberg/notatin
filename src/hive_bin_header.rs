@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::registry::State;
 use crate::util;
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
     /// The absolute offset of the hive bin, calculated at parse time
     pub file_offset_absolute: usize,
