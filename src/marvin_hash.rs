@@ -1,108 +1,58 @@
 use std::convert::TryInto;
-// ported from https://github.com/dotnet/coreclr/blob/e2bcca7d9d0e36510eaba9b1028e16a5de39cee9/src/System.Private.CoreLib/shared/System/Marvin.cs
+use std::mem;
+
+// ported from https://github.com/msuhanov/yarp/blob/41e1ba1e21035a2287447fa6a0fe627afbd213ff/yarp/RegistryFile.py#L46
+
+pub const DEFAULT_SEED: u64 = 0x82EF_4D88_7A4E_55C5;
+
+fn rotl(x: u32, n: u32, w: u32) -> u32 {
+	(x << n) | (x >> (w - n))
+}
+
+fn mix(state: (u32, u32), val: u32) -> (u32, u32){
+    let (mut lo, mut hi) = state;
+    lo = lo.wrapping_add(val);
+    hi ^= lo;
+    lo = rotl(lo, 20, 32).wrapping_add(hi);
+    hi = rotl(hi, 9, 32) ^ lo;
+    lo = rotl(lo, 27, 32).wrapping_add(hi);
+    hi = rotl(hi, 19, 32);
+	(lo, hi)
+}
 
 /// Computes a 64-hash using the Marvin algorithm.
-pub fn compute_hash(data: &[u8], count: u32, seed: u64) -> u64 {
-    let mut ucount = count;
-    let mut p0 = seed as u32;
-    let mut p1 = (seed >> 32) as u32;
+pub fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
+    let size_of_u32 = mem::size_of::<u32>();
+    let slice_to_u32 = |s: &[u8]| -> [u8; 4] { s.try_into().expect("We generated this slice so we know it's the proper length") };
 
-    let mut byte_offset = 0;
+    let lo: u32 = (seed & 0xFFFFFFFF).try_into().unwrap();
+	let hi: u32 = (seed >> 32).try_into().unwrap();
+	let mut state = (lo, hi);
 
-    while ucount >= 8 {
-        p0 += data[byte_offset] as u32;//Unsafe.As<byte, uint>(ref Unsafe.Add(ref data, byteOffset));
-        let res = block(p0, p1);
-        p0 = res.0;
-        p1 = res.1;
+	let mut length = len;
+	let mut pos = 0;
+	let mut val: u32;
 
-        p0 += data[byte_offset + 4] as u32;//Unsafe.As<byte, uint>(ref Unsafe.Add(ref data, byteOffset + 4));
-        let res = block(p0, p1);
-        p0 = res.0;
-        p1 = res.1;
-
-        byte_offset += 8;
-        ucount -= 8;
+	while length >= 4 {
+		val = u32::from_le_bytes(slice_to_u32(&buffer[pos..pos + size_of_u32]));
+		state = mix(state, val);
+		pos += 4;
+		length -= 4;
     }
 
-    /*match ucount {
-        4 | 0 => {
-            if ucount == 4 {
-                p0 += data[byte_offset] as u32;//Unsafe.As<byte, uint>(ref Unsafe.Add(ref data, byteOffset));
-                let res = block(p0, p1);
-                p0 = res.0;
-                p1 = res.1;
-            }
-            p0 += 0x80;
-        },
-        5 | 1 => {
-            if ucount == 5 {
-                p0 += data[byte_offset] as u32;//Unsafe.As<byte, uint>(ref Unsafe.Add(ref data, byteOffset));
-                byte_offset += 4;
-                let res = block(p0, p1);
-                p0 = res.0;
-                p1 = res.1;
-            }
-            p0 += 0x8000 | u32::from_le_bytes(data[byte_offset].try_into().unwrap());// Unsafe.Add(ref data, byteOffset);
-        },
-        6 | 2 => {
-            if ucount == 6 {
-                p0 += data[byte_offset] as u32;//Unsafe.As<byte, uint>(ref Unsafe.Add(ref data, byteOffset));
-                byte_offset += 4;
-                let res = block(p0, p1);
-                p0 = res.0;
-                p1 = res.1;
-            }
-            p0 += 0x800000 | data[byte_offset] as u16;//Unsafe.As<byte, ushort>(ref Unsafe.Add(ref data, byteOffset));
-        },
-        7 | 3 => {
-            if ucount == 7 {
-                p0 += data[byte_offset] as u32;//Unsafe.As<byte, uint>(ref Unsafe.Add(ref data, byteOffset));
-                byte_offset += 4;
-                let res = block(p0, p1);
-                p0 = res.0;
-                p1 = res.1;
-            }
-            p0 += 0x80000000 |
-                    (((uint)(Unsafe.Add(ref data, byteOffset + 2))) << 16) |
-                    (uint)(Unsafe.As<byte, ushort>(ref Unsafe.Add(ref data, byteOffset)));
-        },
-        _ => { let t=3; }
-    }*/
+	let mut fin: u32 = 0x80;
+	if length == 3 {
+        fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos + 2 .. pos + 2 + size_of_u32]));
+    }
+	else if length == 2 {
+        fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos + 1 .. pos + 1 + size_of_u32]));
+    }
+	else if length == 1 {
+        fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos .. pos + size_of_u32]));
+    }
 
-    let res = block(p0, p1);
-    p0 = res.0;
-    p1 = res.1;
-
-    let res = block(p0, p1);
-    p0 = res.0;
-    p1 = res.1;
-
-    return ((p1 as u64) << 32) | p0 as u64;
+	state = mix(state, fin);
+	state = mix(state, 0);
+	let (lo, hi) = state;
+	((hi as u64) << 32) | lo as u64
 }
-
-fn block(rp0: u32, rp1: u32) -> (u32, u32) {
-    let mut p0 = rp0;
-    let mut p1 = rp1;
-
-    p1 ^= p0;
-    p0 = _rotl(p0, 20);
-
-    p0 += p1;
-    p1 = _rotl(p1, 9);
-
-    p1 ^= p0;
-    p0 = _rotl(p0, 27);
-
-    p0 += p1;
-    p1 = _rotl(p1, 19);
-
-    //rp0 = p0;
-    //rp1 = p1;
-    (p0, p1)
-}
-
-fn _rotl(value: u32, shift: i32) -> u32 {
-    return (value << shift) | (value >> (32 - shift));
-}
-
-pub const DEFAULT_SEED: u64 = 0x82EF4D887A4E55C5;

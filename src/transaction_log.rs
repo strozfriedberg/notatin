@@ -4,10 +4,9 @@ use nom::{
     number::complete::{le_u32, le_u64}
 };
 use serde::Serialize;
-use crate::state::State;
 use crate::base_block::FileBaseBlockBase;
 use crate::util;
-use crate::warn::Warnings;
+use crate::warn::{WarningCode, Warnings};
 use crate::marvin_hash;
 
 // Structures based off https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-transaction-log-files
@@ -57,7 +56,8 @@ struct LogEntry {
     pub dirty_pages_count: u32,
     pub hash1: u64,
     pub hash2: u64,
-    pub dirty_pages: Vec<DirtyPage>
+    pub dirty_pages: Vec<DirtyPage>,
+    pub has_valid_hashes: bool
 }
 
 impl LogEntry {
@@ -82,18 +82,17 @@ impl LogEntry {
 
         let mut dirty_pages = Vec::new();
         for dirty_page_ref in dirty_page_refs {
-            let res = nom::bytes::complete::take(dirty_page_ref.size)(input)?;
-            input = res.0;
+            let (local_input, page_bytes) = nom::bytes::complete::take(dirty_page_ref.size)(input)?;
+            input = local_input;
             dirty_pages.push(
                 DirtyPage {
                     dirty_page_ref,
-                    page_bytes: res.1.to_vec()
+                    page_bytes: page_bytes.to_vec()
                 }
             );
         }
         let (input, _) = util::parser_eat_remaining(input, size, input.as_ptr() as usize - file_start_pos - file_offset_absolute)?;
-        //let hash2 = Self::calc_hash2(start);
-        //let hash1 = Self::calc_hash1(start, size as usize);
+        let has_valid_hashes = hash1 == Self::calc_hash1(start, size as usize) && hash2 == Self::calc_hash2(start);
 
         let hbh = Self {
             file_offset_absolute,
@@ -104,7 +103,8 @@ impl LogEntry {
             dirty_pages_count,
             hash1,
             hash2,
-            dirty_pages
+            dirty_pages,
+            has_valid_hashes
         };
 
         Ok((
@@ -113,29 +113,26 @@ impl LogEntry {
         ))
     }
 
-    //pub fn has_valid_hashes(&self, raw_bytes: &[u8]) -> bool {
-    //    self.hash1 == LogEntry::calc_hash1(raw_bytes) && self.hash2 == LogEntry::calc_hash2(raw_bytes)
-    //}
+    fn is_valid_hive_bin_data_size(&self) -> bool {
+        self.hive_bin_data_size % 4096 == 0
+    }
 
     pub fn calc_hash1(raw_bytes: &[u8], len: usize) -> u64 {
-       // var b = new byte[_rawBytes.Length - 40];
-        let mut b = vec![0; len - 40];//Vec::with_capacity(len - 40);
-        let dst = &mut b[0..len-40];
-        let src = &raw_bytes[40..len];
+        const OFFSET: usize = 40;
+        let mut b = vec![0; len - OFFSET];
+        let dst = &mut b[0..len - OFFSET];
+        let src = &raw_bytes[OFFSET..len];
         dst.copy_from_slice(src);
-        let aaa =  marvin_hash::compute_hash(dst, (len - 40) as u32, marvin_hash::DEFAULT_SEED);
-        aaa
+        marvin_hash::compute_hash(dst, (len - OFFSET) as u32, marvin_hash::DEFAULT_SEED)
     }
 
     pub fn calc_hash2(raw_bytes: &[u8]) -> u64 {
-        let len = 32;
-        let mut b = vec![0; len];//Vec::with_capacity(len);
-        let dst = &mut b[0..len];
-        let src = &raw_bytes[0..len];
+        const LENGTH: usize = 32;
+        let mut b = vec![0; LENGTH];
+        let dst = &mut b[0..LENGTH];
+        let src = &raw_bytes[0..LENGTH];
         dst.copy_from_slice(src);
-        let aaa =  marvin_hash::compute_hash(dst, len as u32, marvin_hash::DEFAULT_SEED);
-
-        aaa
+        marvin_hash::compute_hash(dst, LENGTH as u32, marvin_hash::DEFAULT_SEED)
     }
 }
 
@@ -149,7 +146,6 @@ impl TransactionLog {
     pub fn from_bytes(file_start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
         let (input, base_block) = FileBaseBlockBase::from_bytes(input)?;
         let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(file_start_pos))(input)?;
-
         Ok((
             input,
             Self {
@@ -160,22 +156,40 @@ impl TransactionLog {
     }
 
     /// Updates the primary registry with the dirty pages. Returns the last sequence number applied
-    pub fn update_bytes(&self, primary_file: &mut[u8]) -> u32 {
-        let baseOffset = 4096;
+    pub fn update_bytes(&self, primary_file: &mut[u8], info: &mut Warnings, base_offset: usize) -> u32 {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
-            //if transactionLogEntry.HasValidHashes() == false {
-                //Logger.Debug($"Skipping transaction log entry with sequence # 0x{transactionLogEntry.SequenceNumber:X}. Hash verification failed");
-                //continue;
-            //}
+            if log_entry.has_valid_hashes {
+                if !log_entry.is_valid_hive_bin_data_size() {
+                    info.add(
+                        WarningCode::WarningTransactionLog,
+                        &format!("Stopping log entry processing; the hive_bin_data_size ({}) is not a multiple of 4096)", log_entry.hive_bin_data_size)
+                    );
+                    break;
+                }
+                else if new_sequence_number != 0 && log_entry.sequence_number != new_sequence_number + 1 {
+                    info.add(
+                        WarningCode::WarningTransactionLog,
+                        &format!("Stopping log entry processing; the sequence number ({}) does not follow the previous log entry's sequence number ({})", log_entry.sequence_number, new_sequence_number)
+                    );
+                    break;
+                }
+                else {
+                    new_sequence_number = log_entry.sequence_number;
 
-            new_sequence_number = log_entry.sequence_number;
-
-            for dirty_page in &log_entry.dirty_pages {
-                let dst_offset = dirty_page.dirty_page_ref.offset + baseOffset;
-                let dst = &mut primary_file[dst_offset as usize..(dst_offset + dirty_page.dirty_page_ref.size) as usize];
-                let src = &dirty_page.page_bytes[..dirty_page.dirty_page_ref.size as usize];
-                dst.copy_from_slice(src);
+                    for dirty_page in &log_entry.dirty_pages {
+                        let dst_offset = dirty_page.dirty_page_ref.offset as usize + base_offset;
+                        let dst = &mut primary_file[dst_offset as usize..dst_offset + dirty_page.dirty_page_ref.size as usize];
+                        let src = &dirty_page.page_bytes[..dirty_page.dirty_page_ref.size as usize];
+                        dst.copy_from_slice(src);
+                    }
+                }
+            }
+            else {
+                info.add(
+                    WarningCode::WarningTransactionLog,
+                    &format!("Hash mismatch; skipping log entry with sequence number 0x{:08X}", log_entry.sequence_number)
+                );
             }
         }
         new_sequence_number
@@ -185,6 +199,7 @@ impl TransactionLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::State;
     use crate::base_block::{FileFormat, FileType};
 
     #[test]

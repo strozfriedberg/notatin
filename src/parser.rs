@@ -1,11 +1,11 @@
 use std::path::Path;
-use crate::base_block::FileBaseBlock;
+use crate::base_block::{FileBaseBlock, FileBaseBlockBase};
 use crate::filter::Filter;
 use crate::err::Error;
 use crate::cell_key_node::CellKeyNode;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::state::{State, ReadSeek};
-use crate::warn::{Warning, WarningCode};
+use crate::warn::WarningCode;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -83,52 +83,59 @@ impl Parser {
 
     pub fn handle_transaction_logs(&mut self) -> Result<(), Error> {
         if self.state.transaction_logs.is_some() {
-            let logs = self.state.transaction_logs.as_mut().expect("just checked");
-            logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number)); // put the logs in order of oldest (lowest sequence number) first
-            let primary_file_secondary_sequence_number = self.base_block.as_ref().expect("we must have parsed a base_block if we are here").base.secondary_sequence_number;
-            let mut new_sequence_number = 0;
-            for log in logs {
-                //if self.base_block.expect("must have base_block if here").validate_checksum() {
-                    if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
-                        if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
-                            new_sequence_number = log.update_bytes(&mut self.state.file_buffer);
+            let base_block_base = &self.base_block.as_ref().expect("Shouldn't be here unless we have a base block").base;
+            if base_block_base.primary_sequence_number == base_block_base.secondary_sequence_number {
+                self.state.info.add(WarningCode::WarningTransactionLog, &"Skipping transaction logs because the primary file primary_sequence_number == the secondary_sequence_number");
+            }
+            else {
+                let logs = self.state.transaction_logs.as_mut().expect("just checked");
+                // put the logs in order of oldest (lowest sequence number) first
+                logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number));
+                let primary_file_secondary_sequence_number = self.base_block.as_ref().expect("we must have parsed a base_block if we are here").base.secondary_sequence_number;
+                let mut new_sequence_number = 0;
+                for log in logs {
+                    //if log.has_valid_hashes {
+                        if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
+                            if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
+                                new_sequence_number = log.update_bytes(&mut self.state.file_buffer, &mut self.state.info, self.state.hbin_offset_absolute); // Why are we passing multiple members of self.state into this method rather than just passing in self.state? Because we already have a mutable borrow of self.state above (self.state.transaction_logs.as_mut())
+                            }
+                            else {
+                                self.state.info.add(
+                                    WarningCode::WarningTransactionLog,
+                                    &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
+                                );
+                            }
                         }
                         else {
                             self.state.info.add(
                                 WarningCode::WarningTransactionLog,
-                                &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
+                                &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
                             );
                         }
-                    }
-                    else {
-                        self.state.info.add(
+                    //}
+                /* else {
+                        self.state.warnings.add(
                             WarningCode::WarningTransactionLog,
-                            &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
+                            format!("Skipping log file; primary file's checksum doesn't match", log.base_block.primary_sequence_number, new_sequence_number)
                         );
-                    }
-                //}
-               /* else {
-                    self.state.warnings.add(
-                        WarningCode::WarningTransactionLog,
-                        format!("Skipping log file; primary file's checksum doesn't match", log.base_block.primary_sequence_number, new_sequence_number)
-                    );
-                }*/
+                    }*/
+                }
+
+                // Update primary file header
+                // Update sequence numbers with latest available
+                let new_sequence_number_bytes = new_sequence_number.to_le_bytes();
+                self.state.file_buffer[4..8].copy_from_slice(&new_sequence_number_bytes);
+                self.state.file_buffer[8..12].copy_from_slice(&new_sequence_number_bytes);
+                // Update the checksum
+                let new_checksum = FileBaseBlockBase::calculate_checksum(&self.state.file_buffer[..0x200]);
+                self.state.file_buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
+
+                self.init_base_block()?;
+                self.state.info.add(
+                    WarningCode::Info,
+                    &format!("Applied transaction log(s). Sequence numbers have been updated to 0x{:08X}. New Checksum: 0x{:08X}", new_sequence_number, new_checksum)
+                );
             }
-
-            // Update primary file header
-            // Update sequence numbers with latest available
-            let new_sequence_number_bytes = new_sequence_number.to_le_bytes();
-            self.state.file_buffer[4..8].copy_from_slice(&new_sequence_number_bytes);
-            self.state.file_buffer[8..12].copy_from_slice(&new_sequence_number_bytes);
-            // Update the checksum
-            let new_checksum = HiveBinHeader::calculate_checksum(&self.state.file_buffer[..0x200]);
-            self.state.file_buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
-
-            self.init_base_block()?;
-            self.state.info.add(
-                WarningCode::Info,
-                &format!("Applied transaction log(s). Sequence numbers have been updated to 0x{:08X}. New Checksum: 0x{:08X}", new_sequence_number, new_checksum)
-            );
         }
         Ok(())
     }
@@ -177,11 +184,11 @@ impl Iterator for Parser {
             if !self.stack_to_return.is_empty() {
                 let last = self.stack_to_return.last().expect("We checked that stack_to_return wasn't empty");
                 if last.track_returned == last.number_of_sub_keys {
-                    return Some(self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty"));
+                    return Some(self.stack_to_return.pop().expect("We checked that stack_to_return wasn't empty"));
                 }
             }
 
-            let mut node = self.stack_to_traverse.pop().expect("We just checked that stack_to_traverse wasn't empty");
+            let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let children = node.read_sub_keys(&mut self.state, &self.filter).unwrap();
                 self.stack_to_traverse.extend(children);
@@ -209,6 +216,7 @@ mod tests {
         io::{BufWriter, Write},
     };
     use crate::filter::{Filter, FindPath};
+    use crate::util;
     use md5;
 
     #[test]
@@ -332,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let filter = Filter::from_path(FindPath::from_key(&"Software\\Microsoft\\Office\\14.0\\Common".to_string()));
+        let filter = Filter::from_path(FindPath::from_key(&r"Software\Microsoft\Office\14.0\Common".to_string()));
         let mut parser = Parser::from_path_filtered("test_data/NTUSER.DAT", filter).unwrap();
         let res = parser.init();
         assert_eq!(
@@ -376,5 +384,50 @@ mod tests {
         for key in parser {
             writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
         }
+    }
+
+    #[test]
+    fn wip_common_export_format() {
+        /*
+        ## Registry common export format
+        ## Key format
+        ## key,Is Free (A for in use, U for unused),Absolute offset in decimal,KeyPath,,,,LastWriteTime in UTC
+        ## Value format
+        ## value,Is Free (A for in use, U for unused),Absolute offset in decimal,KeyPath,Value name,Data type (as decimal integer),Value data as bytes separated by a singe space,
+        ##
+        ## Comparison of deleted keys/values is done to compare recovery of vk and nk records, not the algorithm used to associate deleted keys to other keys and their values.
+        ## When including deleted keys, only the recovered key name should be included, not the full path to the deleted key.
+        ## When including deleted values, do not include the parent key information.
+        ##
+        ## The following totals should also be included
+        ##
+        ## total_keys: total in use key count
+        ## total_values: total in use value count
+        ## total_deleted_keys: total recovered free key count
+        ## total_deleted_values: total recovered free value count
+        ##
+        ## Before comparison with other common export implementations, the files should be sorted
+        ##*/
+
+        let mut parser = Parser::from_path_with_logs("test_data/SYSTEM", vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]).unwrap();
+        //let mut parser = Parser::from_path("test_data/SYSTEM").unwrap();
+        let _ = parser.init();
+
+        let write_file = File::create("SYSTEM_with_logs_common").unwrap();
+        let mut writer = BufWriter::new(&write_file);
+        let mut keys = 0;
+        let mut values = 0;
+        for key in parser {
+            keys += 1;
+            writeln!(&mut writer, "key,A,{},{},,,,{}", key.detail.file_offset_absolute, key.path, key.last_key_written_date_and_time.format("%+")).unwrap();
+            for value in key.sub_values {
+                values += 1;
+                writeln!(&mut writer, "value,A,{},{},{},{:?},{}", value.detail.file_offset_absolute, key.key_name, value.value_name, value.data_type as u32, util::to_hex_string(&value.detail.value_bytes.unwrap()[..])).unwrap();
+            }
+        }
+        writeln!(&mut writer, "## total_keys: {}", keys).unwrap();
+        writeln!(&mut writer, "## total_values: {}", values).unwrap();
+        writeln!(&mut writer, "## total_deleted_keys").unwrap();
+        writeln!(&mut writer, "## total_deleted_values").unwrap();
     }
 }

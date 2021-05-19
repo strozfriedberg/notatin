@@ -1,5 +1,4 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use notatin::filter::Filter;
 use notatin::parser::Parser;
 
 fn test_read_small_reg() {

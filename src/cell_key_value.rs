@@ -70,50 +70,57 @@ pub enum CellKeyValueDataTypes {
     REG_UNICODE_CHAR_ARRAY         = 0x011D,
     REG_BOOLEAN_ARRAY              = 0x011E,
     REG_UNICODE_STRING_ARRAY       = 0x011F,
+    REG_UNKNOWN                    = 0xFFFF,
 }
 
 impl CellKeyValueDataTypes {
-    pub fn get_value_content(self, input: &[u8], parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
+    pub fn get_value_content(self, input: &[u8], parse_warnings: &mut Warnings) -> Result<(CellValue, Vec<u8>), Error> {
+        let mut slice: &[u8] = input;
         let cv = match self {
             CellKeyValueDataTypes::REG_NONE =>
                 CellValue::ValueNone,
             CellKeyValueDataTypes::REG_SZ |
             CellKeyValueDataTypes::REG_EXPAND_SZ |
-            CellKeyValueDataTypes::REG_LINK => CellValue::ValueString(
-                util::from_utf16_le_string(input, input.len(), parse_warnings, &"Get value content")
-            ),
-            CellKeyValueDataTypes::REG_UINT8 => CellValue::ValueU32(
-                u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32
-            ),
-            CellKeyValueDataTypes::REG_INT16 => CellValue::ValueI32(
-                i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into()?) as i32
-            ),
-            CellKeyValueDataTypes::REG_UINT16 => CellValue::ValueU32(
-                u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into()?) as u32
-            ),
+            CellKeyValueDataTypes::REG_LINK =>
+                CellValue::ValueString(util::from_utf16_le_string(input, input.len(), parse_warnings, &"Get value content")),
+            CellKeyValueDataTypes::REG_UINT8 => {
+                slice = &input[0..mem::size_of::<u8>()];
+                CellValue::ValueU32(u8::from_le_bytes(slice.try_into()?) as u32)
+            },
+            CellKeyValueDataTypes::REG_INT16 => {
+                slice = &input[0..mem::size_of::<i16>()];
+                CellValue::ValueI32(i16::from_le_bytes(slice.try_into()?) as i32)
+            },
+            CellKeyValueDataTypes::REG_UINT16 => {
+                slice = &input[0..mem::size_of::<u16>()];
+                CellValue::ValueU32(u16::from_le_bytes(slice.try_into()?) as u32)
+            },
             CellKeyValueDataTypes::REG_DWORD |
-            CellKeyValueDataTypes::REG_UINT32 => CellValue::ValueU32(
-                u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into()?)
-            ),
-            CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => CellValue::ValueU32(
-                u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into()?)
-            ),
-            CellKeyValueDataTypes::REG_INT32 => CellValue::ValueI32(
-                i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into()?)
-            ),
-            CellKeyValueDataTypes::REG_INT64 => CellValue::ValueI64(
-                i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into()?)
-            ),
+            CellKeyValueDataTypes::REG_UINT32 => {
+                slice = &input[0..mem::size_of::<u32>()];
+                CellValue::ValueU32(u32::from_le_bytes(slice.try_into()?) as u32)
+            },
+            CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => {
+                slice = &input[0..mem::size_of::<u32>()];
+                CellValue::ValueU32(u32::from_be_bytes(slice.try_into()?) as u32)
+            },
+            CellKeyValueDataTypes::REG_INT32 => {
+                slice = &input[0..mem::size_of::<i32>()];
+                CellValue::ValueI32(i32::from_le_bytes(slice.try_into()?))
+            },
+            CellKeyValueDataTypes::REG_INT64 => {
+                slice = &input[0..mem::size_of::<i64>()];
+                CellValue::ValueI64(i64::from_le_bytes(slice.try_into()?))
+            },
             CellKeyValueDataTypes::REG_QWORD |
-            CellKeyValueDataTypes::REG_UINT64 => CellValue::ValueU64(
-                u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into()?)
-            ),
-            CellKeyValueDataTypes::REG_BIN => CellValue::ValueBinary(
-                input.to_vec()
-            ),
-            CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::ValueMultiString(
-                util::from_utf16_le_strings(input, input.len(), parse_warnings, &"Get value content")
-            ),
+            CellKeyValueDataTypes::REG_UINT64 => {
+                slice = &input[0..mem::size_of::<u64>()];
+                CellValue::ValueU64(u64::from_le_bytes(slice.try_into()?))
+            },
+            CellKeyValueDataTypes::REG_BIN =>
+                CellValue::ValueBinary(input.to_vec()),
+            CellKeyValueDataTypes::REG_MULTI_SZ =>
+                CellValue::ValueMultiString(util::from_utf16_le_strings(input, input.len(), parse_warnings, &"Get value content")),
             CellKeyValueDataTypes::REG_RESOURCE_LIST |
             CellKeyValueDataTypes::REG_FILETIME |
             CellKeyValueDataTypes::REG_FULL_RESOURCE_DESCRIPTOR |
@@ -141,10 +148,11 @@ impl CellKeyValueDataTypes {
             CellKeyValueDataTypes::REG_DOUBLE_ARRAY |
             CellKeyValueDataTypes::REG_UNICODE_CHAR_ARRAY |
             CellKeyValueDataTypes::REG_BOOLEAN_ARRAY |
-            CellKeyValueDataTypes::REG_UNICODE_STRING_ARRAY =>
+            CellKeyValueDataTypes::REG_UNICODE_STRING_ARRAY |
+            CellKeyValueDataTypes::REG_UNKNOWN =>
                 CellValue::ValueBinary(input.to_vec()),
         };
-        Ok(cv)
+        Ok((cv, slice.to_vec()))
     }
 }
 
@@ -165,6 +173,7 @@ pub struct CellKeyValueDetail {
     pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
     pub data_offset: u32, // In bytes, relative from the start of the hive bin's data (or data itself)
     pub padding: u16,
+    #[serde(skip_serializing)]
     pub value_bytes: Option<Vec<u8>>
 }
 
@@ -195,8 +204,10 @@ impl CellKeyValue {
         let (input, padding) = le_u16(input)?;
         let (input, value_name_bytes) = take!(input, value_name_size)?;
 
+        const DEVPROP_MASK_TYPE: u32 = 0x00000FFF;
+        let data_type_bytes = data_type_bytes & DEVPROP_MASK_TYPE;
         let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
-            None => CellKeyValueDataTypes::REG_NONE,
+            None => CellKeyValueDataTypes::REG_UNKNOWN,
             Some(data_type) => data_type
         };
 
@@ -246,37 +257,45 @@ impl CellKeyValue {
             or in the Cell data fields of multiple cells (referenced in the Big data structure stored in a cell pointed by the Data offset field). */
         const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
         let value_content;
+        let value_bytes;
         if self.detail.data_size & DATA_IS_RESIDENT_MASK == 0 {
             let mut offset = self.detail.data_offset as usize + state.hbin_offset_absolute;
             if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < self.detail.data_size && CellBigData::is_big_data_block(&state.file_buffer[offset..]) {
-                value_content =
+                let (vc, vb) =
                     CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size, &mut self.parse_warnings)
                         .or_else(
-                            |err| -> Result<CellValue, Error> {
+                            |err| -> Result<(CellValue, Vec<u8>), Error> {
                                 self.parse_warnings.add(WarningCode::WarningBigDataContent, &err);
-                                Ok(CellValue::ValueError)
+                                Ok((CellValue::ValueError, Vec::new()))
                             }
                         )
                         .expect("Error handled in or_else");
+                value_content = vc;
+                value_bytes = vb;
             }
             else {
                 offset += mem::size_of_val(&self.detail.size);
-                value_content = self.get_value_content(&state.file_buffer[offset .. offset + self.detail.data_size as usize]);
+                let (vc, vb) = self.get_value_content(&state.file_buffer[offset .. offset + self.detail.data_size as usize]);
+                value_content = vc;
+                value_bytes = vb;
             }
         }
         else {
             let value = self.detail.data_offset.to_le_bytes();
-            value_content = self.get_value_content(&value[..(self.detail.data_size ^ DATA_IS_RESIDENT_MASK) as usize]);
+            let (vc, vb) = self.get_value_content(&value[..(self.detail.data_size ^ DATA_IS_RESIDENT_MASK) as usize]);
+            value_content = vc;
+            value_bytes = vb;
         }
         self.value_content = Some(value_content);
+        self.detail.value_bytes = Some(value_bytes);
     }
 
-    fn get_value_content(&mut self, input: &[u8]) -> CellValue {
+    fn get_value_content(&mut self, input: &[u8]) -> (CellValue, Vec<u8>) {
         self.data_type.get_value_content(input, &mut self.parse_warnings)
             .or_else(
-                |err| -> Result<CellValue, Error> {
+                |err| -> Result<(CellValue, Vec<u8>), Error> {
                     self.parse_warnings.add(WarningCode::WarningContent, &err);
-                    Ok(CellValue::ValueError)
+                    Ok((CellValue::ValueError, Vec::new()))
                 }
             )
             .expect("Error handled in or_else")
@@ -322,7 +341,6 @@ mod tests {
             value_name: "IE5_UA_Backup_Flag".to_string(),
             value_content: None,
             parse_warnings: Warnings::default()
-
         };
         let remaining: [u8; 0] = [];
         let expected = Ok((&remaining[..], expected_output));

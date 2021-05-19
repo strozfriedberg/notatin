@@ -110,7 +110,7 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
     for byte in bytes {
         write!(s, "{:02X} ", byte).expect("Writing to an allocated string cannot fail");
     }
-    s
+    s.trim_end().to_string()
 }
 
 #[cfg(test)]
