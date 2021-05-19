@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use crate::err::Error;
 use crate::hive_bin_cell;
 use crate::impl_serialize_for_bitflags;
-use crate::registry::State;
+use crate::state::State;
 
 /// Filter allows specification of conditions to be met when reading the registry.
 /// Execution will short-circuit for applicable filters (is_complete = true)
@@ -180,7 +180,9 @@ mod tests {
             cell_key_node_stack: Vec::new(),
             value_complete: false,
             key_complete: false,
-            root_key_path_offset: 0
+            root_key_path_offset: 0,
+            transaction_logs: None,
+            info: Warnings::default()
         };
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
@@ -211,7 +213,9 @@ mod tests {
             cell_key_node_stack: Vec::new(),
             value_complete: false,
             key_complete: false,
-            root_key_path_offset: 0
+            root_key_path_offset: 0,
+            transaction_logs: None,
+            info: Warnings::default()
         };
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
@@ -221,6 +225,7 @@ mod tests {
                 data_size: 8,
                 data_offset: 1928,
                 padding: 1280,
+                value_bytes: None
             },
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,

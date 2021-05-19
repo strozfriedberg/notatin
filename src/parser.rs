@@ -1,80 +1,19 @@
-use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
-use serde::Serialize;
 use crate::base_block::FileBaseBlock;
 use crate::filter::Filter;
 use crate::err::Error;
 use crate::cell_key_node::CellKeyNode;
 use crate::hive_bin_header::HiveBinHeader;
+use crate::state::{State, ReadSeek};
+use crate::warn::{Warning, WarningCode};
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
     https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-primary-files
 */
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct State {
-    // file info
-    pub file_start_pos: usize,
-    pub hbin_offset_absolute: usize,
-    pub file_buffer: Vec<u8>,
-
-    // parser iteration
-    pub cell_key_node_stack: Vec<CellKeyNode>,
-
-    // filter evaulation
-    pub value_complete: bool,
-    pub key_complete: bool,
-    pub root_key_path_offset: usize // path filters don't include the root name, but the cell key's paths do. This is the length of that root name so we can index into the string directly
-}
-
-impl State {
-    pub fn from_path(filename: impl AsRef<Path>, hbin_offset_absolute: usize) -> Result<Self, Error> {
-        let fh = std::fs::File::open(filename)?;
-        State::from_read_seek(fh, hbin_offset_absolute)
-    }
-
-    pub fn from_read_seek<T: ReadSeek>(mut data: T, hbin_offset_absolute: usize) -> Result<Self, Error> {
-        let mut file_buffer = Vec::new();
-        data.read_to_end(&mut file_buffer)?;
-        let slice = &file_buffer;
-        Ok(State {
-            file_start_pos: slice.as_ptr() as usize,
-            hbin_offset_absolute,
-            file_buffer,
-            cell_key_node_stack: Vec::new(),
-            value_complete: false,
-            key_complete: false,
-            root_key_path_offset: 0
-        })
-    }
-
-    pub fn get_file_offset(&self, input: &[u8]) -> usize {
-        input.as_ptr() as usize - self.file_start_pos
-    }
-
-    pub(crate) fn get_root_path_offset(&mut self, key_path: &str) -> usize {
-        if self.root_key_path_offset == 0 {
-            match key_path[1..].find('\\') {
-                Some(second_backslash) => self.root_key_path_offset = second_backslash + 2,
-                None => return 0
-            }
-        }
-        self.root_key_path_offset
-    }
-}
-
-pub trait ReadSeek: Read + Seek {
-    fn tell(&mut self) -> io::Result<u64> {
-        self.seek(SeekFrom::Current(0))
-    }
-}
-
-impl<T: Read + Seek> ReadSeek for T {}
-
 #[derive(Clone, Debug)]
 pub struct Parser {
-    pub state: State,
+    state: State,
     pub filter: Filter,
     pub stack_to_traverse: Vec<CellKeyNode>,
     pub stack_to_return: Vec<CellKeyNode>,
@@ -101,6 +40,22 @@ impl Parser {
         })
     }
 
+    pub fn from_path_with_logs(filename: impl AsRef<Path>, logs: Vec<impl AsRef<Path>>) -> Result<Self, Error> {
+        Self::from_path_filtered_with_logs(filename, logs, Filter::new())
+    }
+
+    pub fn from_path_filtered_with_logs(filename: impl AsRef<Path>, logs: Vec<impl AsRef<Path>>, filter: Filter) -> Result<Self, Error> {
+        Ok(Parser {
+            state: State::from_path_with_logs(filename, logs, 0)?,
+            filter,
+            stack_to_traverse: Vec::new(),
+            stack_to_return: Vec::new(),
+            base_block: None,
+            hive_bin_header: None,
+            is_init: false
+        })
+    }
+
     pub fn from_read_seek<T: ReadSeek>(data: T) -> Result<Self, Error> {
         Self::from_read_seek_filtered(data, Filter::new())
     }
@@ -117,18 +72,75 @@ impl Parser {
         })
     }
 
-    pub fn init(&mut self) -> Result<bool, Error> {
-        self.is_init = true;
-        let file_start_pos = self.state.file_buffer.as_ptr() as usize;
+    fn init_base_block(&mut self) -> Result<(), Error> {
         let (input, base_block) = FileBaseBlock::from_bytes(&self.state.file_buffer)?;
+        self.state.hbin_offset_absolute = input.as_ptr() as usize - self.state.file_buffer.as_ptr() as usize;
         self.base_block = Some(base_block);
-        self.state.hbin_offset_absolute = input.as_ptr() as usize - file_start_pos;
         self.state.key_complete = false;
         self.state.value_complete = false;
+        Ok(())
+    }
 
+    pub fn handle_transaction_logs(&mut self) -> Result<(), Error> {
+        if self.state.transaction_logs.is_some() {
+            let logs = self.state.transaction_logs.as_mut().expect("just checked");
+            logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number)); // put the logs in order of oldest (lowest sequence number) first
+            let primary_file_secondary_sequence_number = self.base_block.as_ref().expect("we must have parsed a base_block if we are here").base.secondary_sequence_number;
+            let mut new_sequence_number = 0;
+            for log in logs {
+                //if self.base_block.expect("must have base_block if here").validate_checksum() {
+                    if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
+                        if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
+                            new_sequence_number = log.update_bytes(&mut self.state.file_buffer);
+                        }
+                        else {
+                            self.state.info.add(
+                                WarningCode::WarningTransactionLog,
+                                &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
+                            );
+                        }
+                    }
+                    else {
+                        self.state.info.add(
+                            WarningCode::WarningTransactionLog,
+                            &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
+                        );
+                    }
+                //}
+               /* else {
+                    self.state.warnings.add(
+                        WarningCode::WarningTransactionLog,
+                        format!("Skipping log file; primary file's checksum doesn't match", log.base_block.primary_sequence_number, new_sequence_number)
+                    );
+                }*/
+            }
+
+            // Update primary file header
+            // Update sequence numbers with latest available
+            let new_sequence_number_bytes = new_sequence_number.to_le_bytes();
+            self.state.file_buffer[4..8].copy_from_slice(&new_sequence_number_bytes);
+            self.state.file_buffer[8..12].copy_from_slice(&new_sequence_number_bytes);
+            // Update the checksum
+            let new_checksum = HiveBinHeader::calculate_checksum(&self.state.file_buffer[..0x200]);
+            self.state.file_buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
+
+            self.init_base_block()?;
+            self.state.info.add(
+                WarningCode::Info,
+                &format!("Applied transaction log(s). Sequence numbers have been updated to 0x{:08X}. New Checksum: 0x{:08X}", new_sequence_number, new_checksum)
+            );
+        }
+        Ok(())
+    }
+
+    pub fn init(&mut self) -> Result<bool, Error> {
+        self.is_init = true;
+        self.init_base_block()?;
+        self.handle_transaction_logs()?;
+
+        let input = &self.state.file_buffer[self.state.hbin_offset_absolute..];
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.state, input)?;
         self.hive_bin_header = Some(hive_bin_header);
-
         let offset = self.state.get_file_offset(input);
         let (kn, _) = CellKeyNode::read(&mut self.state, offset, &String::new(), &Filter::new())?; // we pass in a null filter for the root since matches by definition
         match kn {
@@ -187,11 +199,6 @@ impl Iterator for Parser {
         }
         None
     }
-}
-
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct Registry {
-    pub header: FileBaseBlock,
 }
 
 #[cfg(test)]
@@ -259,6 +266,36 @@ mod tests {
             (2288, 5470),
             (keys, values)
         );
+    }
+
+    #[test]
+    fn test_read_reg_with_logs() {
+        {
+            let write_file = File::create("SYSTEM_with_logs.jsonl").unwrap();
+            let mut writer = BufWriter::new(&write_file);
+            let mut parser = Parser::from_path_with_logs("test_data/SYSTEM", vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]).unwrap();
+            let res = parser.init();
+            assert_eq!(
+                Ok(true),
+                res
+            );
+            for key in parser {
+                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
+            }
+        }
+        {
+            let write_file = File::create("SYSTEM.jsonl").unwrap();
+            let mut writer = BufWriter::new(&write_file);
+            let mut parser = Parser::from_path("test_data/SYSTEM").unwrap();
+            let res = parser.init();
+            assert_eq!(
+                Ok(true),
+                res
+            );
+            for key in parser {
+                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
+            }
+        }
     }
 
     #[test]

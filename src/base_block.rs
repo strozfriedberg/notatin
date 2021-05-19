@@ -16,9 +16,10 @@ use crate::impl_enum_from_value;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileType {
-    Primary = 0,
-    TransactionLog = 1,
-    Unknown = 0x0fffffff
+    Primary                 = 0,
+    TransactionLog          = 1,
+    TransactionLogNewFormat = 6,
+    Unknown                 = 0x0fffffff
 }
 impl_enum_from_value!{ FileType }
 
@@ -30,10 +31,38 @@ pub enum FileFormat {
 }
 impl_enum_from_value!{ FileFormat }
 
-// Structure comments adapted from https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileBaseBlock {
+    pub base: FileBaseBlockBase,
+    pub ext: FileBaseBlockExtended
+}
+
+impl FileBaseBlock {
+    /// Parses the registry file header.
+    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, base) = FileBaseBlockBase::from_bytes(input)?;
+        let (input, ext) = FileBaseBlockExtended::from_bytes(input)?;
+
+        Ok((
+            input,
+            Self {
+                base,
+                ext,
+            },
+        ))
+    }
+
+    pub fn validate_checksum(&self) -> bool {
+        let t=3;
+        return true;
+    }
+}
+
+// Structure comments adapted from https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block
+
+/// FileBaseBlockBase contains the data found in the header of both primary and log registry files
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FileBaseBlockBase {
     /// This number is incremented by 1 in the beginning of a write operation on the primary file.
     pub primary_sequence_number: u32,
     /// This number is incremented by 1 at the end of a write operation on the primary file. The primary sequence number and the secondary sequence number should be equal after a successful write operation.
@@ -54,13 +83,10 @@ pub struct FileBaseBlock {
     pub unk2: Vec<u8>,
     /// XOR-32 checksum of the previous 508 bytes
     pub checksum: u32,
-    pub reserved: FileBaseBlockReserved,
-    pub boot_type: u32,
-    pub boot_recover: u32,
     pub parse_warnings: Warnings
 }
 
-impl FileBaseBlock {
+impl FileBaseBlockBase {
     /// Parses the registry file header.
     pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, _signature) = tag("regf")(input)?;
@@ -77,14 +103,11 @@ impl FileBaseBlock {
         let (input, filename_bytes) = take(64usize)(input)?;
         let (input, unk2) = take(396usize)(input)?;
         let (input, checksum) = le_u32(input)?;
-        let (input, reserved) = FileBaseBlockReserved::from_bytes(input)?;
-        let (input, boot_type) = le_u32(input)?;
-        let (input, boot_recover) = le_u32(input)?;
 
         let mut parse_warnings = Warnings::default();
         Ok((
             input,
-            FileBaseBlock {
+            Self {
                 primary_sequence_number,
                 secondary_sequence_number,
                 last_modification_date_and_time: util::get_date_time_from_filetime(last_modification_date_and_time),
@@ -98,10 +121,33 @@ impl FileBaseBlock {
                 filename: util::from_utf16_le_string(filename_bytes, 64, &mut parse_warnings, &"Filename"),
                 unk2: unk2.to_vec(),
                 checksum,
+                parse_warnings
+            },
+        ))
+    }
+}
+
+/// FileBaseBlockExtended contains the data found in the header of a primary registry files
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FileBaseBlockExtended {
+    pub reserved: FileBaseBlockReserved,
+    pub boot_type: u32,
+    pub boot_recover: u32,
+}
+
+impl FileBaseBlockExtended {
+    /// Parses the registry file header.
+    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, reserved) = FileBaseBlockReserved::from_bytes(input)?;
+        let (input, boot_type) = le_u32(input)?;
+        let (input, boot_recover) = le_u32(input)?;
+
+        Ok((
+            input,
+            Self {
                 reserved,
                 boot_type,
-                boot_recover,
-                parse_warnings
+                boot_recover
             },
         ))
     }
@@ -190,23 +236,27 @@ mod tests {
 
         let ret = FileBaseBlock::from_bytes(&f[0..4096]);
         let expected_header = FileBaseBlock {
-            primary_sequence_number: 10407,
-            secondary_sequence_number: 10407,
-            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460),
-            major_version: 1,
-            minor_version: 3,
-            file_type: FileType::Primary,
-            format: FileFormat::DirectMemoryLoad,
-            root_cell_offset_relative: 32,
-            hive_bins_data_size: 1060864,
-            clustering_factor: 1,
-            filename: "\\??\\C:\\Users\\nfury\\ntuser.dat".to_string(),
-            unk2,
-            checksum: 738555936,
-            reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,
-            boot_type: 0,
-            boot_recover: 0,
-            parse_warnings: Warnings::default()
+            base: FileBaseBlockBase {
+                primary_sequence_number: 10407,
+                secondary_sequence_number: 10407,
+                last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460),
+                major_version: 1,
+                minor_version: 3,
+                file_type: FileType::Primary,
+                format: FileFormat::DirectMemoryLoad,
+                root_cell_offset_relative: 32,
+                hive_bins_data_size: 1060864,
+                clustering_factor: 1,
+                filename: "\\??\\C:\\Users\\nfury\\ntuser.dat".to_string(),
+                unk2,
+                checksum: 738555936,
+                parse_warnings: Warnings::default()
+            },
+            ext: FileBaseBlockExtended {
+                reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,
+                boot_type: 0,
+                boot_recover: 0
+            }
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_header));

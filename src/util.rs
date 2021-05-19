@@ -20,7 +20,7 @@ fn from_utf16_le_string_single(slice: &[u8], count: usize, parse_warnings: &mut 
         std::char::decode_utf16(iter)
             .map(|r|
                 r.unwrap_or_else(|err| {
-                    parse_warnings.add_warning(WarningCode::WarningConversion, &format!("{}: {}", err_detail, err.to_string()));
+                    parse_warnings.add(WarningCode::WarningConversion, &format!("{}: {}", err_detail, err.to_string()));
                     REPLACEMENT_CHARACTER
                 })
             )
@@ -56,7 +56,7 @@ pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, err_detail: &str) 
     String::from_utf8(slice.to_vec())
         .or_else(
             |err: FromUtf8Error| -> Result<String, FromUtf8Error> {
-                parse_warnings.add_warning(WarningCode::WarningConversion, &format!("{}: {}", err_detail, err.to_string()));
+                parse_warnings.add(WarningCode::WarningConversion, &format!("{}: {}", err_detail, err.to_string()));
                 Ok(String::from("<Invalid string>"))
             }
         ).expect("Error handled in or_else")
@@ -92,7 +92,7 @@ pub fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Gui
     Guid::from_buffer(buffer)
         .or_else(
             |err| {
-                parse_warnings.add_warning(WarningCode::WarningConversion, &err);
+                parse_warnings.add(WarningCode::WarningConversion, &err);
                 Guid::from_buffer(&[0; 16])
             }
         ).expect("Error handled in or_else")
@@ -105,7 +105,7 @@ pub fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S:
 /// Adapted from https://github.com/omerbenamram/mft
 pub fn to_hex_string(bytes: &[u8]) -> String {
     let len = bytes.len();
-    let mut s = String::with_capacity(len * 3); // Each byte is represented by 2 ascii bytes.
+    let mut s = String::with_capacity(len * 3); // Each byte is represented by 2 ascii bytes, and then we add a space between them
 
     for byte in bytes {
         write!(s, "{:02X} ", byte).expect("Writing to an allocated string cannot fail");
@@ -132,7 +132,7 @@ mod tests {
         let guid = get_guid_from_buffer(raw_guid, &mut parse_warnings);
 
         assert_eq!(format!("{}", guid), "54849625-5478-4994-A5BA-3E3B0328C30D");
-        assert_eq!(None, parse_warnings.get_warnings());
+        assert_eq!(None, parse_warnings.get());
 
         let err_guid = get_guid_from_buffer(&raw_guid[..14], &mut parse_warnings);
         assert_eq!(format!("{}", err_guid), "00000000-0000-0000-0000-000000000000", "Return Guid for error case");
@@ -140,7 +140,7 @@ mod tests {
             code: WarningCode::WarningConversion,
             text: "An I/O error has occurred".to_string()
         };
-        assert_eq!(&vec![expected_warning], parse_warnings.get_warnings().unwrap());
+        assert_eq!(&vec![expected_warning], parse_warnings.get().unwrap());
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
         let mut parse_warnings = Warnings::default();
         let good = from_utf8(&[0x74, 0x65, 0x73, 0x74], &mut parse_warnings, "Unit test");
         assert_eq!("test", good);
-        assert_eq!(None, parse_warnings.get_warnings());
+        assert_eq!(None, parse_warnings.get());
 
         let bad = from_utf8(&[0xff, 0xff, 0xff], &mut parse_warnings, "Unit test");
         assert_eq!("<Invalid string>", bad);
@@ -156,7 +156,7 @@ mod tests {
             code: WarningCode::WarningConversion,
             text: "Unit test: invalid utf-8 sequence of 1 bytes from index 0".to_string()
         };
-        assert_eq!(&vec![expected_warning], parse_warnings.get_warnings().unwrap());
+        assert_eq!(&vec![expected_warning], parse_warnings.get().unwrap());
     }
 
     #[test]
@@ -174,17 +174,17 @@ mod tests {
         let mut parse_warnings = Warnings::default();
         let ascii = string_from_bytes(true, test_str_ascii.as_bytes(), test_str_ascii.len() as u16, &mut parse_warnings, "Unit test");
         assert_eq!(test_str_ascii, ascii, "Ascii conversion");
-        assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
+        assert_eq!(None, parse_warnings.get(), "No warnings expected");
 
         let test_utf16 = [0x2C, 0x6E, 0x66, 0x8A, 0x57, 0x5B, 0x26, 0x7B, 0x32, 0x4E];
         let utf16 = string_from_bytes(false, &test_utf16, 2 * test_utf16.len() as u16, &mut parse_warnings, "Unit test");
         assert_eq!("測試字符串", utf16, "UTF-16 conversion");
-        assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
+        assert_eq!(None, parse_warnings.get(), "No warnings expected");
 
         let test_4byte_utf16 = [0x28, 0x00, 0x01, 0xD8, 0x37, 0xDC, 0x29, 0x00];
         let utf16 = string_from_bytes(false, &test_4byte_utf16, 2 * test_4byte_utf16.len() as u16, &mut parse_warnings, "Unit test");
         assert_eq!("(𐐷)", utf16, "UTF-16 4-byte char conversion");
-        assert_eq!(None, parse_warnings.get_warnings(), "No warnings expected");
+        assert_eq!(None, parse_warnings.get(), "No warnings expected");
 
         let test_utf16 = [0x2C, 0x6E, 0xFF, 0xDB, 0x57, 0x5B, 0x26, 0x7B, 0x32, 0x4E];
         let utf16 = string_from_bytes(false, &test_utf16, 2 * test_utf16.len() as u16, &mut parse_warnings, "Unit test");
@@ -193,7 +193,7 @@ mod tests {
             code: WarningCode::WarningConversion,
             text: "Unit test: unpaired surrogate found: dbff".to_string()
         };
-        assert_eq!(&vec![expected_warning], parse_warnings.get_warnings().unwrap(), "1 warning expected");
+        assert_eq!(&vec![expected_warning], parse_warnings.get().unwrap(), "1 warning expected");
     }
 
     #[test]

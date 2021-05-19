@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::registry::{State, Parser};
-    use crate::filter::Filter;
+    use crate::parser::Parser;
+    use crate::state::State;
     use crate::cell_value::CellValue;
 
     #[test]

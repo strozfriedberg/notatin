@@ -13,7 +13,7 @@ use serde::Serialize;
 use crate::err::Error;
 use crate::warn::{Warnings, WarningCode};
 use crate::util;
-use crate::registry::State;
+use crate::state::State;
 use crate::hive_bin_cell;
 use crate::cell_value::CellValue;
 use crate::cell_big_data::CellBigData;
@@ -165,6 +165,7 @@ pub struct CellKeyValueDetail {
     pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
     pub data_offset: u32, // In bytes, relative from the start of the hive bin's data (or data itself)
     pub padding: u16,
+    pub value_bytes: Option<Vec<u8>>
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -180,7 +181,7 @@ pub struct CellKeyValue {
 impl CellKeyValue {
     pub const BIG_DATA_SIZE_THRESHOLD: u32 = 16344;
 
-    pub fn from_bytes<'a>(state: &State, input: &'a [u8]) -> IResult<&'a [u8], Self> {
+    pub(crate) fn from_bytes<'a>(state: &State, input: &'a [u8]) -> IResult<&'a [u8], Self> {
         let file_offset_absolute = state.get_file_offset(input);
         let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
@@ -225,6 +226,7 @@ impl CellKeyValue {
                     data_size,
                     data_offset,
                     padding,
+                    value_bytes: None,
                 },
                 data_type,
                 flags,
@@ -235,7 +237,7 @@ impl CellKeyValue {
         ))
     }
 
-    pub fn read_content(&mut self, state: &State) {
+    pub(crate) fn read_content(&mut self, state: &State) {
         /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md:
             When the most significant bit is 1, data (4 bytes or less) is stored in the Data offset field directly
             (when data contains less than 4 bytes, it is being stored as is in the beginning of the Data offset field).
@@ -251,7 +253,7 @@ impl CellKeyValue {
                     CellBigData::get_big_data_content(state, offset, self.data_type, self.detail.data_size, &mut self.parse_warnings)
                         .or_else(
                             |err| -> Result<CellValue, Error> {
-                                self.parse_warnings.add_warning(WarningCode::WarningBigDataContent, &err);
+                                self.parse_warnings.add(WarningCode::WarningBigDataContent, &err);
                                 Ok(CellValue::ValueError)
                             }
                         )
@@ -273,7 +275,7 @@ impl CellKeyValue {
         self.data_type.get_value_content(input, &mut self.parse_warnings)
             .or_else(
                 |err| -> Result<CellValue, Error> {
-                    self.parse_warnings.add_warning(WarningCode::WarningContent, &err);
+                    self.parse_warnings.add(WarningCode::WarningContent, &err);
                     Ok(CellValue::ValueError)
                 }
             )
@@ -313,6 +315,7 @@ mod tests {
                 data_size: 8,
                 data_offset: 1928,
                 padding: 1280,
+                value_bytes: None
             },
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,

@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use notatin::filter::Filter;
-use notatin::registry::Parser;
+use notatin::parser::Parser;
 
 fn test_read_small_reg() {
     let mut parser = Parser::from_path("test_data/NTUSER.DAT").unwrap();

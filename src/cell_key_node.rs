@@ -10,7 +10,7 @@ use winstructs::security::SecurityDescriptor;
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use crate::registry::State;
+use crate::state::State;
 use crate::err::Error;
 use crate::warn::{Warnings, WarningCode};
 use crate::util;
@@ -114,7 +114,7 @@ impl hive_bin_cell::Cell for CellKeyNode {
 }
 
 impl CellKeyNode {
-    pub fn from_bytes<'a> (
+    pub(crate) fn from_bytes<'a> (
         state: &State,
         input: &'a [u8],
         cur_path: &str
@@ -201,9 +201,9 @@ impl CellKeyNode {
         ))
     }
 
-    pub fn read(
+    pub(crate) fn read(
         state: &mut State,
-        offset: usize,//input: &'a [u8],
+        offset: usize,
         cur_path: &str,
         filter: &Filter
     ) -> Result<(Option<Self>, bool), Error> {
@@ -350,7 +350,7 @@ fn parse_key_values(
     ))
 }
 
-pub fn parse_sub_key_list(
+pub(crate) fn parse_sub_key_list(
     state: &State,
     count: u32,
     list_offset_relative: u32

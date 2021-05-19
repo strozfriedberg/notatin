@@ -12,8 +12,8 @@ impl Warnings {
         }
     }
 
-    pub(crate) fn add_warning<T: ToString>(&mut self, code: WarningCode, text: &T) {
-        self.add_warning_internal(
+    pub(crate) fn add<T: ToString>(&mut self, code: WarningCode, text: &T) {
+        self.add_internal(
             Warning {
                 code,
                 text: text.to_string()
@@ -21,14 +21,14 @@ impl Warnings {
         );
     }
 
-    fn add_warning_internal(&mut self, warning: Warning) {
+    fn add_internal(&mut self, warning: Warning) {
         match &mut self.parse_warnings {
             Some(parse_warnings) => parse_warnings.push(warning),
             None => self.parse_warnings = Some(vec![warning])
         }
     }
 
-    pub fn get_warnings(&self) -> Option<&Vec<Warning>> {
+    pub fn get(&self) -> Option<&Vec<Warning>> {
         self.parse_warnings.as_ref()
     }
 }
@@ -46,7 +46,9 @@ pub enum WarningCode {
     WarningContent,
     WarningBigDataContent,
     WarningUnrecognizedBitflag,
-    WarningOther
+    WarningTransactionLog,
+    WarningOther,
+    Info
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

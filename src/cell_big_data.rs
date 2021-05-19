@@ -6,7 +6,7 @@ use nom::{
 };
 use serde::Serialize;
 use crate::err::Error;
-use crate::registry::State;
+use crate::state::State;
 use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::cell_value::CellValue;
@@ -50,7 +50,7 @@ impl CellBigData {
         ))
     }
 
-    pub fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
+    pub(crate) fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
         let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
         let (_, data_offsets_absolute)           = hive_bin_cell_big_data.parse_big_data_offsets(state)?;
         let mut big_data_buffer: Vec<u8> = Vec::new();
