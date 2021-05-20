@@ -6,7 +6,7 @@ use crate::state::State;
 
 /// Filter allows specification of conditions to be met when reading the registry.
 /// Execution will short-circuit for applicable filters (is_complete = true)
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Filter {
     find_path: Option<FindPath>
 }

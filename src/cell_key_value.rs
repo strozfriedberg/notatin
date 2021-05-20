@@ -3,13 +3,14 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32}
 };
-
-use std::convert::TryInto;
-use std::mem;
+use std::{
+    convert::TryInto,
+    mem
+};
 use bitflags::bitflags;
 use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use crate::err::Error;
 use crate::warn::{Warnings, WarningCode};
 use crate::util;
@@ -166,14 +167,22 @@ pub struct CellKeyValueDetail {
     pub value_bytes: Option<Vec<u8>>
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CellKeyValue {
     pub detail: CellKeyValueDetail,
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
     pub value_name: String,
-    //pub value_content: Option<CellValue>,
     pub parse_warnings: Warnings
+}
+
+impl Serialize for CellKeyValue {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CellKeyValueForSerialization::from(self).serialize(s)
+    }
 }
 
 impl CellKeyValue {
@@ -272,15 +281,22 @@ impl CellKeyValue {
     }
 
     /// Returns a CellValue containing `self.detail.value_bytes` interpreted as `self.data_type`
-    pub fn get_content(&mut self) -> CellValue {
-        self.data_type.get_value_content(self.detail.value_bytes.as_ref(), &mut self.parse_warnings)
+    pub fn get_content(&self) -> (CellValue, Option<Warnings>) {
+        let mut warnings = Warnings::default();
+        let cell_value = self.data_type.get_value_content(self.detail.value_bytes.as_ref(), &mut warnings)
             .or_else(
                 |err| -> Result<CellValue, Error> {
-                    self.parse_warnings.add(WarningCode::WarningContent, &err);
+                    warnings.add(WarningCode::WarningContent, &err);
                     Ok(CellValue::ValueError)
                 }
             )
-            .expect("We just handled the error case")
+            .expect("We just handled the error case");
+        if warnings.get().is_some() {
+            (cell_value, Some(warnings))
+        }
+        else {
+            (cell_value, None)
+        }
     }
 }
 
@@ -295,6 +311,33 @@ impl hive_bin_cell::Cell for CellKeyValue {
 
     fn is_key(&self) -> bool {
         false
+    }
+}
+
+/// Wrapper class to dynamically convert value_bytes into a parsed CellValue when serde serialize is called
+#[derive(Debug, Serialize)]
+struct CellKeyValueForSerialization<'a> {
+    detail: &'a CellKeyValueDetail,
+    data_type: &'a CellKeyValueDataTypes,
+    flags: &'a CellKeyValueFlags,
+    value_name: &'a String,
+    cell_parse_warnings: &'a Warnings,
+    value: CellValue,
+    value_parse_warnings: Option<Warnings>
+}
+
+impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
+    fn from(other: &'a CellKeyValue) -> Self {
+        let (value, value_parse_warnings) = other.get_content();
+        Self {
+            detail: &other.detail,
+            data_type: &other.data_type,
+            flags: &other.flags,
+            value_name: &other.value_name,
+            cell_parse_warnings: &other.parse_warnings,
+            value,
+            value_parse_warnings
+        }
     }
 }
 
@@ -334,7 +377,7 @@ mod tests {
         let state = State::from_path("test_data/NTUSER.DAT", 4096).unwrap();
         cell_key_value.read_value_bytes(&state);
         assert_eq!(
-            CellValue::ValueString("5.0".to_string()),
+            (CellValue::ValueString("5.0".to_string()), None),
             cell_key_value.get_content()
         );
     }
@@ -343,12 +386,13 @@ mod tests {
     fn test_parse_big_data() {
         let mut state = State::from_path("test_data/FuseHive", 4096).unwrap();
         let (key_node, _) = CellKeyNode::read(&mut state, 4416, &String::new(), &Filter::new()).unwrap();
-        let mut key_node = key_node.unwrap();
+        let key_node = key_node.unwrap();
         assert_eq!(
             "v".to_string(),
             key_node.sub_values[1].value_name
         );
-        if let CellValue::ValueBinary(content) = key_node.sub_values[1].get_content() {
+        let (cell_value, _) = key_node.sub_values[1].get_content();
+        if let CellValue::ValueBinary(content) = cell_value {
             assert_eq!(
                 81719,
                 content.len()

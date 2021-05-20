@@ -12,7 +12,7 @@ mod tests {
         for key in parser {
             let mut reg_val = key.sub_values.into_iter().find(|val| val.value_name == "TimeZoneKeyName").unwrap();
             let expected_value_content = CellValue::ValueString("W. Europe Standard Time".to_string());
-            assert_eq!(expected_value_content, reg_val.get_content());
+            assert_eq!((expected_value_content, None), reg_val.get_content());
             break;
         }
     }

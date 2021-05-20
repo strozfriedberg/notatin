@@ -68,7 +68,6 @@ pub struct CellKeyNode {
 
     pub allocated: bool,
     pub path: String,
-    pub sub_keys: Vec<CellKeyNode>,
     pub sub_values: Vec<CellKeyValue>,
     pub parse_warnings: Warnings,
 
@@ -91,7 +90,6 @@ impl Default for CellKeyNode {
             key_name: String::default(),
             allocated: bool::default(),
             path: String::default(),
-            sub_keys: Vec::default(),
             sub_values: Vec::default(),
             parse_warnings: Warnings::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
@@ -189,7 +187,6 @@ impl CellKeyNode {
             key_name: util::string_from_bytes(key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME), key_name_bytes, key_name_size, &mut parse_warnings, "key_name_bytes"),
             allocated: size < 0,
             path,
-            sub_keys: Vec::new(),
             sub_values: Vec::new(),
             parse_warnings,
             cell_sub_key_offsets_absolute: Vec::new(),
@@ -287,28 +284,6 @@ impl CellKeyNode {
         state: &State
     ) -> Result<Vec<SecurityDescriptor>, Error> {
         cell_key_security::read_cell_key_security(&state.file_buffer[..], self.detail.security_key_offset_relative, state.hbin_offset_absolute)
-    }
-
-    /// Counts all subkeys and values of the
-    pub fn count_all_keys_and_values(
-        &self
-    ) -> (usize, usize) {
-        self.count_all_keys_and_values_internal(0, 0)
-    }
-
-    fn count_all_keys_and_values_internal(
-        &self,
-        total_keys: usize,
-        total_values: usize
-    ) -> (usize, usize) {
-        let mut total_keys = total_keys + self.sub_keys.len();
-        let mut total_values = total_values + self.sub_values.len();
-        for key in self.sub_keys.iter() {
-            let (k, v) = key.count_all_keys_and_values_internal(total_keys, total_values);
-            total_keys = k;
-            total_values = v;
-        }
-        (total_keys, total_values)
     }
 }
 
@@ -419,7 +394,6 @@ mod tests {
             key_name: "CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}".to_string(),
             allocated: true,
             path: String::from("\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}"),
-            sub_keys: Vec::new(),
             sub_values: Vec::new(),
             parse_warnings: Warnings::default(),
             cell_sub_key_offsets_absolute: Vec::new(),

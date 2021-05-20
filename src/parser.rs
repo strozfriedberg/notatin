@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn dump_registry() {
-        let write_file = File::create("NTUSER.DAT_iterative.jsonl").unwrap();
+        let write_file = File::create("NTUSER.DAT_iterative_2.jsonl").unwrap();
         let mut writer = BufWriter::new(&write_file);
 
         let mut parser = Parser::from_path("test_data/NTUSER.DAT").unwrap();

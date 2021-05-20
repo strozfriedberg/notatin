@@ -57,7 +57,7 @@ impl RegHeader {
 
 // Structure comments adapted from https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block
 
-/// RegHeaderBase contains the data found in the header of both primary and log registry files
+/// Contains the data found in the header of both primary and log registry files
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegHeaderBase {
     /// This number is incremented by 1 in the beginning of a write operation on the primary file.
@@ -142,7 +142,7 @@ impl RegHeaderBase {
     }
 }
 
-/// RegHeaderExtended contains the additional data found in the header of a primary registry files
+/// Contains the additional data found in the header of a primary registry files
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegHeaderExtended {
     pub reserved: FileBaseBlockReserved,
