@@ -68,7 +68,7 @@ impl Cell for CellUnknown {
     }
 }
 
-pub fn parse_cell_other() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn Cell>> {
+pub(crate) fn parse_cell_other() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn Cell>> {
     |input: &[u8]| {
         let (input, ret) = parse_cell_unknown_internal(input)?;
         Ok((

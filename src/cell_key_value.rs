@@ -74,8 +74,7 @@ pub enum CellKeyValueDataTypes {
 }
 
 impl CellKeyValueDataTypes {
-    //pub fn get_value_content(&self, input: &[u8], parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
-    pub fn get_value_content(&self, input_vec: Option<&Vec<u8>>, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
+    pub(crate) fn get_value_content(&self, input_vec: Option<&Vec<u8>>, parse_warnings: &mut Warnings) -> Result<CellValue, Error> {
         match input_vec {
             None => Ok(CellValue::ValueNone),
             Some(input_vec) => {
@@ -117,7 +116,7 @@ impl CellKeyValueDataTypes {
         }
     }
 
-    pub fn get_value_bytes(&self, input: &[u8]) -> Vec<u8> {
+    pub(crate) fn get_value_bytes(&self, input: &[u8]) -> Vec<u8> {
         let slice = match self {
             CellKeyValueDataTypes::REG_NONE =>
                 &input[0..0],
@@ -237,6 +236,7 @@ impl CellKeyValue {
         ))
     }
 
+    /// Reads the value content and stores it in self.detail.value_bytes
     pub(crate) fn read_value_bytes(&mut self, state: &State) {
         /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md:
             When the most significant bit is 1, data (4 bytes or less) is stored in the Data offset field directly
@@ -271,6 +271,7 @@ impl CellKeyValue {
         self.detail.value_bytes = Some(value_bytes);
     }
 
+    /// Returns a CellValue containing `self.detail.value_bytes` interpreted as `self.data_type`
     pub fn get_content(&mut self) -> CellValue {
         self.data_type.get_value_content(self.detail.value_bytes.as_ref(), &mut self.parse_warnings)
             .or_else(

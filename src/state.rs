@@ -29,12 +29,12 @@ pub(crate) struct State {
 }
 
 impl State {
-    pub fn from_path(filename: impl AsRef<Path>, hbin_offset_absolute: usize) -> Result<Self, Error> {
+    pub(crate) fn from_path(filename: impl AsRef<Path>, hbin_offset_absolute: usize) -> Result<Self, Error> {
         let fh = std::fs::File::open(filename)?;
         State::from_read_seek(fh, hbin_offset_absolute)
     }
 
-    pub fn from_read_seek<T: ReadSeek>(mut data: T, hbin_offset_absolute: usize) -> Result<Self, Error> {
+    pub(crate) fn from_read_seek<T: ReadSeek>(mut data: T, hbin_offset_absolute: usize) -> Result<Self, Error> {
         let mut file_buffer = Vec::new();
         data.read_to_end(&mut file_buffer)?;
         let slice = &file_buffer;
@@ -51,7 +51,7 @@ impl State {
         })
     }
 
-    pub fn from_path_with_logs(filename: impl AsRef<Path>, logs: Vec<impl AsRef<Path>>, hbin_offset_absolute: usize) -> Result<Self, Error> {
+    pub(crate) fn from_path_with_logs(filename: impl AsRef<Path>, logs: Vec<impl AsRef<Path>>, hbin_offset_absolute: usize) -> Result<Self, Error> {
         let fh_primary = std::fs::File::open(filename)?;
         let mut fh_logs = Vec::new();
         for log in logs {
@@ -60,7 +60,7 @@ impl State {
         State::from_read_seek_with_logs(fh_primary, fh_logs, hbin_offset_absolute)
     }
 
-    pub fn from_read_seek_with_logs<T: ReadSeek>(mut data_primary: T, data_logs: Vec<T>, hbin_offset_absolute: usize) -> Result<Self, Error> {
+    pub(crate) fn from_read_seek_with_logs<T: ReadSeek>(mut data_primary: T, data_logs: Vec<T>, hbin_offset_absolute: usize) -> Result<Self, Error> {
         let mut file_buffer_primary = Vec::new();
         data_primary.read_to_end(&mut file_buffer_primary)?;
         let slice = &file_buffer_primary;
@@ -87,7 +87,7 @@ impl State {
         })
     }
 
-    pub fn get_file_offset(&self, input: &[u8]) -> usize {
+    pub(crate) fn get_file_offset(&self, input: &[u8]) -> usize {
         input.as_ptr() as usize - self.file_start_pos
     }
 

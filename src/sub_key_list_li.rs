@@ -37,7 +37,7 @@ impl SubKeyListLi {
         ))
     }
 
-    pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
+    pub(crate) fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
         |input: &[u8]| {
             let (input, ret) = SubKeyListLi::from_bytes_internal(input)?;
             Ok((

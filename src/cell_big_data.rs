@@ -23,12 +23,12 @@ pub struct CellBigData {
 }
 
 impl CellBigData {
-    pub fn is_big_data_block(input: &[u8]) -> bool {
+    pub(crate) fn is_big_data_block(input: &[u8]) -> bool {
         tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(&input[4..]).map_or(false, |_| true)
     }
 
     /// Uses nom to parse a big data (db) hive bin cell.
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("db")(input)?;

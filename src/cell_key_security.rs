@@ -40,7 +40,7 @@ pub struct CellKeySecurity {
 
 impl CellKeySecurity {
     /// Uses nom to parse a key security (sk) hive bin cell.
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("sk")(input)?;
@@ -86,15 +86,15 @@ impl hive_bin_cell::Cell for CellKeySecurity {
     }
 }
 
-pub fn read_cell_key_security(
+pub(crate) fn read_cell_key_security(
     file_buffer: &[u8],
     security_key_offset: u32,
-    hbin_offset_absolute: u32
+    hbin_offset_absolute: usize
 ) -> Result<Vec<SecurityDescriptor>, Error> {
     let mut security_descriptors = Vec::new();
     let mut offset: usize = security_key_offset as usize;
     loop {
-        let (_, cell_key_security) = CellKeySecurity::from_bytes(&file_buffer[offset + hbin_offset_absolute as usize..])?;
+        let (_, cell_key_security) = CellKeySecurity::from_bytes(&file_buffer[offset + hbin_offset_absolute..])?;
         security_descriptors.push(
             SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor))?
         );
@@ -112,7 +112,7 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn test_parse_cell_key_security() {
+    fn test_parse_cell_key_security() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[5472..5736];
         let ret = CellKeySecurity::from_bytes(slice);

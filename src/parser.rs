@@ -1,5 +1,5 @@
 use std::path::Path;
-use crate::base_block::{FileBaseBlock, FileBaseBlockBase};
+use crate::reg_header::{RegHeader, RegHeaderBase};
 use crate::filter::Filter;
 use crate::err::Error;
 use crate::cell_key_node::CellKeyNode;
@@ -17,13 +17,17 @@ pub struct Parser {
     pub filter: Filter,
     pub stack_to_traverse: Vec<CellKeyNode>,
     pub stack_to_return: Vec<CellKeyNode>,
-    pub base_block: Option<FileBaseBlock>,
+    pub reg_header: Option<RegHeader>,
     pub hive_bin_header: Option<HiveBinHeader>,
 
     is_init: bool
 }
 
 impl Parser {
+    pub(crate) fn get_state_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+
     pub fn from_path(filename: impl AsRef<Path>) -> Result<Self, Error> {
         Self::from_path_filtered(filename, Filter::new())
     }
@@ -34,7 +38,7 @@ impl Parser {
             filter,
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
-            base_block: None,
+            reg_header: None,
             hive_bin_header: None,
             is_init: false
         })
@@ -50,7 +54,7 @@ impl Parser {
             filter,
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
-            base_block: None,
+            reg_header: None,
             hive_bin_header: None,
             is_init: false
         })
@@ -66,57 +70,57 @@ impl Parser {
             filter,
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
-            base_block: None,
+            reg_header: None,
             hive_bin_header: None,
             is_init: false
         })
     }
 
     fn init_base_block(&mut self) -> Result<(), Error> {
-        let (input, base_block) = FileBaseBlock::from_bytes(&self.state.file_buffer)?;
+        let (input, reg_header) = RegHeader::from_bytes(&self.state.file_buffer)?;
         self.state.hbin_offset_absolute = input.as_ptr() as usize - self.state.file_buffer.as_ptr() as usize;
-        self.base_block = Some(base_block);
+        self.reg_header = Some(reg_header);
         self.state.key_complete = false;
         self.state.value_complete = false;
         Ok(())
     }
 
-    pub fn handle_transaction_logs(&mut self) -> Result<(), Error> {
+    pub(crate) fn handle_transaction_logs(&mut self) -> Result<(), Error> {
         if self.state.transaction_logs.is_some() {
-            let base_block_base = &self.base_block.as_ref().expect("Shouldn't be here unless we have a base block").base;
+            let base_block_base = &self.reg_header.as_ref().expect("Shouldn't be here unless we have a base block").base;
             if base_block_base.primary_sequence_number == base_block_base.secondary_sequence_number {
                 self.state.info.add(WarningCode::WarningTransactionLog, &"Skipping transaction logs because the primary file primary_sequence_number == the secondary_sequence_number");
             }
             else {
                 let logs = self.state.transaction_logs.as_mut().expect("just checked");
                 // put the logs in order of oldest (lowest sequence number) first
-                logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number));
-                let primary_file_secondary_sequence_number = self.base_block.as_ref().expect("we must have parsed a base_block if we are here").base.secondary_sequence_number;
+                logs.sort_by(|a, b| a.reg_header.primary_sequence_number.cmp(&b.reg_header.primary_sequence_number));
+                let primary_file_secondary_sequence_number = self.reg_header.as_ref().expect("we must have parsed a reg_header if we are here").base.secondary_sequence_number;
                 let mut new_sequence_number = 0;
                 for log in logs {
                     //if log.has_valid_hashes {
-                        if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
-                            if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
+                        if log.reg_header.primary_sequence_number >= primary_file_secondary_sequence_number {
+                            if new_sequence_number == 0 || (log.reg_header.primary_sequence_number == new_sequence_number + 1) {
                                 new_sequence_number = log.update_bytes(&mut self.state.file_buffer, &mut self.state.info, self.state.hbin_offset_absolute); // Why are we passing multiple members of self.state into this method rather than just passing in self.state? Because we already have a mutable borrow of self.state above (self.state.transaction_logs.as_mut())
                             }
                             else {
                                 self.state.info.add(
                                     WarningCode::WarningTransactionLog,
-                                    &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
+                                    &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.reg_header.primary_sequence_number, new_sequence_number)
                                 );
                             }
                         }
                         else {
                             self.state.info.add(
                                 WarningCode::WarningTransactionLog,
-                                &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
+                                &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.reg_header.primary_sequence_number, primary_file_secondary_sequence_number)
                             );
                         }
                     //}
                 /* else {
                         self.state.warnings.add(
                             WarningCode::WarningTransactionLog,
-                            format!("Skipping log file; primary file's checksum doesn't match", log.base_block.primary_sequence_number, new_sequence_number)
+                            format!("Skipping log file; primary file's checksum doesn't match", log.reg_header.primary_sequence_number, new_sequence_number)
                         );
                     }*/
                 }
@@ -127,7 +131,7 @@ impl Parser {
                 self.state.file_buffer[4..8].copy_from_slice(&new_sequence_number_bytes);
                 self.state.file_buffer[8..12].copy_from_slice(&new_sequence_number_bytes);
                 // Update the checksum
-                let new_checksum = FileBaseBlockBase::calculate_checksum(&self.state.file_buffer[..0x200]);
+                let new_checksum = RegHeaderBase::calculate_checksum(&self.state.file_buffer[..0x200]);
                 self.state.file_buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
 
                 self.init_base_block()?;

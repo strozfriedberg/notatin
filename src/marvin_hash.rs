@@ -21,7 +21,7 @@ fn mix(state: (u32, u32), val: u32) -> (u32, u32){
 }
 
 /// Computes a 64-hash using the Marvin algorithm.
-pub fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
+pub(crate) fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
     let size_of_u32 = mem::size_of::<u32>();
     let slice_to_u32 = |s: &[u8]| -> [u8; 4] { s.try_into().expect("We generated this slice so we know it's the proper length") };
 

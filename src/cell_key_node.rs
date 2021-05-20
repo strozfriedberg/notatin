@@ -24,6 +24,7 @@ use crate::sub_key_list_ri::SubKeyListRi;
 use crate::filter::{Filter, FilterFlags};
 use crate::impl_serialize_for_bitflags;
 use crate::impl_flags_from_bits;
+use crate::parser::Parser;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNodeDetail {
@@ -114,7 +115,7 @@ impl hive_bin_cell::Cell for CellKeyNode {
 }
 
 impl CellKeyNode {
-    pub(crate) fn from_bytes<'a> (
+    fn from_bytes<'a> (
         state: &State,
         input: &'a [u8],
         cur_path: &str
@@ -272,14 +273,21 @@ impl CellKeyNode {
         Ok(())
     }
 
-    /// Returns a vector of Security Descriptors for the key node.
-    pub fn read_security_key(
+    /// Returns a vector of Security Descriptors for the key
+    pub fn get_security_descriptors(
         self: &mut CellKeyNode,
-        file_buffer: &[u8],
-        hbin_offset_absolute: u32
+        parser: &mut Parser
     ) -> Result<Vec<SecurityDescriptor>, Error> {
-        cell_key_security::read_cell_key_security(file_buffer, self.detail.security_key_offset_relative, hbin_offset_absolute)
-     }
+        self.get_security_descriptors_internal(parser.get_state_mut())
+    }
+
+    /// Returns a vector of Security Descriptors for the key
+    pub(crate) fn get_security_descriptors_internal(
+        self: &mut CellKeyNode,
+        state: &State
+    ) -> Result<Vec<SecurityDescriptor>, Error> {
+        cell_key_security::read_cell_key_security(&state.file_buffer[..], self.detail.security_key_offset_relative, state.hbin_offset_absolute)
+    }
 
     /// Counts all subkeys and values of the
     pub fn count_all_keys_and_values(
@@ -422,6 +430,11 @@ mod tests {
         assert_eq!(
             expected,
             ret
+        );
+        let security_descriptors = ret.unwrap().1.get_security_descriptors_internal(&state).unwrap();
+        assert_eq!(
+            25,
+            security_descriptors.len()
         );
 
         let slice = &state.file_buffer[0..10];

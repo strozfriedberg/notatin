@@ -39,7 +39,7 @@ macro_rules! impl_flags_from_bits {
 macro_rules! impl_enum_from_value {
     ($enum_type: ident) => {
         impl $enum_type {
-            pub fn from_value(value: u32, parse_warnings: &mut Warnings) -> Self {
+            pub(crate) fn from_value(value: u32, parse_warnings: &mut Warnings) -> Self {
                 $enum_type::from_u32(value)
                 .unwrap_or_else(|| {
                     parse_warnings.add(WarningCode::WarningConversion, &format!("Unrecognized {} value", stringify!($enum_type)));

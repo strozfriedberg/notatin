@@ -29,13 +29,13 @@ fn from_utf16_le_string_single(slice: &[u8], count: usize, parse_warnings: &mut 
 }
 
 /// Reads a null-terminated UTF-16 string (REG_SZ)
-pub fn from_utf16_le_string(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> String {
+pub(crate) fn from_utf16_le_string(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> String {
     assert!(count <= slice.len());
     from_utf16_le_string_single(slice, count, parse_warnings, err_detail)
 }
 
 /// Reads a sequence of null-terminated UTF-16 strings, terminated by an empty string (\0). (REG_MULTI_SZ)
-pub fn from_utf16_le_strings(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> Vec<String> {
+pub(crate) fn from_utf16_le_strings(slice: &[u8], count: usize, parse_warnings: &mut Warnings, err_detail: &str) -> Vec<String> {
     let mut strings = Vec::new();
     let mut offset = 0;
 
@@ -52,7 +52,7 @@ pub fn from_utf16_le_strings(slice: &[u8], count: usize, parse_warnings: &mut Wa
 }
 
 /// Converts a slice of UTF-8 bytes into a String; upon failure, logs the error into the `parse_warnings` parameter and returns `"<Invalid string>"`
-pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, err_detail: &str) -> String {
+pub(crate) fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, err_detail: &str) -> String {
     String::from_utf8(slice.to_vec())
         .or_else(
             |err: FromUtf8Error| -> Result<String, FromUtf8Error> {
@@ -62,7 +62,7 @@ pub fn from_utf8(slice: &[u8], parse_warnings: &mut Warnings, err_detail: &str) 
         ).expect("Error handled in or_else")
 }
 
-pub fn string_from_bytes(is_ascii: bool, slice: &[u8], count: u16, parse_warnings: &mut Warnings, err_detail: &str) -> String {
+pub(crate) fn string_from_bytes(is_ascii: bool, slice: &[u8], count: u16, parse_warnings: &mut Warnings, err_detail: &str) -> String {
     if is_ascii {
         from_utf8(&slice, parse_warnings, err_detail)
     }
@@ -72,7 +72,7 @@ pub fn string_from_bytes(is_ascii: bool, slice: &[u8], count: u16, parse_warning
 }
 
 /// Consumes any padding at the end of a hive bin cell. Used during sequential registry read to find deleted cells.
-pub fn parser_eat_remaining(
+pub(crate) fn parser_eat_remaining(
     input: &[u8],
     cell_size: u32,
     bytes_consumed: usize
@@ -81,14 +81,14 @@ pub fn parser_eat_remaining(
 }
 
 /// Converts a u64 filetime to a DateTime<Utc>
-pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
+pub(crate) fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
     WinTimestamp::new(&filetime.to_le_bytes())
         .expect("We have the proper size buffer since we are converting from a u64")
         .to_datetime()
 }
 
 /// Converts a buffer to a guid; upon error, logs error to parse_warnings and returns an null guid
-pub fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Guid {
+pub(crate) fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Guid {
     Guid::from_buffer(buffer)
         .or_else(
             |err| {
@@ -98,12 +98,12 @@ pub fn get_guid_from_buffer(buffer: &[u8], parse_warnings: &mut Warnings) -> Gui
         ).expect("Error handled in or_else")
 }
 
-pub fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S::Ok, S::Error> {
+pub(crate) fn data_as_hex<S: ser::Serializer>(x: &[u8], s: S) -> std::result::Result<S::Ok, S::Error> {
     s.serialize_str(&to_hex_string(x))
 }
 
 /// Adapted from https://github.com/omerbenamram/mft
-pub fn to_hex_string(bytes: &[u8]) -> String {
+pub(crate) fn to_hex_string(bytes: &[u8]) -> String {
     let len = bytes.len();
     let mut s = String::with_capacity(len * 3); // Each byte is represented by 2 ascii bytes, and then we add a space between them
 

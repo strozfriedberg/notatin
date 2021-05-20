@@ -4,7 +4,7 @@ use nom::{
     number::complete::{le_u32, le_u64}
 };
 use serde::Serialize;
-use crate::base_block::FileBaseBlockBase;
+use crate::reg_header::RegHeaderBase;
 use crate::util;
 use crate::warn::{WarningCode, Warnings};
 use crate::marvin_hash;
@@ -61,7 +61,7 @@ struct LogEntry {
 }
 
 impl LogEntry {
-    pub fn from_bytes(file_start_pos: usize) -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes(file_start_pos: usize) -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
         move |input: &[u8]| {
             LogEntry::from_bytes_internal(file_start_pos, input)
         }
@@ -117,7 +117,7 @@ impl LogEntry {
         self.hive_bin_data_size % 4096 == 0
     }
 
-    pub fn calc_hash1(raw_bytes: &[u8], len: usize) -> u64 {
+    pub(crate) fn calc_hash1(raw_bytes: &[u8], len: usize) -> u64 {
         const OFFSET: usize = 40;
         let mut b = vec![0; len - OFFSET];
         let dst = &mut b[0..len - OFFSET];
@@ -126,7 +126,7 @@ impl LogEntry {
         marvin_hash::compute_hash(dst, (len - OFFSET) as u32, marvin_hash::DEFAULT_SEED)
     }
 
-    pub fn calc_hash2(raw_bytes: &[u8]) -> u64 {
+    pub(crate) fn calc_hash2(raw_bytes: &[u8]) -> u64 {
         const LENGTH: usize = 32;
         let mut b = vec![0; LENGTH];
         let dst = &mut b[0..LENGTH];
@@ -138,25 +138,25 @@ impl LogEntry {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct TransactionLog {
-    pub base_block: FileBaseBlockBase,
+    pub reg_header: RegHeaderBase,
     log_entries: Vec<LogEntry>
 }
 
 impl TransactionLog {
-    pub fn from_bytes(file_start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
-        let (input, base_block) = FileBaseBlockBase::from_bytes(input)?;
+    pub(crate) fn from_bytes(file_start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, reg_header) = RegHeaderBase::from_bytes(input)?;
         let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(file_start_pos))(input)?;
         Ok((
             input,
             Self {
-                base_block,
+                reg_header,
                 log_entries
             }
         ))
     }
 
     /// Updates the primary registry with the dirty pages. Returns the last sequence number applied
-    pub fn update_bytes(&self, primary_file: &mut[u8], info: &mut Warnings, base_offset: usize) -> u32 {
+    pub(crate) fn update_bytes(&self, primary_file: &mut[u8], info: &mut Warnings, base_offset: usize) -> u32 {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
             if log_entry.has_valid_hashes {
@@ -200,7 +200,7 @@ impl TransactionLog {
 mod tests {
     use super::*;
     use crate::state::State;
-    use crate::base_block::{FileFormat, FileType};
+    use crate::reg_header::{FileFormat, FileType};
 
     #[test]
     fn test_parse_transaction_log() {
@@ -209,7 +209,7 @@ mod tests {
 
         let mut unk2: Vec<u8> = [0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 0, 0, 0, 1, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 114, 109, 116, 109, 249, 73, 219, 43, 26, 227, 208, 1].to_vec();
         unk2.extend([0; 332].iter().copied());
-        let expected_header = FileBaseBlockBase {
+        let expected_header = RegHeaderBase {
             primary_sequence_number: 178,
             secondary_sequence_number: 178,
             last_modification_date_and_time: util::get_date_time_from_filetime(130216567421081762),
@@ -225,7 +225,7 @@ mod tests {
             checksum: 3430861351,
             parse_warnings: Warnings::default()
         };
-        assert_eq!(expected_header, log.base_block);
+        assert_eq!(expected_header, log.reg_header);
         assert_eq!(8, log.log_entries.len());
         assert_eq!(2306048, log.log_entries[7].file_offset_absolute);
         assert_eq!(12288, log.log_entries[7].size);
