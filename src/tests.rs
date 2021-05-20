@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::parser::Parser;
-    use crate::state::State;
     use crate::cell_value::CellValue;
 
     #[test]
@@ -13,9 +12,7 @@ mod tests {
         for key in parser {
             let mut reg_val = key.sub_values.into_iter().find(|val| val.value_name == "TimeZoneKeyName").unwrap();
             let expected_value_content = CellValue::ValueString("W. Europe Standard Time".to_string());
-            let mut state = State::from_path("test_data/issue22.hive", 4096).unwrap();
-            reg_val.read_content(&mut state);
-            assert_eq!(expected_value_content, reg_val.value_content.unwrap());
+            assert_eq!(expected_value_content, reg_val.get_content());
             break;
         }
     }

@@ -9,7 +9,6 @@ use crate::err::Error;
 use crate::state::State;
 use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
-use crate::cell_value::CellValue;
 use crate::util;
 use crate::warn::Warnings;
 
@@ -50,9 +49,9 @@ impl CellBigData {
         ))
     }
 
-    pub(crate) fn get_big_data_content(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32, parse_warnings: &mut Warnings) -> Result<(CellValue, Vec<u8>), Error> {
+    pub(crate) fn get_big_data_bytes(state: &State, offset: usize, data_type: CellKeyValueDataTypes, data_size: u32) -> Result<Vec<u8>, Error> {
         let (_, hive_bin_cell_big_data) = CellBigData::from_bytes(&state.file_buffer[offset..])?;
-        let (_, data_offsets_absolute)           = hive_bin_cell_big_data.parse_big_data_offsets(state)?;
+        let (_, data_offsets_absolute)  = hive_bin_cell_big_data.parse_big_data_offsets(state)?;
         let mut big_data_buffer: Vec<u8> = Vec::new();
         let mut data_size_remaining = data_size;
         for offset in data_offsets_absolute.iter() {
@@ -64,7 +63,7 @@ impl CellBigData {
                 data_size_remaining -= size_to_read;
             }
         }
-        data_type.get_value_content(&big_data_buffer[..], parse_warnings)
+        Ok(data_type.get_value_bytes(&big_data_buffer[..]))
     }
 
     fn parse_big_data_size(

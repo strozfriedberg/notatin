@@ -262,7 +262,7 @@ impl CellKeyNode {
                 state.value_complete = true;
             }
             if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                cell_key_value.read_content(state);
+                cell_key_value.read_value_bytes(state);
                 self.sub_values.push(cell_key_value);
             }
             if state.value_complete {

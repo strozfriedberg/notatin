@@ -198,6 +198,6 @@ mod tests {
 
     #[test]
     fn test_to_hex_string() {
-        assert_eq!("00 01 02 03 04 05 FF ", to_hex_string(&[0, 1, 2, 3, 4, 5, 0xff]));
+        assert_eq!("00 01 02 03 04 05 FF", to_hex_string(&[0, 1, 2, 3, 4, 5, 0xff]));
     }
 }

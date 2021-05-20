@@ -230,7 +230,6 @@ mod tests {
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
-            value_content: None,
             parse_warnings: Warnings::default()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
