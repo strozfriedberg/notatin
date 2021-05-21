@@ -5,6 +5,7 @@ use nom::{
 };
 use serde::Serialize;
 use crate::state::State;
+use crate::file_info::FileInfo;
 use crate::hive_bin_cell;
 use crate::cell_key_node;
 use crate::util;
@@ -50,10 +51,14 @@ impl SubKeyListRi {
         ))
     }
 
-    pub(crate) fn parse_offsets(&self, state: &State) -> Result<Vec<u32>, Error> {
+    pub(crate) fn parse_offsets(
+        &self,
+        file_info: &FileInfo,
+        state: &mut State
+    ) -> Result<Vec<u32>, Error> {
         let mut list: Vec<u32> = Vec::new();
         for item in self.items.iter() {
-            let mut sub_list = cell_key_node::parse_sub_key_list(state, 0, item.sub_key_list_offset_relative)?;
+            let mut sub_list = cell_key_node::parse_sub_key_list(file_info, state, 0, item.sub_key_list_offset_relative)?;
             list.append(&mut sub_list);
         }
         Ok(list)

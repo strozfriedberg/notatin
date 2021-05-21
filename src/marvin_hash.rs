@@ -9,8 +9,8 @@ fn rotl(x: u32, n: u32, w: u32) -> u32 {
 	(x << n) | (x >> (w - n))
 }
 
-fn mix(state: (u32, u32), val: u32) -> (u32, u32){
-    let (mut lo, mut hi) = state;
+fn mix(file_info: (u32, u32), val: u32) -> (u32, u32){
+    let (mut lo, mut hi) = file_info;
     lo = lo.wrapping_add(val);
     hi ^= lo;
     lo = rotl(lo, 20, 32).wrapping_add(hi);
@@ -27,7 +27,7 @@ pub(crate) fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
 
     let lo: u32 = (seed & 0xFFFFFFFF).try_into().unwrap();
 	let hi: u32 = (seed >> 32).try_into().unwrap();
-	let mut state = (lo, hi);
+	let mut file_info = (lo, hi);
 
 	let mut length = len;
 	let mut pos = 0;
@@ -35,7 +35,7 @@ pub(crate) fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
 
 	while length >= 4 {
 		val = u32::from_le_bytes(slice_to_u32(&buffer[pos..pos + size_of_u32]));
-		state = mix(state, val);
+		file_info = mix(file_info, val);
 		pos += 4;
 		length -= 4;
     }
@@ -51,8 +51,8 @@ pub(crate) fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
         fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos .. pos + size_of_u32]));
     }
 
-	state = mix(state, fin);
-	state = mix(state, 0);
-	let (lo, hi) = state;
+	file_info = mix(file_info, fin);
+	file_info = mix(file_info, 0);
+	let (lo, hi) = file_info;
 	((hi as u64) << 32) | lo as u64
 }

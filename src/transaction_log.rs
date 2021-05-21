@@ -5,8 +5,10 @@ use nom::{
 };
 use serde::Serialize;
 use crate::reg_header::RegHeaderBase;
+use crate::file_info::{FileInfo, ReadSeek};
+use crate::err::Error;
 use crate::util;
-use crate::warn::{WarningCode, Warnings};
+use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
 
 // Structures based off https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-transaction-log-files
@@ -61,15 +63,15 @@ struct LogEntry {
 }
 
 impl LogEntry {
-    fn from_bytes(file_start_pos: usize) -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes(start_pos: usize) -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
         move |input: &[u8]| {
-            LogEntry::from_bytes_internal(file_start_pos, input)
+            LogEntry::from_bytes_internal(start_pos, input)
         }
     }
 
-    fn from_bytes_internal(file_start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
+    fn from_bytes_internal(start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
         let start = input;
-        let file_offset_absolute = input.as_ptr() as usize - file_start_pos;
+        let file_offset_absolute = input.as_ptr() as usize - start_pos;
         let (input, _signature) = tag("HvLE")(input)?;
         let (input, size) = le_u32(input)?;
         let (input, flags) = le_u32(input)?;
@@ -91,7 +93,7 @@ impl LogEntry {
                 }
             );
         }
-        let (input, _) = util::parser_eat_remaining(input, size, input.as_ptr() as usize - file_start_pos - file_offset_absolute)?;
+        let (input, _) = util::parser_eat_remaining(input, size, input.as_ptr() as usize - start_pos - file_offset_absolute)?;
         let has_valid_hashes = hash1 == Self::calc_hash1(start, size as usize) && hash2 == Self::calc_hash2(start);
 
         let hbh = Self {
@@ -143,9 +145,9 @@ pub(crate) struct TransactionLog {
 }
 
 impl TransactionLog {
-    pub(crate) fn from_bytes(file_start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
+    pub(crate) fn from_bytes(start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
         let (input, reg_header) = RegHeaderBase::from_bytes(input)?;
-        let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(file_start_pos))(input)?;
+        let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(start_pos))(input)?;
         Ok((
             input,
             Self {
@@ -156,20 +158,20 @@ impl TransactionLog {
     }
 
     /// Updates the primary registry with the dirty pages. Returns the last sequence number applied
-    pub(crate) fn update_bytes(&self, primary_file: &mut[u8], info: &mut Warnings, base_offset: usize) -> u32 {
+    pub(crate) fn update_bytes(&self, file_info: &mut FileInfo, info: &mut Logs) -> u32 {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
             if log_entry.has_valid_hashes {
                 if !log_entry.is_valid_hive_bin_data_size() {
                     info.add(
-                        WarningCode::WarningTransactionLog,
+                        LogCode::WarningTransactionLog,
                         &format!("Stopping log entry processing; the hive_bin_data_size ({}) is not a multiple of 4096)", log_entry.hive_bin_data_size)
                     );
                     break;
                 }
                 else if new_sequence_number != 0 && log_entry.sequence_number != new_sequence_number + 1 {
                     info.add(
-                        WarningCode::WarningTransactionLog,
+                        LogCode::WarningTransactionLog,
                         &format!("Stopping log entry processing; the sequence number ({}) does not follow the previous log entry's sequence number ({})", log_entry.sequence_number, new_sequence_number)
                     );
                     break;
@@ -178,8 +180,8 @@ impl TransactionLog {
                     new_sequence_number = log_entry.sequence_number;
 
                     for dirty_page in &log_entry.dirty_pages {
-                        let dst_offset = dirty_page.dirty_page_ref.offset as usize + base_offset;
-                        let dst = &mut primary_file[dst_offset as usize..dst_offset + dirty_page.dirty_page_ref.size as usize];
+                        let dst_offset = dirty_page.dirty_page_ref.offset as usize + file_info.hbin_offset_absolute;
+                        let dst = &mut file_info.buffer[dst_offset as usize..dst_offset + dirty_page.dirty_page_ref.size as usize];
                         let src = &dirty_page.page_bytes[..dirty_page.dirty_page_ref.size as usize];
                         dst.copy_from_slice(src);
                     }
@@ -187,7 +189,7 @@ impl TransactionLog {
             }
             else {
                 info.add(
-                    WarningCode::WarningTransactionLog,
+                    LogCode::WarningTransactionLog,
                     &format!("Hash mismatch; skipping log entry with sequence number 0x{:08X}", log_entry.sequence_number)
                 );
             }
@@ -196,16 +198,34 @@ impl TransactionLog {
     }
 }
 
+pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<Option<Vec<TransactionLog>>, Error> {
+    if let Some(log_files) = log_files {
+        let mut transaction_logs = Vec::new();
+        for mut log_file in log_files {
+            let mut file_buffer_log = Vec::new();
+            log_file.read_to_end(&mut file_buffer_log)?;
+            let slice_log = &file_buffer_log[0..];
+            let (_, log) = TransactionLog::from_bytes(slice_log.as_ptr() as usize, slice_log)?;
+            transaction_logs.push(log);
+        }
+        Ok(Some(transaction_logs))
+    }
+    else {
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::State;
+    use crate::file_info::FileInfo;
     use crate::reg_header::{FileFormat, FileType};
 
     #[test]
     fn test_parse_transaction_log() {
-        let state = State::from_path("test_data/SYSTEM.LOG1", 4096).unwrap();
-        let (_, log) = TransactionLog::from_bytes(state.file_start_pos, &state.file_buffer[0..]).unwrap();
+        let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
+        file_info.hbin_offset_absolute = 4096;
+        let (_, log) = TransactionLog::from_bytes(file_info.start_pos, &file_info.buffer[0..]).unwrap();
 
         let mut unk2: Vec<u8> = [0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 0, 0, 0, 1, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 114, 109, 116, 109, 249, 73, 219, 43, 26, 227, 208, 1].to_vec();
         unk2.extend([0; 332].iter().copied());
@@ -223,7 +243,7 @@ mod tests {
             filename: "SYSTEM".to_string(),
             unk2,
             checksum: 3430861351,
-            parse_warnings: Warnings::default()
+            logs: Logs::default()
         };
         assert_eq!(expected_header, log.reg_header);
         assert_eq!(8, log.log_entries.len());
@@ -234,8 +254,9 @@ mod tests {
 
     #[test]
     fn test_parse_log_entry() {
-        let state = State::from_path("test_data/SYSTEM.LOG1", 4096).unwrap();
-        let (_, log_entry) = LogEntry::from_bytes_internal(state.file_start_pos, &state.file_buffer[512..]).unwrap();
+        let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
+        file_info.hbin_offset_absolute = 4096;
+        let (_, log_entry) = LogEntry::from_bytes_internal(file_info.start_pos, &file_info.buffer[512..]).unwrap();
         assert_eq!(512, log_entry.file_offset_absolute);
         assert_eq!(515584, log_entry.size);
         assert_eq!(0, log_entry.flags);

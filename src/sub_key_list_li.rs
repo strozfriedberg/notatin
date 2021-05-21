@@ -5,7 +5,6 @@ use nom::{
 };
 use serde::Serialize;
 use crate::hive_bin_cell;
-use crate::util;
 
 // Subkeys list
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -18,19 +17,14 @@ pub struct SubKeyListLi {
 impl SubKeyListLi {
     /// Uses nom to parse an lf sub key list (lf) hive bin cell.
     fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], SubKeyListLi> {
-        let start_pos = input.as_ptr() as usize;
         let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("li")(input)?;
         let (input, count)      = le_u16(input)?;
         let (input, items)      = nom::multi::count(SubKeyListLiItem::from_bytes(), count.into())(input)?;
-
-        let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
-
         Ok((
             input,
             SubKeyListLi {
-                size: size_abs,
+                size: size.abs() as u32,
                 count,
                 items
             },
@@ -98,14 +92,9 @@ mod tests {
     fn test_parse_sub_key_list_li() {
         let f = std::fs::read("test_data/ManySubkeysHive").unwrap();
         let slice = &f[53280..58960];
-        let ret = SubKeyListLi::from_bytes_internal(slice);
-        assert_eq!(true, ret.is_ok());
-        let unwrapped = ret.unwrap();
-        let remaining = unwrapped.0;
-        assert_eq!(0, remaining.len());
-        let val = unwrapped.1;
-        assert_eq!(5680, val.size);
-        assert_eq!(506, val.count);
-        assert_eq!(506, val.items.len());
+        let (_, key_list) =  SubKeyListLi::from_bytes_internal(slice).unwrap();
+        assert_eq!(5680, key_list.size);
+        assert_eq!(506, key_list.count);
+        assert_eq!(506, key_list.items.len());
     }
 }

@@ -1,46 +1,46 @@
 use serde::Serialize;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct Warnings {
-    parse_warnings: Option<Vec<Warning>>
+pub struct Logs {
+    logs: Option<Vec<Log>>
 }
 
-impl Warnings {
+impl Logs {
     fn new() -> Self {
-        Warnings {
-            parse_warnings: None
+        Logs {
+            logs: None
         }
     }
 
-    pub(crate) fn add<T: ToString>(&mut self, code: WarningCode, text: &T) {
+    pub(crate) fn add<T: ToString>(&mut self, code: LogCode, text: &T) {
         self.add_internal(
-            Warning {
+            Log {
                 code,
                 text: text.to_string()
             }
         );
     }
 
-    fn add_internal(&mut self, warning: Warning) {
-        match &mut self.parse_warnings {
-            Some(parse_warnings) => parse_warnings.push(warning),
-            None => self.parse_warnings = Some(vec![warning])
+    fn add_internal(&mut self, warning: Log) {
+        match &mut self.logs {
+            Some(logs) => logs.push(warning),
+            None => self.logs = Some(vec![warning])
         }
     }
 
-    pub fn get(&self) -> Option<&Vec<Warning>> {
-        self.parse_warnings.as_ref()
+    pub fn get(&self) -> Option<&Vec<Log>> {
+        self.logs.as_ref()
     }
 }
 
-impl Default for Warnings {
+impl Default for Logs {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub enum WarningCode {
+pub enum LogCode {
     WarningNom,
     WarningConversion,
     WarningContent,
@@ -52,7 +52,7 @@ pub enum WarningCode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct Warning {
-    pub code: WarningCode,
+pub struct Log {
+    pub code: LogCode,
     pub text: String
 }

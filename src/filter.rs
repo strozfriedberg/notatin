@@ -76,7 +76,7 @@ impl Filter {
         match &find_path.value {
             Some(match_val) => {
                 if match_val == &value_name {
-                    FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                    FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
                 }
                 else {
                     FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
@@ -152,6 +152,7 @@ bitflags! {
         const FILTER_ITERATE_KEYS          = 0x0002;
         const FILTER_ITERATE_VALUES        = 0x0004;
         const FILTER_ITERATE_KEYS_COMPLETE = 0x0008;
+        const FILTER_VALUE_MATCH           = 0x0010;
     }
 }
 impl_serialize_for_bitflags! {FilterFlags}
@@ -159,9 +160,10 @@ impl_serialize_for_bitflags! {FilterFlags}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::warn::Warnings;
+    use crate::log::Logs;
     use crate::cell_key_node;
     use crate::cell_key_value;
+    use crate::file_info::FileInfo;
 
     #[test]
     fn test_find_path_build() {
@@ -172,18 +174,8 @@ mod tests {
 
     #[test]
     fn test_check_cell_match_key() {
+        let mut state = State::default();
         let filter = Filter::from_path(FindPath::from_key_value("HighContrast", "Flags"));
-        let mut state = State {
-            file_start_pos: 0,
-            hbin_offset_absolute: 0,
-            file_buffer: Vec::new(),
-            cell_key_node_stack: Vec::new(),
-            value_complete: false,
-            key_complete: false,
-            root_key_path_offset: 0,
-            transaction_logs: None,
-            info: Warnings::default()
-        };
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
             ..Default::default()
@@ -205,18 +197,8 @@ mod tests {
 
     #[test]
     fn test_check_cell_match_value() {
+        let mut state = State::default();
         let filter = Filter::from_path(FindPath::from_key_value("", "Flags"));
-        let mut state = State {
-            file_start_pos: 0,
-            hbin_offset_absolute: 0,
-            file_buffer: Vec::new(),
-            cell_key_node_stack: Vec::new(),
-            value_complete: false,
-            key_complete: false,
-            root_key_path_offset: 0,
-            transaction_logs: None,
-            info: Warnings::default()
-        };
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
                 file_offset_absolute: 0,
@@ -224,20 +206,21 @@ mod tests {
                 value_name_size: 18,
                 data_size: 8,
                 data_offset: 1928,
+                data_type_raw: 0,
                 padding: 1280,
                 value_bytes: None
             },
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
-            parse_warnings: Warnings::default()
+            logs: Logs::default()
         };
-        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),
             "check_cell: Same case value match failed");
 
         key_value.value_name = String::from("flags");
-        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),
             "check_cell: Different case value match failed");
 

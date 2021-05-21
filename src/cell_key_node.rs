@@ -4,15 +4,17 @@ use nom::{
     bytes::complete::tag,
     number::complete::{le_u16, le_u32, le_i32, le_u64},
     branch::alt,
-    multi::count
+    multi::count,
+    take
 };
 use winstructs::security::SecurityDescriptor;
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use crate::file_info::FileInfo;
 use crate::state::State;
 use crate::err::Error;
-use crate::warn::{Warnings, WarningCode};
+use crate::log::{Logs, LogCode};
 use crate::util;
 use crate::hive_bin_cell;
 use crate::cell_key_value::CellKeyValue;
@@ -53,7 +55,7 @@ pub struct CellKeyNodeDetail {
     pub class_name_size: u16,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
     pub key_node_flags: KeyNodeFlags,
@@ -64,12 +66,12 @@ pub struct CellKeyNode {
     pub parent_key_offset_relative: i32,
     pub number_of_sub_keys: u32,
     pub number_of_key_values: u32,
-    pub key_name: String, // ASCII (extended) string or UTF-16LE string,
+    pub key_name: String,
 
     pub allocated: bool,
     pub path: String,
     pub sub_values: Vec<CellKeyValue>,
-    pub parse_warnings: Warnings,
+    pub logs: Logs,
 
     #[serde(skip_serializing)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
@@ -79,7 +81,7 @@ pub struct CellKeyNode {
 
 impl Default for CellKeyNode {
     fn default() -> Self {
-        CellKeyNode {
+        Self {
             detail: CellKeyNodeDetail::default(),
             key_node_flags: KeyNodeFlags::default(),
             last_key_written_date_and_time: DateTime::from(SystemTime::UNIX_EPOCH),
@@ -90,8 +92,8 @@ impl Default for CellKeyNode {
             key_name: String::default(),
             allocated: bool::default(),
             path: String::default(),
-            sub_values: Vec::default(),
-            parse_warnings: Warnings::default(),
+            sub_values: Vec::new(),
+            logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
             track_returned: 0
          }
@@ -114,12 +116,12 @@ impl hive_bin_cell::Cell for CellKeyNode {
 
 impl CellKeyNode {
     fn from_bytes<'a> (
-        state: &State,
+        file_info: &FileInfo,
+        state: &mut State,
         input: &'a [u8],
         cur_path: &str
     ) -> IResult<&'a [u8], Self> {
-        let file_offset_absolute = state.get_file_offset(input);
-        let start_pos = input.as_ptr() as usize;
+        let file_offset_absolute = file_info.get_file_offset(input);
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("nk")(input)?;
         let (input, flags) = le_u16(input)?;
@@ -143,27 +145,25 @@ impl CellKeyNode {
         let (input, class_name_size) = le_u16(input)?;
         let (input, key_name_bytes) = take!(input, key_name_size)?;
 
-        let mut parse_warnings = Warnings::default();
-        let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut parse_warnings);
+        let mut logs = Logs::default();
+        let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut logs);
 
         let key_name = util::string_from_bytes(
             key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME),
             key_name_bytes,
             key_name_size,
-            &mut parse_warnings,
+            &mut logs,
             "key_name_bytes");
-
-        let size_abs =  size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         let mut path = cur_path.to_owned();
         path.push('\\');
         path += &key_name;
 
+        state.update_track_cells(file_offset_absolute);
         let cell_key_node = CellKeyNode {
             detail: CellKeyNodeDetail {
                 file_offset_absolute,
-                size: size_abs,
+                size: size.abs() as u32,
                 number_of_volatile_sub_keys,
                 sub_keys_list_offset_relative,
                 volatile_sub_keys_list_offset_relative,
@@ -180,15 +180,15 @@ impl CellKeyNode {
             },
             key_node_flags,
             last_key_written_date_and_time: util::get_date_time_from_filetime(last_key_written_date_and_time),
-            access_flags: AccessFlags::from_bits_checked(access_bits, &mut parse_warnings),
+            access_flags: AccessFlags::from_bits_checked(access_bits, &mut logs),
             parent_key_offset_relative,
             number_of_sub_keys,
             number_of_key_values,
-            key_name: util::string_from_bytes(key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME), key_name_bytes, key_name_size, &mut parse_warnings, "key_name_bytes"),
+            key_name: util::string_from_bytes(key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME), key_name_bytes, key_name_size, &mut logs, "key_name_bytes"),
             allocated: size < 0,
             path,
             sub_values: Vec::new(),
-            parse_warnings,
+            logs,
             cell_sub_key_offsets_absolute: Vec::new(),
             track_returned: 0
         };
@@ -199,25 +199,33 @@ impl CellKeyNode {
         ))
     }
 
+    /// Reads a key node from a file buffer.
+    /// Returns a tuple of CellKeyNode and a bool that indicates
     pub(crate) fn read(
+        file_info: &FileInfo,
         state: &mut State,
         offset: usize,
         cur_path: &str,
         filter: &Filter
     ) -> Result<(Option<Self>, bool), Error> {
-        let mut found_key = false;
-        let input = &state.file_buffer[offset..];
-        let (_, mut cell_key_node) = CellKeyNode::from_bytes(state, input, cur_path)?;
+        let (_, mut cell_key_node) = CellKeyNode::from_bytes(file_info, state, &file_info.buffer[offset..], cur_path)?;
+
         let filter_flags = filter.check_cell(state, &cell_key_node)?;
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-            return Ok((None, found_key));
+            return Ok((None, false));
         }
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
-            cell_key_node.read_values(state, filter)?;
+            cell_key_node.read_values(file_info, state, filter)?;
         }
+        let found_key;
         if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
+            // found_key is used to stop iterating over keys at this level of the tree.
+            // state.key_complete is used to indicate that the filter was matched and to stop applying it to descendents
             found_key = true;
             state.key_complete = true;
+        }
+        else {
+            found_key = false;
         }
 
         Ok((Some(cell_key_node), found_key))
@@ -225,13 +233,15 @@ impl CellKeyNode {
 
     pub(crate) fn read_sub_keys(
         self: &mut CellKeyNode,
+        file_info: &FileInfo,
         state: &mut State,
         filter: &Filter
     ) -> Result<Vec<CellKeyNode>, Error> {
-        let cell_sub_key_offsets_absolute = parse_sub_key_list(state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
+        let cell_sub_key_offsets_absolute = parse_sub_key_list(file_info, state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
         let mut children = Vec::new();
         for val in cell_sub_key_offsets_absolute.iter() {
             if let (Some(kn), stop_loop) = CellKeyNode::read(
+                file_info,
                 state,
                 *val as usize,
                 &self.path,
@@ -249,20 +259,23 @@ impl CellKeyNode {
 
     fn read_values(
         self: &mut CellKeyNode,
+        file_info: &FileInfo,
         state: &mut State,
         filter: &Filter
     ) -> Result<(), Error> {
-        let (_, key_values) = parse_key_values(state, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
+        let (_, key_values) = parse_key_values(file_info, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
         for val in key_values.iter() {
-            let (_, mut cell_key_value) = CellKeyValue::from_bytes(state, &state.file_buffer[(*val as usize + state.hbin_offset_absolute)..])?;
+            let (_, mut cell_key_value) = CellKeyValue::from_bytes(file_info, state, &file_info.buffer[(*val as usize + file_info.hbin_offset_absolute)..])?;
+
             let iterate_flags = filter.check_cell(state, &cell_key_value)?;
-            if iterate_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-                state.value_complete = true;
-            }
             if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                cell_key_value.read_value_bytes(state);
+                cell_key_value.read_value_bytes(file_info, state);
                 self.sub_values.push(cell_key_value);
+                if iterate_flags.contains(FilterFlags::FILTER_VALUE_MATCH) {
+                    state.value_complete = true;
+                }
             }
+
             if state.value_complete {
                 break;
             }
@@ -275,15 +288,8 @@ impl CellKeyNode {
         self: &mut CellKeyNode,
         parser: &mut Parser
     ) -> Result<Vec<SecurityDescriptor>, Error> {
-        self.get_security_descriptors_internal(parser.get_state_mut())
-    }
-
-    /// Returns a vector of Security Descriptors for the key
-    pub(crate) fn get_security_descriptors_internal(
-        self: &mut CellKeyNode,
-        state: &State
-    ) -> Result<Vec<SecurityDescriptor>, Error> {
-        cell_key_security::read_cell_key_security(&state.file_buffer[..], self.detail.security_key_offset_relative, state.hbin_offset_absolute)
+        let file_info = parser.get_file_info();
+        cell_key_security::read_cell_key_security(&file_info.buffer[..], self.detail.security_key_offset_relative, file_info.hbin_offset_absolute)
     }
 }
 
@@ -320,11 +326,11 @@ impl_serialize_for_bitflags! { KeyNodeFlags }
 impl_flags_from_bits! { KeyNodeFlags, u16 }
 
 fn parse_key_values(
-    state: &State,
+    file_info: &FileInfo,
     key_values_count: u32,
     list_offset_relative: usize
 ) -> IResult<&[u8], Vec<u32>> {
-    let slice: &[u8] = &state.file_buffer[list_offset_relative + state.hbin_offset_absolute..];
+    let slice: &[u8] = &file_info.buffer[list_offset_relative + file_info.hbin_offset_absolute..];
     let (slice, _size) = le_u32(slice)?;
     let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
     Ok((
@@ -333,17 +339,21 @@ fn parse_key_values(
     ))
 }
 
+/// Returns a vector of the absolute sub key offsets
 pub(crate) fn parse_sub_key_list(
-    state: &State,
+    file_info: &FileInfo,
+    state: &mut State,
     count: u32,
     list_offset_relative: u32
 ) -> Result<Vec<u32>, Error> {
-    let slice = &state.file_buffer[list_offset_relative as usize + state.hbin_offset_absolute..];
+    let slice = &file_info.buffer[list_offset_relative as usize + file_info.hbin_offset_absolute..];
+    let file_offset_absolute = file_info.get_file_offset(slice);
+
     // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
     // Look for the ri list first and follow the pointers
     match SubKeyListRi::from_bytes(slice) {
         Ok((_, sub_key_list_ri)) => {
-            sub_key_list_ri.parse_offsets(state)
+            sub_key_list_ri.parse_offsets(file_info, state)
         },
         Err(_) => {
             let (_, cell_sub_key_list) =
@@ -351,8 +361,9 @@ pub(crate) fn parse_sub_key_list(
                      SubKeyListLh::from_bytes(),
                      SubKeyListLi::from_bytes(),
                     ))(slice)?;
-            let list = cell_sub_key_list.get_offset_list(state.hbin_offset_absolute as u32);
+            let list = cell_sub_key_list.get_offset_list(file_info.hbin_offset_absolute as u32);
             if count > 0 { assert_eq!(list.len(), count as usize, "SubKeyList offset list doesn't match expected count"); }
+            state.update_track_cells(file_offset_absolute);
             Ok(list)
         }
     }
@@ -365,8 +376,10 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_node() {
-        let state = State::from_path("test_data/NTUSER.DAT", 4096).unwrap();
-        let ret = CellKeyNode::from_bytes(&state, &state.file_buffer[4128..4264], &String::new());
+        let mut file_info = FileInfo::from_path("test_data/NTUSER.DAT").unwrap();
+        file_info.hbin_offset_absolute = 4096;
+        let mut state = State::default();
+        let (_, key_node) = CellKeyNode::from_bytes(&file_info, &mut state, &file_info.buffer[4128..4264], &String::new()).unwrap();
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
                 file_offset_absolute: 4128,
@@ -395,25 +408,18 @@ mod tests {
             allocated: true,
             path: String::from("\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}"),
             sub_values: Vec::new(),
-            parse_warnings: Warnings::default(),
+            logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
             track_returned: 0
         };
-        let remaining: [u8; 0] = [0; 0];
-        let expected = Ok((&remaining[..], expected_output));
         assert_eq!(
-            expected,
-            ret
-        );
-        let security_descriptors = ret.unwrap().1.get_security_descriptors_internal(&state).unwrap();
-        assert_eq!(
-            25,
-            security_descriptors.len()
+            expected_output,
+            key_node
         );
 
-        let slice = &state.file_buffer[0..10];
-        let ret = CellKeyNode::from_bytes(&state, slice, &String::new());
-        let remaining = &state.file_buffer[4..10];
+        let slice = &file_info.buffer[0..10];
+        let ret = CellKeyNode::from_bytes(&file_info, &mut state, slice, &String::new());
+        let remaining = &file_info.buffer[4..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {input: remaining, code: ErrorKind::Tag}));
         assert_eq!(
             expected_error,

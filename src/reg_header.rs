@@ -12,7 +12,7 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use winstructs::guid::Guid;
 use crate::util;
-use crate::warn::{WarningCode, Warnings};
+use crate::log::{LogCode, Logs};
 use crate::impl_enum_from_value;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
@@ -80,7 +80,7 @@ pub struct RegHeaderBase {
     pub unk2: Vec<u8>,
     /// XOR-32 checksum of the previous 508 bytes
     pub checksum: u32,
-    pub parse_warnings: Warnings
+    pub logs: Logs
 }
 
 impl RegHeaderBase {
@@ -101,7 +101,7 @@ impl RegHeaderBase {
         let (input, unk2) = take(396usize)(input)?;
         let (input, checksum) = le_u32(input)?;
 
-        let mut parse_warnings = Warnings::default();
+        let mut logs = Logs::default();
         Ok((
             input,
             Self {
@@ -110,15 +110,15 @@ impl RegHeaderBase {
                 last_modification_date_and_time: util::get_date_time_from_filetime(last_modification_date_and_time),
                 major_version,
                 minor_version,
-                file_type: FileType::from_value(file_type_bytes, &mut parse_warnings),
-                format: FileFormat::from_value(format_bytes, &mut parse_warnings),
+                file_type: FileType::from_value(file_type_bytes, &mut logs),
+                format: FileFormat::from_value(format_bytes, &mut logs),
                 root_cell_offset_relative,
                 hive_bins_data_size,
                 clustering_factor,
-                filename: util::from_utf16_le_string(filename_bytes, 64, &mut parse_warnings, &"Filename"),
+                filename: util::from_utf16_le_string(filename_bytes, 64, &mut logs, &"Filename"),
                 unk2: unk2.to_vec(),
                 checksum,
-                parse_warnings
+                logs
             },
         ))
     }
@@ -179,7 +179,7 @@ pub struct FileBaseBlockReserved {
     pub last_reorganized_timestamp: DateTime<Utc>,
     #[serde(serialize_with = "util::data_as_hex")]
     pub remaining: Vec<u8>,
-    pub parse_warnings: Warnings
+    pub logs: Logs
 }
 
 impl Eq for FileBaseBlockReserved {}
@@ -207,18 +207,18 @@ impl FileBaseBlockReserved {
         let (input, last_reorganized_timestamp) = le_u64(input)?;
         let (input, remaining) = take(3512usize)(input)?;
 
-        let mut parse_warnings = Warnings::default();
+        let mut logs = Logs::default();
         Ok((
             input,
             FileBaseBlockReserved {
-                rm_id: util::get_guid_from_buffer(rm_id, &mut parse_warnings),
-                log_id: util::get_guid_from_buffer(log_id, &mut parse_warnings),
-                flags: FileBaseBlockReservedFlags::from_value(flags, &mut parse_warnings),
-                tm_id: util::get_guid_from_buffer(tm_id, &mut parse_warnings),
+                rm_id: util::get_guid_from_buffer(rm_id, &mut logs),
+                log_id: util::get_guid_from_buffer(log_id, &mut logs),
+                flags: FileBaseBlockReservedFlags::from_value(flags, &mut logs),
+                tm_id: util::get_guid_from_buffer(tm_id, &mut logs),
                 signature,
                 last_reorganized_timestamp: util::get_date_time_from_filetime(last_reorganized_timestamp),
                 remaining: remaining.to_vec(),
-                parse_warnings
+                logs
             },
         ))
     }
@@ -265,7 +265,7 @@ mod tests {
                 filename: "\\??\\C:\\Users\\nfury\\ntuser.dat".to_string(),
                 unk2,
                 checksum: 738555936,
-                parse_warnings: Warnings::default()
+                logs: Logs::default()
             },
             ext: RegHeaderExtended {
                 reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,

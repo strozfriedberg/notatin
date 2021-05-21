@@ -17,7 +17,7 @@ macro_rules! impl_serialize_for_bitflags {
 macro_rules! impl_flags_from_bits {
     ($bitflag_type: ident, $var_type: ident) => {
         impl $bitflag_type {
-            fn from_bits_checked(flags: $var_type, parse_warnings: &mut Warnings) -> Self {
+            fn from_bits_checked(flags: $var_type, logs: &mut Logs) -> Self {
                 let flags_mapped = $bitflag_type::from_bits_truncate(flags);
                 if flags != flags_mapped.bits() {
                     fn f() {}
@@ -27,7 +27,7 @@ macro_rules! impl_flags_from_bits {
                     let name = type_name_of(f);
                     const FOOTER_LEN: usize = "::f".len();
                     let fn_name = &name[..name.len() - FOOTER_LEN];
-                    parse_warnings.add(WarningCode::WarningUnrecognizedBitflag, &format!("{}: {:#X}", fn_name, flags));
+                    logs.add(LogCode::WarningUnrecognizedBitflag, &format!("{}: {:#X}", fn_name, flags));
                 }
                 return flags_mapped;
             }
@@ -39,10 +39,10 @@ macro_rules! impl_flags_from_bits {
 macro_rules! impl_enum_from_value {
     ($enum_type: ident) => {
         impl $enum_type {
-            pub(crate) fn from_value(value: u32, parse_warnings: &mut Warnings) -> Self {
+            pub(crate) fn from_value(value: u32, logs: &mut Logs) -> Self {
                 $enum_type::from_u32(value)
                 .unwrap_or_else(|| {
-                    parse_warnings.add(WarningCode::WarningConversion, &format!("Unrecognized {} value", stringify!($enum_type)));
+                    logs.add(LogCode::WarningConversion, &format!("Unrecognized {} value", stringify!($enum_type)));
                     $enum_type::Unknown
                 })
             }
@@ -54,7 +54,7 @@ macro_rules! impl_enum_from_value {
 #[cfg(test)]
 mod tests {
     use bitflags::bitflags;
-    use crate::warn::{Warning, Warnings, WarningCode};
+    use crate::log::{Log, Logs, LogCode};
 
     #[test]
     fn test_from_bits_checked() {
@@ -68,19 +68,19 @@ mod tests {
         impl_flags_from_bits! { TestFlags, u16 }
 
         let flag_bits = 0x0001 | 0x0003;
-        let mut parse_warnings = Warnings::default();
-        let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
+        let mut logs = Logs::default();
+        let flags = TestFlags::from_bits_checked(flag_bits, &mut logs);
         assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_3, flags, "Valid from_bits_checked conversion");
-        assert_eq!(None, parse_warnings.get(), "Valid from_bits_checked conversion - parse_warnings should be empty");
+        assert_eq!(None, logs.get(), "Valid from_bits_checked conversion - logs should be empty");
 
         let flag_bits = 0xffff;
-        let flags = TestFlags::from_bits_checked(flag_bits, &mut parse_warnings);
+        let flags = TestFlags::from_bits_checked(flag_bits, &mut logs);
         assert_eq!(TestFlags::TEST_1 | TestFlags::TEST_2 | TestFlags::TEST_3, flags, "Unmapped bits from_bits_checked conversion");
         assert_eq!(Some(&vec![
-            Warning {
-                code: WarningCode::WarningUnrecognizedBitflag,
+            Log {
+                code: LogCode::WarningUnrecognizedBitflag,
                 text: "notatin::macros::tests::test_from_bits_checked::TestFlags::from_bits_checked: 0xFFFF".to_string()
             }
-        ]), parse_warnings.get(), "Unmapped bits from_bits_checked conversion - parse_warnings should contain a warning");
+        ]), logs.get(), "Unmapped bits from_bits_checked conversion - logs should contain a warning");
     }
 }
