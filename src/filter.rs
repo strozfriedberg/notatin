@@ -205,14 +205,16 @@ mod tests {
                 size: 48,
                 value_name_size: 18,
                 data_size: 8,
-                data_offset: 1928,
+                data_offset_relative: 1928,
                 data_type_raw: 0,
                 padding: 1280,
-                value_bytes: None
+                value_bytes: None,
+                slack: vec![]
             },
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
+            data_offsets_absolute: Vec::new(),
             logs: Logs::default()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,

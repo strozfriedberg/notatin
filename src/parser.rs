@@ -29,48 +29,48 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn from_path<T: AsRef<Path>>(primary_path: T, log_paths: Option<Vec<T>>, recover_deleted: bool) -> Result<Self, Error> {
-        let log_option;
+    pub fn from_path<T: AsRef<Path>>(primary_path: T, transaction_log_paths: Option<Vec<T>>, recover_deleted: bool) -> Result<Self, Error> {
+        let transaction_logs;
         let mut fh_logs = Vec::new();
-        if let Some(log_paths) = log_paths {
+        if let Some(log_paths) = transaction_log_paths {
             for log_path in log_paths {
                 fh_logs.push(std::fs::File::open(log_path)?);
             }
-            log_option = Some(fh_logs);
+            transaction_logs = Some(fh_logs);
         }
         else{
-            log_option = None;
+            transaction_logs = None;
         }
-        Self::from_file_info(FileInfo::from_path(primary_path)?, log_option, None, recover_deleted)
+        Self::from_file_info(FileInfo::from_path(primary_path)?, transaction_logs, None, recover_deleted)
     }
 
-    pub fn from_path_with_filter<T: AsRef<Path>>(primary_path: T, log_paths: Option<Vec<T>>, filter: Option<Filter>) -> Result<Self, Error> {
+    pub fn from_path_with_filter<T: AsRef<Path>>(primary_path: T, transaction_log_paths: Option<Vec<T>>, filter: Option<Filter>) -> Result<Self, Error> {
         let log_option;
         let mut fh_logs = Vec::new();
-        if let Some(log_paths) = log_paths {
-            for log_path in log_paths {
-                fh_logs.push(std::fs::File::open(log_path)?);
-            }
-            log_option = Some(fh_logs);
-        }
-        else{
-            log_option = None;
+        match transaction_log_paths {
+            Some(transaction_log_paths) => {
+                for log_path in transaction_log_paths {
+                    fh_logs.push(std::fs::File::open(log_path)?);
+                }
+                log_option = Some(fh_logs)
+            },
+            _ => log_option = None
         }
         Self::from_file_info(FileInfo::from_path(primary_path)?, log_option, filter, false)
     }
 
-    pub fn from_read_seek<T: ReadSeek>(primary_file: T, logs: Option<Vec<T>>, recover_deleted: bool) -> Result<Self, Error> {
-        Self::from_file_info(FileInfo::from_read_seek(primary_file)?, logs, None, recover_deleted)
+    pub fn from_read_seek<T: ReadSeek>(primary_file: T, transaction_logs: Option<Vec<T>>, recover_deleted: bool) -> Result<Self, Error> {
+        Self::from_file_info(FileInfo::from_read_seek(primary_file)?, transaction_logs, None, recover_deleted)
     }
 
-    pub fn from_read_seek_with_filter<T: ReadSeek>(primary_file: T, logs: Option<Vec<T>>, filter: Option<Filter>) -> Result<Self, Error> {
-        Self::from_file_info(FileInfo::from_read_seek(primary_file)?, logs, filter, false)
+    pub fn from_read_seek_with_filter<T: ReadSeek>(primary_file: T, transaction_logs: Option<Vec<T>>, filter: Option<Filter>) -> Result<Self, Error> {
+        Self::from_file_info(FileInfo::from_read_seek(primary_file)?, transaction_logs, filter, false)
     }
 
-    fn from_file_info<T: ReadSeek>(file_info: FileInfo, logs: Option<Vec<T>>, filter: Option<Filter>, recover_deleted: bool) -> Result<Self, Error> {
+    fn from_file_info<T: ReadSeek>(file_info: FileInfo, transaction_logs: Option<Vec<T>>, filter: Option<Filter>, recover_deleted: bool) -> Result<Self, Error> {
         let mut parser = Parser {
             file_info,
-            state: State::from_transaction_logs(transaction_log::parse(logs)?, recover_deleted),
+            state: State::from_transaction_logs(transaction_log::parse(transaction_logs)?, recover_deleted),
             filter: filter.unwrap_or_default(),
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
@@ -126,13 +126,12 @@ impl Parser {
     }
 
     pub(crate) fn apply_transaction_logs(&mut self) -> Result<(), Error> {
-        if self.state.transaction_logs.is_some() {
+        if let Some(logs) = &mut self.state.transaction_logs {
             let primary_reg_header = &self.reg_header.as_ref().expect("Shouldn't be here unless we have a base block").base;
             if primary_reg_header.primary_sequence_number == primary_reg_header.secondary_sequence_number {
                 self.state.info.add(LogCode::WarningTransactionLog, &"Skipping transaction logs because the primary file's primary_sequence_number matches the secondary_sequence_number");
             }
             else {
-                let logs = self.state.transaction_logs.as_mut().expect("just checked");
                 // put the logs in order of oldest (lowest sequence number) first
                 logs.sort_by(|a, b| a.reg_header.primary_sequence_number.cmp(&b.reg_header.primary_sequence_number));
 
@@ -243,8 +242,10 @@ impl Iterator for Parser {
 
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
-                let children = node.read_sub_keys(&self.file_info, &mut self.state, &self.filter).unwrap();
-                self.stack_to_traverse.extend(children);
+                match node.read_sub_keys(&self.file_info, &mut self.state, &self.filter) {
+                    Ok(children) => self.stack_to_traverse.extend(children),
+                    Err(e) => self.state.info.add(LogCode::WarningIterator, &format!("Error reading sub keys for {}: {}", node.path, e))
+                }
             }
             if !self.stack_to_return.is_empty() {
                 let last = self.stack_to_return.last_mut().expect("We checked that stack_to_return wasn't empty");
@@ -384,17 +385,17 @@ mod tests {
 
     #[test]
     fn dump_registry() {
-        let write_file = File::create("NTUSER.DAT_iterative_2.jsonl").unwrap();
+        let write_file = File::create("FuseHive.jsonl").unwrap();
         let mut writer = BufWriter::new(&write_file);
 
-        let parser = Parser::from_path("test_data/NTUSER.DAT", None, true).unwrap();
+        let parser = Parser::from_path("test_data/FuseHive", None, true).unwrap();
         for key in parser {
             writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
         }
     }
 
     #[test]
-    fn wip_common_export_format() {
+    fn common_export_format() {
         //let mut parser = Parser::from_path_with_logs("test_data/SYSTEM", vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]).unwrap();
         let mut parser = Parser::from_path("test_data/SYSTEM", None, true).unwrap();
         let write_file = File::create("SYSTEM_common_2").unwrap();

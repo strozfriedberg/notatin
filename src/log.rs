@@ -41,13 +41,14 @@ impl Default for Logs {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum LogCode {
+    WarningOther,
     WarningNom,
     WarningConversion,
     WarningContent,
     WarningBigDataContent,
     WarningUnrecognizedBitflag,
     WarningTransactionLog,
-    WarningOther,
+    WarningIterator,
     Info
 }
 

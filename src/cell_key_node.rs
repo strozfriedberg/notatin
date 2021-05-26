@@ -53,6 +53,7 @@ pub struct CellKeyNodeDetail {
     pub work_var: u32, // Unused as of WinXP
     pub key_name_size: u16,
     pub class_name_size: u16,
+    pub slack: Vec<u8>
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -121,7 +122,8 @@ impl CellKeyNode {
         input: &'a [u8],
         cur_path: &str
     ) -> IResult<&'a [u8], Self> {
-        let file_offset_absolute = file_info.get_file_offset(input);
+        let start_pos = input.as_ptr() as usize;
+        let file_offset_absolute = file_info.get_file_offset_from_ptr(start_pos);
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("nk")(input)?;
         let (input, flags) = le_u16(input)?;
@@ -159,11 +161,14 @@ impl CellKeyNode {
         path.push('\\');
         path += &key_name;
 
+        let size_abs =  size.abs() as u32;
+        let (input, slack) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
+
         state.update_track_cells(file_offset_absolute);
         let cell_key_node = CellKeyNode {
             detail: CellKeyNodeDetail {
                 file_offset_absolute,
-                size: size.abs() as u32,
+                size: size_abs,
                 number_of_volatile_sub_keys,
                 sub_keys_list_offset_relative,
                 volatile_sub_keys_list_offset_relative,
@@ -177,6 +182,7 @@ impl CellKeyNode {
                 work_var,
                 key_name_size,
                 class_name_size,
+                slack: slack.to_vec()
             },
             key_node_flags,
             last_key_written_date_and_time: util::get_date_time_from_filetime(last_key_written_date_and_time),
@@ -397,6 +403,7 @@ mod tests {
                 work_var: 7667779,
                 key_name_size: 52,
                 class_name_size: 0,
+                slack: vec![252, 3, 202, 1]
             },
             key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
             last_key_written_date_and_time: util::get_date_time_from_filetime(129782011451468083),

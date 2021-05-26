@@ -49,16 +49,18 @@ impl CellBigData {
         ))
     }
 
+    /// Returns a tuple of the full content buffer and the absolute data offsets
     pub(crate) fn get_big_data_bytes(
         file_info: &FileInfo,
         state: &mut State,
         offset: usize,
         data_type: CellKeyValueDataTypes,
         data_size: u32
-    ) -> Result<Vec<u8>, Error> {
-        let (_, (hive_bin_cell_big_data, offset)) = CellBigData::from_bytes(&file_info.buffer[offset..])?;
-        state.update_track_cells(file_info.get_file_offset_from_ptr(offset));
-        let (_, data_offsets_absolute)  = hive_bin_cell_big_data.parse_big_data_offsets(file_info)?;
+    ) -> Result<(Vec<u8>, Vec<usize>), Error> {
+        let (_, (hive_bin_cell_big_data, offset_ptr)) = CellBigData::from_bytes(&file_info.buffer[offset..])?;
+        let (_, data_offsets_absolute) = hive_bin_cell_big_data.parse_big_data_offsets(file_info)?;
+
+        state.update_track_cells(file_info.get_file_offset_from_ptr(offset_ptr));
         let mut big_data_buffer: Vec<u8> = Vec::new();
         let mut data_size_remaining = data_size;
         for offset in data_offsets_absolute.iter() {
@@ -77,7 +79,7 @@ impl CellBigData {
                 data_size_remaining -= size_to_read;
             }
         }
-        Ok(data_type.get_value_bytes(&big_data_buffer[..]))
+        Ok((data_type.get_value_bytes(&big_data_buffer[..]), data_offsets_absolute.iter().map(|x| *x as usize).collect()))
     }
 
     fn parse_big_data_size(
