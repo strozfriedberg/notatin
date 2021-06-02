@@ -56,7 +56,7 @@ pub struct CellKeyNodeDetail {
     pub slack: Vec<u8>
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
     pub key_node_flags: KeyNodeFlags,
@@ -77,7 +77,9 @@ pub struct CellKeyNode {
     #[serde(skip_serializing)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
     #[serde(skip_serializing)]
-    pub(crate) track_returned: u32
+    pub(crate) track_returned: u32,
+    #[serde(skip_serializing)]
+    pub(crate) sub_values_iter_index: usize
 }
 
 impl Default for CellKeyNode {
@@ -96,7 +98,8 @@ impl Default for CellKeyNode {
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
-            track_returned: 0
+            track_returned: 0,
+            sub_values_iter_index: 0
          }
     }
 }
@@ -196,7 +199,8 @@ impl CellKeyNode {
             sub_values: Vec::new(),
             logs,
             cell_sub_key_offsets_absolute: Vec::new(),
-            track_returned: 0
+            track_returned: 0,
+            sub_values_iter_index: 0
         };
 
         Ok((
@@ -228,7 +232,7 @@ impl CellKeyNode {
             // found_key is used to stop iterating over keys at this level of the tree.
             // state.key_complete is used to indicate that the filter was matched and to stop applying it to descendents
             found_key = true;
-            state.key_complete = true;
+            state.key_complete = filter.return_sub_keys();//true;
         }
         else {
             found_key = false;
@@ -238,28 +242,31 @@ impl CellKeyNode {
     }
 
     pub(crate) fn read_sub_keys(
-        self: &mut CellKeyNode,
+        &mut self,
         file_info: &FileInfo,
         state: &mut State,
-        filter: &Filter
-    ) -> Result<Vec<CellKeyNode>, Error> {
-        let cell_sub_key_offsets_absolute = parse_sub_key_list(file_info, state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
+        filter: &Filter,
+        force: bool
+    ) -> Result<Vec<Self>, Error> {
         let mut children = Vec::new();
-        for val in cell_sub_key_offsets_absolute.iter() {
-            if let (Some(kn), stop_loop) = CellKeyNode::read(
-                file_info,
-                state,
-                *val as usize,
-                &self.path,
-                filter
-            )? {
-                children.push(kn);
-                if stop_loop {
-                    break;
+        if force || !state.key_complete || filter.return_sub_keys() {
+            let cell_sub_key_offsets_absolute = parse_sub_key_list(file_info, state, self.number_of_sub_keys, self.detail.sub_keys_list_offset_relative)?;
+            for val in cell_sub_key_offsets_absolute.iter() {
+                if let (Some(kn), stop_loop) = CellKeyNode::read(
+                    file_info,
+                    state,
+                    *val as usize,
+                    &self.path,
+                    filter
+                )? {
+                    children.push(kn);
+                    if stop_loop {
+                        break;
+                    }
                 }
-             }
+            }
+            self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
         }
-        self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
         Ok(children)
     }
 
@@ -296,6 +303,27 @@ impl CellKeyNode {
     ) -> Result<Vec<SecurityDescriptor>, Error> {
         let file_info = parser.get_file_info();
         cell_key_security::read_cell_key_security(&file_info.buffer[..], self.detail.security_key_offset_relative, file_info.hbin_offset_absolute)
+    }
+
+    pub fn get_value(&self, find_value_name: &str) -> Option<CellKeyValue> {
+        let find_value_name = find_value_name.to_ascii_lowercase();
+        let val = self.sub_values.iter().find(|v| v.value_name.to_ascii_lowercase() == find_value_name);
+        val.map(|v| v.clone())
+    }
+}
+
+impl Iterator for CellKeyNode {
+    type Item = CellKeyValue;
+
+    // Iterative post-order traversal
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.sub_values.get(self.sub_values_iter_index) {
+            Some(value) => {
+                self.sub_values_iter_index += 1;
+                Some(value.clone())
+            },
+            _ => None
+        }
     }
 }
 
@@ -379,6 +407,49 @@ pub(crate) fn parse_sub_key_list(
 mod tests {
     use super::*;
     use nom::error::ErrorKind;
+    use crate::filter::FindPath;
+    use crate::cell_key_value::{CellKeyValueDetail, CellKeyValueDataTypes, CellKeyValueFlags};
+
+
+    #[test]
+    fn test_iterator() {
+        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility\\Keyboard Response", true));
+        let parser = Parser::from_path_with_filter("test_data/NTUSER.DAT", None, Some(filter)).unwrap();
+        for key in parser {
+            for val in key {
+                println!("{}", val.value_name);
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_value() {
+        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility\\Keyboard Response", true));
+        let parser = Parser::from_path_with_filter("test_data/NTUSER.DAT", None, Some(filter)).unwrap();
+        for key in parser {
+            let val = key.get_value("delayBeforeAcceptance");
+            let expected = CellKeyValue {
+                detail: CellKeyValueDetail {
+                    file_offset_absolute: 34792,
+                    size: 48,
+                    value_name_size: 21,
+                    data_size: 10,
+                    data_offset_relative:30744,
+                    data_type_raw: 1,
+                    padding: 0,
+                    value_bytes: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                    slack: vec![0, 0, 0],
+                },
+                data_type: CellKeyValueDataTypes::REG_SZ,
+                flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
+                data_offsets_absolute: vec![34844],
+                value_name: "DelayBeforeAcceptance".to_string(),
+                logs: Logs::default()
+            };
+            assert_eq!(Some(expected), val);
+            break;
+        }
+    }
 
     #[test]
     fn test_parse_cell_key_node() {
@@ -417,7 +488,8 @@ mod tests {
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
-            track_returned: 0
+            track_returned: 0,
+            sub_values_iter_index: 0
         };
         assert_eq!(
             expected_output,

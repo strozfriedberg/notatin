@@ -1,16 +1,16 @@
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::fs::File;
 use notatin::{
-    registry::Parser,
+    parser::Parser,
     filter::Filter,
     cell_key_node::CellKeyNode
 };
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::{PyIterProtocol};
-use crate::util::{FileOrFileLike, init_logging};
+use crate::util::{FileOrFileLike, Output, init_logging};
 use crate::err::PyRegError;
-use crate::reg_key::PyRegKey;
+use crate::py_reg_key::PyRegKey;
 //pub use reg_key::PyRegKey;
 
 pub trait ReadSeek: Read + Seek {
@@ -29,12 +29,7 @@ impl<T: Read + Seek> ReadSeek for T {}
 /// Works on both a path (string), or a file-like object.
 pub struct PyRegParser {
     //inner: Option<Registry>
-    inner: Parser
-}
-
-pub enum Output {
-    Python,
-    //JSONL,
+    inner: Option<Parser>
 }
 
 #[pymethods]
@@ -53,10 +48,9 @@ impl PyRegParser {
             FileOrFileLike::FileLike(f) => Box::new(f) as Box<dyn ReadSeek + Send>,
         };
 
-        let mut parser = Parser::from_read_seek(boxed_read_seek).map_err(PyRegError)?;
-        parser.init();
+        let parser = Parser::from_read_seek(boxed_read_seek, None, false).map_err(PyRegError)?;
         Ok(PyRegParser {
-            inner: parser,
+            inner: Some(parser),
         })
     }
 
@@ -64,7 +58,7 @@ impl PyRegParser {
     /// --
     ///
     /// Returns an iterator that yields reg keys as python objects.
-    fn reg_keys(&self) -> PyResult<Py<PyRegKeysIterator>> {
+    fn reg_keys(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
         self.reg_keys_iterator(Output::Python)
     }
 
@@ -72,29 +66,29 @@ impl PyRegParser {
     /// --
     ///
     /// Returns an iterator that yields reg keys as JSON.
-    fn reg_keys_jsonl(&self) -> PyResult<Py<PyRegKeysIterator>> {
+    fn reg_keys_jsonl(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
         //self.reg_keys_iterator(Output::JSONL)
         self.reg_keys_iterator(Output::Python)
     }
 }
 
 impl PyRegParser {
-    fn reg_keys_iterator(&self, output_format: Output) -> PyResult<Py<PyRegKeysIterator>> {
+    fn reg_keys_iterator(&mut self, output_format: Output) -> PyResult<Py<PyRegKeysIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        /*let inner = match self.inner.take() {
+        let inner = match self.inner.take() {
             Some(inner) => inner,
             None => {
-                return Err(PyErr::new::<RuntimeError, _>(
-                    "PyMftParser can only be used once",
+                return Err(PyErr::new::<PyRuntimeError, _>(
+                    "PyRegParser can only be used once",
                 ));
             }
-        };*/
+        };
 
         Py::new(
             py,
             PyRegKeysIterator {
-                inner: self.inner.clone(),
+                inner: inner,
                 output_format,
             },
         )
@@ -165,7 +159,7 @@ impl PyRegKeysIterator {
 
 #[pyproto]
 impl PyIterProtocol for PyRegParser {
-    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyRegKeysIterator>> {
+    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyRegKeysIterator>> {
         slf.reg_keys()
     }
     fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {

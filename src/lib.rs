@@ -8,7 +8,7 @@ extern crate num_traits;
 extern crate serde;
 extern crate thiserror;
 extern crate winstructs;
-pub mod reg_header;
+pub mod base_block;
 pub mod cell_big_data;
 pub mod cell_key_node;
 pub mod cell_key_security;

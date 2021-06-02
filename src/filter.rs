@@ -85,6 +85,13 @@ impl Filter {
             None => FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
         }
     }
+
+    pub(crate) fn return_sub_keys(&self) -> bool {
+        match &self.find_path {
+            Some(fp) => fp.children,
+            _ => false
+        }
+    }
 }
 
 /// FindPath is used when looking for a particular key path and/or value name.
@@ -92,22 +99,24 @@ impl Filter {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FindPath {
     key_path: String,
-    value: Option<String>
+    value: Option<String>,
+    children: bool
 }
 
 impl FindPath {
-    pub fn from_key(key_path: &str) -> FindPath {
-        FindPath::from_key_value_internal(key_path, None)
+    pub fn from_key(key_path: &str, children: bool) -> FindPath {
+        FindPath::from_key_value_internal(key_path, None, children)
     }
 
     pub fn from_key_value(key_path: &str, value: &str) -> FindPath {
-        FindPath::from_key_value_internal(key_path, Some(value.to_string()))
+        FindPath::from_key_value_internal(key_path, Some(value.to_string()), false)
     }
 
-    fn from_key_value_internal(key_path: &str, value: Option<String>) -> FindPath {
+    fn from_key_value_internal(key_path: &str, value: Option<String>, children: bool)-> FindPath {
         FindPath {
             key_path: key_path.to_ascii_lowercase(),
-            value: value.map(|v| v.to_ascii_lowercase())
+            value: value.map(|v| v.to_ascii_lowercase()),
+            children
         }
     }
 
@@ -163,7 +172,6 @@ mod tests {
     use crate::log::Logs;
     use crate::cell_key_node;
     use crate::cell_key_value;
-    use crate::file_info::FileInfo;
 
     #[test]
     fn test_find_path_build() {

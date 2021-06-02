@@ -2,8 +2,7 @@ use std::path::Path;
 use nom::{
     number::complete::le_i32
 };
-use crate::reg_header::{RegHeader, RegHeaderBase};
-use crate::filter::Filter;
+use crate::base_block::{BaseBlock, BaseBlockBase, FileType};
 use crate::err::Error;
 use crate::cell_key_node::CellKeyNode;
 use crate::hive_bin_header::HiveBinHeader;
@@ -12,6 +11,7 @@ use crate::state::State;
 use crate::track_cell::TrackCell;
 use crate::log::LogCode;
 use crate::transaction_log;
+use crate::filter::{Filter, FindPath};
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -24,7 +24,7 @@ pub struct Parser {
     filter: Filter,
     stack_to_traverse: Vec<CellKeyNode>,
     stack_to_return: Vec<CellKeyNode>,
-    reg_header: Option<RegHeader>,
+    base_block: Option<BaseBlock>,
     hive_bin_header: Option<HiveBinHeader>
 }
 
@@ -74,7 +74,7 @@ impl Parser {
             filter: filter.unwrap_or_default(),
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
-            reg_header: None,
+            base_block: None,
             hive_bin_header: None
         };
         parser.init(recover_deleted)?;
@@ -102,7 +102,7 @@ impl Parser {
                 &mut self.state,
                 self.file_info.get_file_offset(input),
                 &String::new(),
-                &Filter::new() // even if we have a filter, we pass in a null filter for the root since matches by definition
+                &Filter::new() // we pass in a null filter for the root since it matches by definition
             )?;
         if let Some(cell_key_node_root) = kn {
             self.stack_to_traverse.push(cell_key_node_root);
@@ -111,48 +111,65 @@ impl Parser {
     }
 
     fn init_recover_deleted(&mut self) -> Result<(), Error> {
-        self.walk_cells(self.reg_header.as_ref().expect("we just parsed this").base.hive_bins_data_size)?;
+        self.walk_cells(self.base_block.as_ref().expect("we just parsed this").base.hive_bins_data_size)?;
         self.state.track_cells.sort_by(|a, b| a.file_offset_absolute.cmp(&b.file_offset_absolute));
         Ok(())
     }
 
     fn init_base_block(&mut self) -> Result<(), Error> {
-        let (input, reg_header) = RegHeader::from_bytes(&self.file_info.buffer)?;
+        let (input, base_block) = BaseBlock::from_bytes(&self.file_info.buffer)?;
         self.file_info.hbin_offset_absolute = input.as_ptr() as usize - self.file_info.buffer.as_ptr() as usize;
-        self.reg_header = Some(reg_header);
+        self.base_block = Some(base_block);
         self.state.key_complete = false;
         self.state.value_complete = false;
+        //self.check_base_block();
         Ok(())
     }
 
+    /*fn check_base_block(&mut self) -> Result<bool, Error> {
+        if self.is_supported_file_type() {
+            let base_block = self.base_block.as_ref().expect("Shouldn't be here unless we've parsed the base block").base;
+            if base_block.primary_sequence_number != base_block.secondary_sequence_number {
+                self.state.info.add(LogCode::WarningBaseBlock, &"Hive requires recovery: primary and secondary sequence numbers do not match.");
+            }
+        }
+        else {
+        }
+        Ok(false)
+    }
+
+    fn is_supported_file_type(&self) -> bool {
+        self.base_block.expect("Shouldn't be here unless we've parsed the base block").base.file_type != FileType::Unknown
+    }*/
+
     pub(crate) fn apply_transaction_logs(&mut self) -> Result<(), Error> {
         if let Some(logs) = &mut self.state.transaction_logs {
-            let primary_reg_header = &self.reg_header.as_ref().expect("Shouldn't be here unless we have a base block").base;
-            if primary_reg_header.primary_sequence_number == primary_reg_header.secondary_sequence_number {
+            let primary_base_block = &self.base_block.as_ref().expect("Shouldn't be here unless we have a base block").base;
+            if primary_base_block.primary_sequence_number == primary_base_block.secondary_sequence_number {
                 self.state.info.add(LogCode::WarningTransactionLog, &"Skipping transaction logs because the primary file's primary_sequence_number matches the secondary_sequence_number");
             }
             else {
                 // put the logs in order of oldest (lowest sequence number) first
-                logs.sort_by(|a, b| a.reg_header.primary_sequence_number.cmp(&b.reg_header.primary_sequence_number));
+                logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number));
 
-                let primary_file_secondary_sequence_number = primary_reg_header.secondary_sequence_number;
+                let primary_file_secondary_sequence_number = primary_base_block.secondary_sequence_number;
                 let mut new_sequence_number = 0;
                 for log in logs {
-                    if log.reg_header.primary_sequence_number >= primary_file_secondary_sequence_number {
-                        if new_sequence_number == 0 || (log.reg_header.primary_sequence_number == new_sequence_number + 1) {
-                            new_sequence_number = log.update_bytes(&mut self.file_info, &mut self.state.info);
+                    if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
+                        if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
+                            new_sequence_number = log.update_bytes(&mut self.file_info, &mut self.state.info, primary_base_block.hive_bins_data_size);
                         }
                         else {
                             self.state.info.add(
                                 LogCode::WarningTransactionLog,
-                                &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.reg_header.primary_sequence_number, new_sequence_number)
+                                &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
                             );
                         }
                     }
                     else {
                         self.state.info.add(
                             LogCode::WarningTransactionLog,
-                            &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.reg_header.primary_sequence_number, primary_file_secondary_sequence_number)
+                            &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
                         );
                     }
                 }
@@ -163,7 +180,7 @@ impl Parser {
                 self.file_info.buffer[4..8].copy_from_slice(&new_sequence_number_bytes);
                 self.file_info.buffer[8..12].copy_from_slice(&new_sequence_number_bytes);
                 // Update the checksum
-                let new_checksum = RegHeaderBase::calculate_checksum(&self.file_info.buffer[..0x200]);
+                let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
                 self.file_info.buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
 
                 // read the header again
@@ -182,14 +199,15 @@ impl Parser {
         let mut input = &self.file_info.buffer[self.file_info.hbin_offset_absolute..];
         let mut file_offset_absolute = self.file_info.get_file_offset(input);
         while file_offset_absolute < hive_bins_size as usize {
-            let res = HiveBinHeader::from_bytes(&self.file_info, input)?;
-            input = res.0;
-            let hbin_size = res.1.size as usize;
+            let (local_input, hbin_header) = HiveBinHeader::from_bytes(&self.file_info, input)?;
+            input = local_input;
+            let hbin_size = hbin_header.size as usize;
             let hbin_max = file_offset_absolute + hbin_size;
             file_offset_absolute = self.file_info.get_file_offset(input);
             while file_offset_absolute < hbin_max {
-                let (input2, size) = le_i32(input)?;
-                let cell_type = TrackCell::read_cell_type(input2);
+                let (local_input, size) = le_i32(input)?;
+                input = local_input;
+                let cell_type = TrackCell::read_cell_type(input);
                 let size_abs = size.abs() as u32;
                 input = &self.file_info.buffer[file_offset_absolute + size_abs as usize..];
                 self.state.track_cells.push(
@@ -220,6 +238,19 @@ impl Parser {
         (keys, values)
     }
 
+    pub fn get_sub_key(
+        &mut self,
+        cell_key_node: &mut CellKeyNode,
+        name: &str,
+    ) -> Result<Option<CellKeyNode>, Error> {
+        let key_path_sans_root = &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
+        let filter = Filter::from_path(FindPath::from_key(&(key_path_sans_root.to_string() + "\\" + name), false));
+        cell_key_node
+            .read_sub_keys(&self.file_info, &mut self.state, &filter, true)?
+            .get(0)
+            .map_or_else(|| Ok(None), |k| Ok(Some(k.clone())))
+    }
+
     pub(crate) fn get_file_info(&self) -> &FileInfo {
         &self.file_info
     }
@@ -242,7 +273,7 @@ impl Iterator for Parser {
 
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
-                match node.read_sub_keys(&self.file_info, &mut self.state, &self.filter) {
+                match node.read_sub_keys(&self.file_info, &mut self.state, &self.filter, false) {
                     Ok(children) => self.stack_to_traverse.extend(children),
                     Err(e) => self.state.info.add(LogCode::WarningIterator, &format!("Error reading sub keys for {}: {}", node.path, e))
                 }
@@ -361,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let filter = Filter::from_path(FindPath::from_key(&r"Software\Microsoft\Office\14.0\Common".to_string()));
+        let filter = Filter::from_path(FindPath::from_key(&r"Software\Microsoft\Office\14.0\Common".to_string(), true));
         let mut parser = Parser::from_path_with_filter("test_data/NTUSER.DAT", None, Some(filter)).unwrap();
         let (keys, values) = parser.count_all_keys_and_values();
         assert_eq!(
@@ -370,7 +401,7 @@ mod tests {
             "key and/or value count doesn't match expected"
         );
 
-        let filter = Filter::from_path(FindPath::from_key(&r"Software\Microsoft\Office\14.0\Common".to_string()));
+        let filter = Filter::from_path(FindPath::from_key(&r"Software\Microsoft\Office\14.0\Common".to_string(), true));
         let parser = Parser::from_path_with_filter("test_data/NTUSER.DAT", None, Some(filter)).unwrap();
         let mut md5_context =  md5::Context::new();
         for key in parser {
@@ -381,6 +412,19 @@ mod tests {
            format!("{:x}", md5_context.compute()),
            "Expected hash of paths doesn't match"
         );
+    }
+
+    #[test]
+    fn test_get_sub_key() {
+        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility", false));
+        let mut parser = Parser::from_path_with_filter("test_data/NTUSER.DAT", None, Some(filter)).unwrap();
+        let mut key = parser.next().unwrap();
+        let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
+        assert_eq!("\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
+        assert_eq!(9, sub_key.sub_values.len());
+
+        let sub_key = parser.get_sub_key(&mut key, "Nope").unwrap();
+        assert_eq!(None, sub_key);
     }
 
     #[test]

@@ -19,11 +19,13 @@ def test_it_works(sample_mft):
         values = 0
 
         for key in parser.reg_keys():
+            print(key.path)
             keys += 1
             values += key.number_of_key_values
+            for value in key.values():
+                print("\t"+value.name)
         assert keys == 2288
         assert values == 5470
-        #assert key.path == "\\CMI-CreateHive{D43B12B8-09B5-40DB-B4F6-F6DFEB78DAEC}\\System\\CurrentControlSet\\Policies"
 
         #sample_record: PyMftEntry = next(parser.entries())
 

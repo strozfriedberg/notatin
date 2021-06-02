@@ -42,17 +42,35 @@ pub(crate) fn compute_hash(buffer: &[u8], len: u32, seed: u64) -> u64 {
 
 	let mut fin: u32 = 0x80;
 	if length == 3 {
-        fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos + 2 .. pos + 2 + size_of_u32]));
+        fin = (fin << 8) | buffer[pos + 2] as u32;
     }
 	else if length == 2 {
-        fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos + 1 .. pos + 1 + size_of_u32]));
+        fin = (fin << 8) | buffer[pos + 1] as u32;
     }
 	else if length == 1 {
-        fin = (fin << 8) | u32::from_le_bytes(slice_to_u32(&buffer[pos .. pos + size_of_u32]));
+        fin = (fin << 8) | buffer[pos] as u32;
     }
 
 	file_info = mix(file_info, fin);
 	file_info = mix(file_info, 0);
 	let (lo, hi) = file_info;
 	((hi as u64) << 32) | lo as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_marvin_hash() {
+		let mut empty = [0; 1003];
+		empty[1000] = 1;
+		empty[1001] = 2;
+		empty[1002] = 3;
+
+		assert_eq!(0x0C9A_656E_D61F_AC08, compute_hash(&empty, 1003, 12345));
+		assert_eq!(0xAE64_2DC7_796A_A02D, compute_hash(&empty, 1002, 12345));
+		assert_eq!(0x51AA_D4BF_1788_54C2, compute_hash(&empty, 1001, 12345));
+		assert_eq!(0x29EE_E938_063F_AEC6, compute_hash(&empty, 1000, 12345));
+    }
 }

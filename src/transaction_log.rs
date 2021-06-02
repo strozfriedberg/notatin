@@ -4,7 +4,7 @@ use nom::{
     number::complete::{le_u32, le_u64}
 };
 use serde::Serialize;
-use crate::reg_header::RegHeaderBase;
+use crate::base_block::BaseBlockBase;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::err::Error;
 use crate::util;
@@ -42,7 +42,7 @@ struct DirtyPage {
     pub page_bytes: Vec<u8>
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 struct LogEntry {
     /// The absolute offset of the hive bin, calculated at parse time
     pub file_offset_absolute: usize,
@@ -53,7 +53,7 @@ struct LogEntry {
     /// This number constitutes a possible value of the Primary sequence number and Secondary sequence number fields of the base block in memory after a current log entry is applied (these fields are not modified before the write operation on the recovered hive)
     pub sequence_number: u32,
     /// Copy of the Hive bins data size field of the base block at the time of creation of a current log entry
-    pub hive_bin_data_size: u32,
+    pub hive_bins_data_size: u32,
     /// Number of dirty pages attached to a current log entry
     pub dirty_pages_count: u32,
     pub hash1: u64,
@@ -76,7 +76,7 @@ impl LogEntry {
         let (input, size) = le_u32(input)?;
         let (input, flags) = le_u32(input)?;
         let (input, sequence_number) = le_u32(input)?;
-        let (input, hive_bin_data_size) = le_u32(input)?;
+        let (input, hive_bins_data_size) = le_u32(input)?;
         let (input, dirty_pages_count) = le_u32(input)?;
         let (input, hash1) = le_u64(input)?;
         let (input, hash2) = le_u64(input)?;
@@ -101,7 +101,7 @@ impl LogEntry {
             size,
             flags,
             sequence_number,
-            hive_bin_data_size,
+            hive_bins_data_size,
             dirty_pages_count,
             hash1,
             hash2,
@@ -116,7 +116,7 @@ impl LogEntry {
     }
 
     fn is_valid_hive_bin_data_size(&self) -> bool {
-        self.hive_bin_data_size % 4096 == 0
+        self.hive_bins_data_size % 4096 == 0
     }
 
     pub(crate) fn calc_hash1(raw_bytes: &[u8], len: usize) -> u64 {
@@ -140,32 +140,32 @@ impl LogEntry {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct TransactionLog {
-    pub reg_header: RegHeaderBase,
+    pub base_block: BaseBlockBase,
     log_entries: Vec<LogEntry>
 }
 
 impl TransactionLog {
     pub(crate) fn from_bytes(start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
-        let (input, reg_header) = RegHeaderBase::from_bytes(input)?;
+        let (input, base_block) = BaseBlockBase::from_bytes(input)?;
         let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(start_pos))(input)?;
         Ok((
             input,
             Self {
-                reg_header,
+                base_block,
                 log_entries
             }
         ))
     }
 
     /// Updates the primary registry with the dirty pages. Returns the last sequence number applied
-    pub(crate) fn update_bytes(&self, file_info: &mut FileInfo, info: &mut Logs) -> u32 {
+    pub(crate) fn update_bytes(&self, file_info: &mut FileInfo, info: &mut Logs, base_block_hive_bins_data_size: u32) -> u32 {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
             if log_entry.has_valid_hashes {
                 if !log_entry.is_valid_hive_bin_data_size() {
                     info.add(
                         LogCode::WarningTransactionLog,
-                        &format!("Stopping log entry processing; the hive_bin_data_size ({}) is not a multiple of 4096)", log_entry.hive_bin_data_size)
+                        &format!("Stopping log entry processing; the hive_bin_data_size ({}) is not a multiple of 4096)", log_entry.hive_bins_data_size)
                     );
                     break;
                 }
@@ -177,6 +177,9 @@ impl TransactionLog {
                     break;
                 }
                 else {
+                    if base_block_hive_bins_data_size < log_entry.hive_bins_data_size {
+                        file_info.buffer.resize(file_info.buffer.len() + (log_entry.hive_bins_data_size - base_block_hive_bins_data_size) as usize, 0);
+                    }
                     new_sequence_number = log_entry.sequence_number;
 
                     for dirty_page in &log_entry.dirty_pages {
@@ -190,8 +193,9 @@ impl TransactionLog {
             else {
                 info.add(
                     LogCode::WarningTransactionLog,
-                    &format!("Hash mismatch; skipping log entry with sequence number 0x{:08X}", log_entry.sequence_number)
+                    &format!("Stopping log entry processing; hash mismatch at log entry with sequence number 0x{:08X}", log_entry.sequence_number)
                 );
+                break;
             }
         }
         new_sequence_number
@@ -219,7 +223,8 @@ pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<Option<Vec
 mod tests {
     use super::*;
     use crate::file_info::FileInfo;
-    use crate::reg_header::{FileFormat, FileType};
+    use crate::base_block::{FileFormat, FileType};
+    use crate::log::{Log, LogCode};
 
     #[test]
     fn test_parse_transaction_log() {
@@ -229,7 +234,7 @@ mod tests {
 
         let mut unk2: Vec<u8> = [0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 0, 0, 0, 1, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 114, 109, 116, 109, 249, 73, 219, 43, 26, 227, 208, 1].to_vec();
         unk2.extend([0; 332].iter().copied());
-        let expected_header = RegHeaderBase {
+        let expected_header = BaseBlockBase {
             primary_sequence_number: 178,
             secondary_sequence_number: 178,
             last_modification_date_and_time: util::get_date_time_from_filetime(130216567421081762),
@@ -245,7 +250,7 @@ mod tests {
             checksum: 3430861351,
             logs: Logs::default()
         };
-        assert_eq!(expected_header, log.reg_header);
+        assert_eq!(expected_header, log.base_block);
         assert_eq!(8, log.log_entries.len());
         assert_eq!(2306048, log.log_entries[7].file_offset_absolute);
         assert_eq!(12288, log.log_entries[7].size);
@@ -254,6 +259,38 @@ mod tests {
 
     #[test]
     fn test_parse_log_entry() {
+        let mut log_entry = LogEntry::default();
+        log_entry.hive_bins_data_size = 8192;
+        assert_eq!(true, log_entry.is_valid_hive_bin_data_size());
+        log_entry.hive_bins_data_size = 1;
+        assert_eq!(false, log_entry.is_valid_hive_bin_data_size());
+
+        let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
+        file_info.hbin_offset_absolute = 4096;
+        let (_, mut log) = TransactionLog::from_bytes(file_info.start_pos, &file_info.buffer[0..]).unwrap();
+        log.log_entries[0].dirty_pages = Vec::new();
+        log.log_entries[0].sequence_number = 1;
+        log.log_entries[1].dirty_pages = Vec::new();
+        log.log_entries[1].sequence_number = 3;
+
+        let mut warning_logs = Logs::default();
+        let last_sequence_num = log.update_bytes(&mut file_info, &mut warning_logs, 0);
+        assert_eq!(1, last_sequence_num);
+        let mut expected_warning_logs = Logs::default();
+        expected_warning_logs.add(LogCode::WarningTransactionLog, &"Stopping log entry processing; the sequence number (3) does not follow the previous log entry's sequence number (1)");
+        assert_eq!(expected_warning_logs, warning_logs);
+
+        log.log_entries[0].has_valid_hashes = false;
+        let mut warning_logs = Logs::default();
+        let last_sequence_num = log.update_bytes(&mut file_info, &mut warning_logs, 0);
+        assert_eq!(0, last_sequence_num);
+        let mut expected_warning_logs = Logs::default();
+        expected_warning_logs.add(LogCode::WarningTransactionLog, &"Stopping log entry processing; hash mismatch at log entry with sequence number 0x00000001");
+        assert_eq!(expected_warning_logs, warning_logs);
+    }
+
+    #[test]
+    fn test_update_bytes() {
         let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
         file_info.hbin_offset_absolute = 4096;
         let (_, log_entry) = LogEntry::from_bytes_internal(file_info.start_pos, &file_info.buffer[512..]).unwrap();
@@ -261,7 +298,7 @@ mod tests {
         assert_eq!(515584, log_entry.size);
         assert_eq!(0, log_entry.flags);
         assert_eq!(178, log_entry.sequence_number);
-        assert_eq!(7155712, log_entry.hive_bin_data_size);
+        assert_eq!(7155712, log_entry.hive_bins_data_size);
         assert_eq!(69, log_entry.dirty_pages_count);
         assert_eq!(9787668550818779155, log_entry.hash1);
         assert_eq!(7274014407108881154, log_entry.hash2);

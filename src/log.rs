@@ -49,6 +49,7 @@ pub enum LogCode {
     WarningUnrecognizedBitflag,
     WarningTransactionLog,
     WarningIterator,
+    WarningBaseBlock,
     Info
 }
 

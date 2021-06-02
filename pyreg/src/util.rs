@@ -13,6 +13,12 @@ pub enum FileOrFileLike {
     FileLike(PyFileLikeObject),
 }
 
+#[derive(Debug)]
+pub enum Output {
+    Python,
+    //JSONL,
+}
+
 impl FileOrFileLike {
     pub fn from_pyobject(path_or_file_like: PyObject) -> PyResult<FileOrFileLike> {
         let gil = Python::acquire_gil();
