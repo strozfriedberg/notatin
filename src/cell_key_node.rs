@@ -308,7 +308,7 @@ impl CellKeyNode {
     pub fn get_value(&self, find_value_name: &str) -> Option<CellKeyValue> {
         let find_value_name = find_value_name.to_ascii_lowercase();
         let val = self.sub_values.iter().find(|v| v.value_name.to_ascii_lowercase() == find_value_name);
-        val.map(|v| v.clone())
+        val.cloned()
     }
 }
 

@@ -10,7 +10,7 @@ use crate::file_info::{FileInfo, ReadSeek};
 use crate::state::State;
 use crate::track_cell::TrackCell;
 use crate::log::LogCode;
-use crate::transaction_log;
+use crate::transaction_log::{TransactionLog};
 use crate::filter::{Filter, FindPath};
 
 /* Structures based upon:
@@ -70,7 +70,7 @@ impl Parser {
     fn from_file_info<T: ReadSeek>(file_info: FileInfo, transaction_logs: Option<Vec<T>>, filter: Option<Filter>, recover_deleted: bool) -> Result<Self, Error> {
         let mut parser = Parser {
             file_info,
-            state: State::from_transaction_logs(transaction_log::parse(transaction_logs)?, recover_deleted),
+            state: State::from_transaction_logs(TransactionLog::parse(transaction_logs)?, recover_deleted),
             filter: filter.unwrap_or_default(),
             stack_to_traverse: Vec::new(),
             stack_to_return: Vec::new(),
@@ -83,11 +83,14 @@ impl Parser {
 
     fn init(&mut self, recover_deleted: bool) -> Result<(), Error> {
         self.init_base_block()?;
-        if recover_deleted {
-            self.init_recover_deleted()?;
+        let (is_supported_format, has_bad_checksum) = self.check_base_block();
+        if is_supported_format {
+            self.check_file_recovery(has_bad_checksum)?;
+            if recover_deleted {
+                self.init_recover_deleted()?;
+            }
+            self.init_root()?;
         }
-        self.apply_transaction_logs()?;
-        self.init_root()?;
         Ok(())
     }
 
@@ -126,70 +129,98 @@ impl Parser {
         Ok(())
     }
 
-    /*fn check_base_block(&mut self) -> Result<bool, Error> {
+    /// Checks if the base block is a supported format. Returns a tuple of (is_supported_format, has_bad_checksum)
+    fn check_base_block(&mut self) -> (bool, bool) {
         if self.is_supported_file_type() {
-            let base_block = self.base_block.as_ref().expect("Shouldn't be here unless we've parsed the base block").base;
+            let mut has_bad_checksum = false;
+            let base_block = &self.base_block.as_ref().expect("Shouldn't be here unless we've parsed the base block").base;
             if base_block.primary_sequence_number != base_block.secondary_sequence_number {
-                self.state.info.add(LogCode::WarningBaseBlock, &"Hive requires recovery: primary and secondary sequence numbers do not match.");
+                self.state.info.add(
+                    LogCode::WarningBaseBlock,
+                    &format!("Hive requires recovery: primary and secondary sequence numbers do not match. {}, {}",
+                        base_block.primary_sequence_number,
+                        base_block.secondary_sequence_number
+                    )
+                );
             }
+            let checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
+            if checksum != base_block.checksum {
+                self.state.info.add(LogCode::WarningBaseBlock, &"Hive requires recovery: base block checksum is wrong.");
+                has_bad_checksum = true;
+            }
+            return (true, has_bad_checksum);
         }
         else {
+            self.state.info.add(LogCode::WarningBaseBlock, &"Unsupported registry file type.");
         }
-        Ok(false)
+        (false, false)
     }
 
     fn is_supported_file_type(&self) -> bool {
-        self.base_block.expect("Shouldn't be here unless we've parsed the base block").base.file_type != FileType::Unknown
-    }*/
+        self.base_block.as_ref().expect("Shouldn't be here unless we've parsed the base block").base.file_type != FileType::Unknown
+    }
 
-    pub(crate) fn apply_transaction_logs(&mut self) -> Result<(), Error> {
+    // code review: I would like to break this method up, but each time I tried to do it I ran into multiple mut refs to self or othet borrow checker issues
+    fn check_file_recovery(&mut self, has_bad_checksum: bool) -> Result<(), Error> {
         if let Some(logs) = &mut self.state.transaction_logs {
             let primary_base_block = &self.base_block.as_ref().expect("Shouldn't be here unless we have a base block").base;
-            if primary_base_block.primary_sequence_number == primary_base_block.secondary_sequence_number {
-                self.state.info.add(LogCode::WarningTransactionLog, &"Skipping transaction logs because the primary file's primary_sequence_number matches the secondary_sequence_number");
-            }
-            else {
-                // put the logs in order of oldest (lowest sequence number) first
-                logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number));
 
-                let primary_file_secondary_sequence_number = primary_base_block.secondary_sequence_number;
-                let mut new_sequence_number = 0;
-                for log in logs {
-                    if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
-                        if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
-                            new_sequence_number = log.update_bytes(&mut self.file_info, &mut self.state.info, primary_base_block.hive_bins_data_size);
-                        }
-                        else {
-                            self.state.info.add(
-                                LogCode::WarningTransactionLog,
-                                &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
-                            );
-                        }
+            if has_bad_checksum {
+                logs.sort_by(|a, b| b.base_block.primary_sequence_number.cmp(&a.base_block.primary_sequence_number));
+                self.state.info.add(LogCode::WarningBaseBlock, &"Applying recovered base block");
+                let newest_log = logs.first().expect("shouldn't be here unless we have logs");
+                self.file_info.buffer[..512].copy_from_slice(&newest_log.base_block_bytes);
+                /* Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
+                    "If a primary file contains an invalid base block, only the transaction log file with latest log entries is used in the recovery."
+                */
+                logs.truncate(1);
+            }
+            else if primary_base_block.primary_sequence_number == primary_base_block.secondary_sequence_number {
+                self.state.info.add(LogCode::WarningTransactionLog, &"Skipping transaction logs because the primary file's primary_sequence_number matches the secondary_sequence_number");
+                return Ok(());
+            }
+
+            // put the logs in order of oldest (lowest sequence number) first
+            logs.sort_by(|a, b| a.base_block.primary_sequence_number.cmp(&b.base_block.primary_sequence_number));
+            let primary_file_secondary_sequence_number = primary_base_block.secondary_sequence_number;
+            let mut new_sequence_number = 0;
+            for log in logs {
+                if log.base_block.primary_sequence_number >= primary_file_secondary_sequence_number {
+                    if new_sequence_number == 0 || (log.base_block.primary_sequence_number == new_sequence_number + 1) {
+                        new_sequence_number = log.update_bytes(&mut self.file_info, &mut self.state.info, primary_base_block.hive_bins_data_size);
                     }
                     else {
                         self.state.info.add(
                             LogCode::WarningTransactionLog,
-                            &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
+                            &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
                         );
                     }
                 }
-
-                // Update primary file header
-                // Update sequence numbers with latest available
-                let new_sequence_number_bytes = new_sequence_number.to_le_bytes();
-                self.file_info.buffer[4..8].copy_from_slice(&new_sequence_number_bytes);
-                self.file_info.buffer[8..12].copy_from_slice(&new_sequence_number_bytes);
-                // Update the checksum
-                let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
-                self.file_info.buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
-
-                // read the header again
-                self.init_base_block()?;
-                self.state.info.add(
-                    LogCode::Info,
-                    &format!("Applied transaction log(s). Sequence numbers have been updated to 0x{:08X}. New Checksum: 0x{:08X}", new_sequence_number, new_checksum)
-                );
+                else {
+                    self.state.info.add(
+                        LogCode::WarningTransactionLog,
+                        &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_sequence_number)
+                    );
+                }
             }
+
+            // Update primary file header
+            // Update sequence numbers with latest available
+            const PRIMARY_SEQUENCE_NUMBER_OFFSET: usize = 4;
+            const SECONDARY_SEQUENCE_NUMBER_OFFSET: usize = 8;
+            let new_sequence_number_bytes = new_sequence_number.to_le_bytes();
+            self.file_info.buffer[PRIMARY_SEQUENCE_NUMBER_OFFSET..PRIMARY_SEQUENCE_NUMBER_OFFSET + new_sequence_number_bytes.len()].copy_from_slice(&new_sequence_number_bytes);
+            self.file_info.buffer[SECONDARY_SEQUENCE_NUMBER_OFFSET..SECONDARY_SEQUENCE_NUMBER_OFFSET + new_sequence_number_bytes.len()].copy_from_slice(&new_sequence_number_bytes);
+            // Update the checksum
+            let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
+            self.file_info.buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
+
+            // read the header again
+            self.init_base_block()?;
+            self.state.info.add(
+                LogCode::Info,
+                &format!("Applied transaction log(s). Sequence numbers have been updated to {}. New Checksum: 0x{:08X}", new_sequence_number, new_checksum)
+            );
         }
         Ok(())
     }
@@ -348,11 +379,35 @@ mod tests {
     }
 
     #[test]
-    fn test_read_reg_with_logs() {
+    fn dump_read_reg_with_logs() {
+       {
+            let write_file = File::create("SYSTEM_bad_checksum_with_logs.jsonl").unwrap();
+            let mut writer = BufWriter::new(&write_file);
+            let parser = Parser::from_path("test_data/SYSTEM_bad_checksum", Some(vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]), true).unwrap();
+            for key in parser {
+                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
+            }
+        } /*
         {
             let write_file = File::create("SYSTEM_with_logs.jsonl").unwrap();
             let mut writer = BufWriter::new(&write_file);
             let parser = Parser::from_path("test_data/SYSTEM", Some(vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]), true).unwrap();
+            for key in parser {
+                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
+            }
+        }
+        {
+            let write_file = File::create("SYSTEM_with_log1.jsonl").unwrap();
+            let mut writer = BufWriter::new(&write_file);
+            let parser = Parser::from_path("test_data/SYSTEM", Some(vec!["test_data/SYSTEM.LOG1"]), true).unwrap();
+            for key in parser {
+                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
+            }
+        }
+        {
+            let write_file = File::create("SYSTEM_with_log2.jsonl").unwrap();
+            let mut writer = BufWriter::new(&write_file);
+            let parser = Parser::from_path("test_data/SYSTEM", Some(vec!["test_data/SYSTEM.LOG2"]), true).unwrap();
             for key in parser {
                 writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
             }
@@ -364,7 +419,7 @@ mod tests {
             for key in parser {
                 writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
             }
-        }
+        }*/
     }
 
     #[test]

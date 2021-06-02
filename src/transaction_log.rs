@@ -141,17 +141,20 @@ impl LogEntry {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct TransactionLog {
     pub base_block: BaseBlockBase,
+    pub(crate) base_block_bytes: Vec<u8>,
     log_entries: Vec<LogEntry>
 }
 
 impl TransactionLog {
     pub(crate) fn from_bytes(start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
+        let start = input;
         let (input, base_block) = BaseBlockBase::from_bytes(input)?;
         let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(start_pos))(input)?;
         Ok((
             input,
             Self {
                 base_block,
+                base_block_bytes: start[..512].to_vec(),
                 log_entries
             }
         ))
@@ -200,22 +203,22 @@ impl TransactionLog {
         }
         new_sequence_number
     }
-}
 
-pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<Option<Vec<TransactionLog>>, Error> {
-    if let Some(log_files) = log_files {
-        let mut transaction_logs = Vec::new();
-        for mut log_file in log_files {
-            let mut file_buffer_log = Vec::new();
-            log_file.read_to_end(&mut file_buffer_log)?;
-            let slice_log = &file_buffer_log[0..];
-            let (_, log) = TransactionLog::from_bytes(slice_log.as_ptr() as usize, slice_log)?;
-            transaction_logs.push(log);
+    pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<Option<Vec<Self>>, Error> {
+        if let Some(log_files) = log_files {
+            let mut transaction_logs = Vec::new();
+            for mut log_file in log_files {
+                let mut file_buffer_log = Vec::new();
+                log_file.read_to_end(&mut file_buffer_log)?;
+                let slice_log = &file_buffer_log[0..];
+                let (_, log) = Self::from_bytes(slice_log.as_ptr() as usize, slice_log)?;
+                transaction_logs.push(log);
+            }
+            Ok(Some(transaction_logs))
         }
-        Ok(Some(transaction_logs))
-    }
-    else {
-        Ok(None)
+        else {
+            Ok(None)
+        }
     }
 }
 
