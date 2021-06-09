@@ -42,6 +42,13 @@ impl Filter {
         state: &mut State,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
+        if cell.is_key_root() {
+            if let Some(find_path) = &self.find_path {
+                if !find_path.key_path_has_root {
+                    return Ok(FilterFlags::FILTER_ITERATE_KEYS);
+                }
+            }
+        }
         match cell.lowercase() {
             Some(cell_lowercase) => {
                 if cell.is_key() {
@@ -100,22 +107,24 @@ impl Filter {
 pub struct FindPath {
     key_path: String,
     value: Option<String>,
+    key_path_has_root: bool,
     children: bool
 }
 
 impl FindPath {
-    pub fn from_key(key_path: &str, children: bool) -> FindPath {
-        FindPath::from_key_value_internal(key_path, None, children)
+    pub fn from_key(key_path: &str, key_path_has_root: bool, children: bool) -> FindPath {
+        FindPath::from_key_value_internal(key_path, None, key_path_has_root, children)
     }
 
-    pub fn from_key_value(key_path: &str, value: &str) -> FindPath {
-        FindPath::from_key_value_internal(key_path, Some(value.to_string()), false)
+    pub fn from_key_value(key_path: &str, value: &str, key_path_has_root: bool) -> FindPath {
+        FindPath::from_key_value_internal(key_path, Some(value.to_string()), key_path_has_root, false)
     }
 
-    fn from_key_value_internal(key_path: &str, value: Option<String>, children: bool)-> FindPath {
+    fn from_key_value_internal(key_path: &str, value: Option<String>, key_path_has_root: bool, children: bool)-> FindPath {
         FindPath {
             key_path: key_path.to_ascii_lowercase(),
             value: value.map(|v| v.to_ascii_lowercase()),
+            key_path_has_root,
             children
         }
     }
@@ -123,8 +132,11 @@ impl FindPath {
     fn check_key_match(
         &self,
         key_name: &str,
-        root_key_name_offset: usize
+        mut root_key_name_offset: usize
     ) -> FilterFlags {
+        if self.key_path_has_root {
+            root_key_name_offset = 0;
+        }
         let key_path_iterator = key_name[root_key_name_offset..].split('\\'); // key path can be shorter and match
         let mut filter_iterator = self.key_path.split('\\');
         let mut filter_path_segment = filter_iterator.next();
@@ -175,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_find_path_build() {
-        let find_path = FindPath::from_key_value("First segment\\secondSEGMENT", "valueName");
+        let find_path = FindPath::from_key_value("First segment\\secondSEGMENT", "valueName", false);
         assert_eq!(find_path.key_path, String::from("first segment\\secondsegment"));
         assert_eq!(find_path.value, Some(String::from("valuename")));
     }
@@ -183,7 +195,7 @@ mod tests {
     #[test]
     fn test_check_cell_match_key() {
         let mut state = State::default();
-        let filter = Filter::from_path(FindPath::from_key_value("HighContrast", "Flags"));
+        let filter = Filter::from_path(FindPath::from_key_value("HighContrast", "Flags", false));
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
             ..Default::default()
@@ -206,7 +218,7 @@ mod tests {
     #[test]
     fn test_check_cell_match_value() {
         let mut state = State::default();
-        let filter = Filter::from_path(FindPath::from_key_value("", "Flags"));
+        let filter = Filter::from_path(FindPath::from_key_value("", "Flags", false));
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
                 file_offset_absolute: 0,
@@ -215,6 +227,7 @@ mod tests {
                 data_size: 8,
                 data_offset_relative: 1928,
                 data_type_raw: 0,
+                flags_raw: 0,
                 padding: 1280,
                 value_bytes: None,
                 slack: vec![]
@@ -223,7 +236,11 @@ mod tests {
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
             data_offsets_absolute: Vec::new(),
-            logs: Logs::default()
+            logs: Logs::default(),
+            versions: Vec::new(),
+            hash: None,
+            sequence_num: None,
+            updated_by_sequence_num: None
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),

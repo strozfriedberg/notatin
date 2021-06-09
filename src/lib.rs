@@ -1,4 +1,5 @@
 extern crate bitflags;
+extern crate blake3;
 extern crate chrono;
 extern crate enum_primitive_derive;
 extern crate md5;
@@ -31,4 +32,4 @@ pub mod track_cell;
 pub mod transaction_log;
 pub(crate) mod macros;
 pub(crate) mod tests;
-pub(crate) mod util;
+pub mod util;

@@ -2,8 +2,15 @@ use core::fmt::Debug;
 
 pub trait Cell {
     fn size(&self) -> u32;
-    fn lowercase(&self) -> Option<String>;
-    fn is_key(&self) -> bool;
+    fn lowercase(&self) -> Option<String>{
+        None
+    }
+    fn is_key(&self) -> bool {
+        false
+    }
+    fn is_key_root(&self) -> bool {
+        false
+    }
 }
 
 impl Debug for dyn Cell {

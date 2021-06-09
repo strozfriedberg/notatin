@@ -15,7 +15,7 @@ pub struct SubKeyListLh {
 }
 
 impl SubKeyListLh {
-    /// Uses nom to parse an lf sub key list (lf) hive bin cell.
+    /// Uses nom to parse an lh sub key list (lh) hive bin cell.
     fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("lh")(input)?;

@@ -100,7 +100,7 @@ pub(crate) fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
 }
 
 /// Converts a DateTime<Utc> to ISO-8601/RFC-3339 format `%Y-%m-%dT%H:%M:%S%.7f` (manually, since Rust doesn't support `%.7f`)
-pub(crate) fn format_date_time(date_time: DateTime<Utc>) -> String {
+pub fn format_date_time(date_time: DateTime<Utc>) -> String {
     let fractional_seconds = date_time.format("%9f").to_string();
     const EXPECTED_FRACTIONAL_SECONDS_LEN: usize = 9;
     if EXPECTED_FRACTIONAL_SECONDS_LEN == fractional_seconds.len() {
@@ -141,6 +141,7 @@ pub(crate) fn to_hex_string(bytes: &[u8]) -> String {
     s.trim_end().to_string()
 }
 
+#[allow(dead_code)]
 pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> Result<(), Error> {
     /* ## Registry common export format
     ## Key format
@@ -165,7 +166,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     let mut writer = BufWriter::new(output);
     let mut keys = 0;
     let mut values = 0;
-    for key in parser {
+    for key in parser.iter() {
         keys += 1;
         writeln!(
             &mut writer,

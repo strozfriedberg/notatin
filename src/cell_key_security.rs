@@ -72,14 +72,6 @@ impl hive_bin_cell::Cell for CellKeySecurity {
     fn size(&self) -> u32 {
         self.detail.size
     }
-
-    fn lowercase(&self) -> Option<String> {
-        None
-    }
-
-    fn is_key(&self) -> bool {
-        false
-    }
 }
 
 pub(crate) fn read_cell_key_security(

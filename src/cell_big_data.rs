@@ -54,7 +54,7 @@ impl CellBigData {
         file_info: &FileInfo,
         state: &mut State,
         offset: usize,
-        data_type: CellKeyValueDataTypes,
+        data_type: &CellKeyValueDataTypes,
         data_size: u32
     ) -> Result<(Vec<u8>, Vec<usize>), Error> {
         let (_, (hive_bin_cell_big_data, offset_ptr)) = CellBigData::from_bytes(&file_info.buffer[offset..])?;
@@ -105,14 +105,6 @@ impl CellBigData {
 impl hive_bin_cell::Cell for CellBigData {
     fn size(&self) -> u32 {
         self.size
-    }
-
-    fn lowercase(&self) -> Option<String> {
-        None
-    }
-
-    fn is_key(&self) -> bool {
-        false
     }
 }
 
