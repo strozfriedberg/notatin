@@ -15,8 +15,7 @@ pub enum FileOrFileLike {
 
 #[derive(Debug)]
 pub enum Output {
-    Python,
-    //JSONL,
+    Python
 }
 
 impl FileOrFileLike {
@@ -92,16 +91,32 @@ pub fn init_logging(py: Python) -> Result<(), SetLoggerError> {
     Ok(())
 }
 
+fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
+    let nanos_e7 = nanos % 1000 / 100;
+    let nanos_e6 = nanos % 10000 / 1000;
+    let mut micros = (nanos / 10000 * 10);
+    if nanos_e7 < 5 {
+        micros += nanos_e6;
+    }
+    else if nanos_e7 > 5{
+        micros += nanos_e6 + 1;
+    }
+    else {
+        let m = ((nanos % 10000 / 1000) % 2);
+        micros += nanos_e6 + ((nanos % 10000 / 1000) % 2);
+    }
+    return micros
+}
+
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let gil = Python::acquire_gil();
     let py = gil.python();
 
-    let utc = get_utc().ok();
+    /*let utc = get_utc().ok();
 
     if utc.is_none() {
         warn!("UTC module not found, falling back to naive timezone objects")
-    }
-
+    }*/
     PyDateTime::new(
         py,
         date.year(),
@@ -110,9 +125,10 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
         date.hour() as u8,
         date.minute() as u8,
         date.second() as u8,
-        date.timestamp_subsec_micros(),
+        nanos_to_micros_round_half_even(date.timestamp_subsec_nanos()),
+        //date.timestamp_subsec_nanos()/10,
         // Fallback to naive timestamps (None) if for some reason `datetime.timezone.utc` is not present.
-        utc.as_ref(),
+        None//utc.as_ref(),
     )
     .map(|dt| dt.to_object(py))
 }

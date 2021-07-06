@@ -58,7 +58,7 @@ impl SubKeyListRi {
     ) -> Result<Vec<u32>, Error> {
         let mut list: Vec<u32> = Vec::new();
         for item in self.items.iter() {
-            let mut sub_list = CellKeyNode::parse_sub_key_list(file_info, state, 0, item.sub_key_list_offset_relative)?;
+            let mut sub_list = CellKeyNode::parse_sub_key_list(file_info, state, item.sub_key_list_offset_relative)?;
             list.append(&mut sub_list);
         }
         Ok(list)

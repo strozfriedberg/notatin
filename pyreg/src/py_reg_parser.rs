@@ -2,7 +2,7 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::fs::File;
 use notatin::{
     parser::Parser,
-    filter::Filter,
+    filter::{Filter, FindPath},
     cell_key_node::CellKeyNode
 };
 use pyo3::prelude::*;
@@ -11,7 +11,7 @@ use pyo3::{PyIterProtocol};
 use crate::util::{FileOrFileLike, Output, init_logging};
 use crate::err::PyRegError;
 use crate::py_reg_key::PyRegKey;
-//pub use reg_key::PyRegKey;
+use crate::py_reg_value::PyRegValue;
 
 pub trait ReadSeek: Read + Seek {
     fn tell(&mut self) -> io::Result<u64> {
@@ -21,15 +21,14 @@ pub trait ReadSeek: Read + Seek {
 
 impl<T: Read + Seek> ReadSeek for T {}
 
-#[pyclass]
+#[pyclass(subclass)]
 /// PyRegParser(self, path_or_file_like, /)
 /// --
 ///
 /// Returns an instance of the parser.
 /// Works on both a path (string), or a file-like object.
 pub struct PyRegParser {
-    //inner: Option<Registry>
-    inner: Option<Parser>
+    pub inner: Option<Parser>
 }
 
 #[pymethods]
@@ -48,7 +47,7 @@ impl PyRegParser {
             FileOrFileLike::FileLike(f) => Box::new(f) as Box<dyn ReadSeek + Send>,
         };
 
-        let parser = Parser::from_read_seek(boxed_read_seek, None, false).map_err(PyRegError)?;
+        let parser = Parser::from_read_seek(boxed_read_seek, None, None, false).map_err(PyRegError)?;
         Ok(PyRegParser {
             inner: Some(parser),
         })
@@ -59,24 +58,101 @@ impl PyRegParser {
     ///
     /// Returns an iterator that yields reg keys as python objects.
     fn reg_keys(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
-        self.reg_keys_iterator(Output::Python)
+        self.reg_keys_iterator()
     }
 
-    /// reg_keys_jsonl(self, /)
+    fn open(
+        &mut self,
+        path: &str
+    ) -> PyResult<Option<Py<PyRegKey>>> {
+        match &mut self.inner {
+            Some(parser) => {
+                match parser.get_key(path, false) {
+                    Ok(key) => {
+                        if let Some(key) = key {
+                            let gil = Python::acquire_gil();
+                            let py = gil.python();
+                            let ret = PyRegKey::from_cell_key_node(py, key);
+                            if let Ok(py_reg_key) = ret {
+                                return Ok(Some(py_reg_key));
+                            }
+                        }
+                    },
+                    Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(
+                        e.to_string(),
+                    ))
+                }
+            },
+            _ => return Ok(None)
+        }
+        Ok(None)
+    }
+
+    /// root(self, /)
     /// --
     ///
-    /// Returns an iterator that yields reg keys as JSON.
-    fn reg_keys_jsonl(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
-        //self.reg_keys_iterator(Output::JSONL)
-        self.reg_keys_iterator(Output::Python)
+    /// Returns the root PyRegKey
+    fn root(&mut self) -> PyResult<Option<Py<PyRegKey>>> {
+        match &mut self.inner {
+            Some(parser) => {
+                match parser.get_root_key() {
+                    Ok(key) => {
+                        if let Some(key) = key {
+                            let gil = Python::acquire_gil();
+                            let py = gil.python();
+                            let ret = PyRegKey::from_cell_key_node(py, key);
+                            if let Ok(py_reg_key) = ret {
+                                return Ok(Some(py_reg_key));
+                            }
+                        }
+                    },
+                    Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(
+                        e.to_string(),
+                    ))
+                }
+            },
+            _ => return Ok(None)
+        }
+        Ok(None)
+    }
+
+    /// parent(self, /)
+    /// --
+    ///
+    /// Returns the parent PyRegKey for the `key` parameter
+    fn get_parent(
+        &mut self,
+        key: &mut PyRegKey
+    ) -> PyResult<Option<Py<PyRegKey>>> {
+        match &mut self.inner {
+            Some(parser) => {
+                match parser.get_parent_key(&mut key.inner) {
+                    Ok(key) => {
+                        if let Some(key) = key {
+                            let gil = Python::acquire_gil();
+                            let py = gil.python();
+                            let ret = PyRegKey::from_cell_key_node(py, key);
+                            if let Ok(py_reg_key) = ret {
+                                return Ok(Some(py_reg_key));
+                            }
+                        }
+                    },
+                    Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(
+                        e.to_string(),
+                    ))
+                }
+            },
+            _ => return Ok(None)
+        }
+        Ok(None)
     }
 }
 
 impl PyRegParser {
-    fn reg_keys_iterator(&mut self, output_format: Output) -> PyResult<Py<PyRegKeysIterator>> {
+    fn reg_keys_iterator(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let inner = match self.inner.take() {
+        let mut inner = match self.inner.take() {
             Some(inner) => inner,
             None => {
                 return Err(PyErr::new::<PyRuntimeError, _>(
@@ -84,12 +160,12 @@ impl PyRegParser {
                 ));
             }
         };
+        inner.init_key_iter();
 
         Py::new(
             py,
             PyRegKeysIterator {
-                inner: inner,
-                output_format,
+                inner
             },
         )
     }
@@ -97,19 +173,17 @@ impl PyRegParser {
 
 #[pyclass]
 pub struct PyRegKeysIterator {
-    inner: Parser,
-    output_format: Output,
+    inner: Parser
 }
 
 impl PyRegKeysIterator {
-    fn reg_key_to_pyobject(
-        &mut self,
+    pub(crate) fn reg_key_to_pyobject(
         reg_key_result: Result<CellKeyNode, PyRegError>,
         py: Python,
     ) -> PyObject {
         match reg_key_result {
             Ok(reg_key) => {
-                match PyRegKey::from_cell_key_node(py, reg_key, &mut self.inner)
+                match PyRegKey::from_cell_key_node(py, reg_key)
                     .map(|entry| entry.to_object(py))
                 {
                     Ok(py_reg_key) => py_reg_key,
@@ -123,33 +197,12 @@ impl PyRegKeysIterator {
         }
     }
 
-   /* fn reg_key_to_json(
-        &mut self,
-        entry_result: Result<CellKeyNode, PyRegError>,
-        py: Python,
-    ) -> PyObject {
-        match entry_result {
-            Ok(entry) => match serde_json::to_string(&entry) {
-                Ok(s) => PyString::new(py, &s).to_object(py),
-                Err(_e) => PyErr::new::<RuntimeError, _>("JSON Serialization failed").to_object(py),
-            },
-            Err(e) => PyErr::from(e).to_object(py),
-        }
-    }*/
-
     fn next(&mut self) -> PyResult<Option<PyObject>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-
-        let obj = match self.inner.next() {
+        let obj = match self.inner.next_key() {
             Some(key) => {
-                let ret = match self.output_format {
-                    Output::Python => self.reg_key_to_pyobject(Ok(key), py),
-                   // Output::JSONL => { return PyErr{ state: std::cell::UnsafeCell::new(Some(PyErrState::"not supported yet")) }; }//self.entry_to_json(Ok(entry), py),
-                   /* Output::CSV => self.entry_to_csv(Ok(entry), py),*/
-                };
-
-                Ok(Some(ret))
+                Ok(Some(Self::reg_key_to_pyobject(Ok(key), py)))
             }
             None => Ok(None)
         };
@@ -177,30 +230,14 @@ impl PyIterProtocol for PyRegKeysIterator {
     }
 }
 
-// Don't use double quotes ("") inside this docstring, this will crash pyo3.
-/// Parses an mft file.
+/// Parses a windows registry file.
 #[pymodule]
-fn pyreg(py: Python, m: &PyModule) -> PyResult<()> {
+fn asdf_notatin(py: Python, m: &PyModule) -> PyResult<()> {
     init_logging(py).ok();
 
     m.add_class::<PyRegParser>()?;
     m.add_class::<PyRegKey>()?;
-
-   /* // Entry
-    m.add_class::<PyMftEntriesIterator>()?;
-    m.add_class::<PyMftEntry>()?;
-
-    // Attributes
-    m.add_class::<PyMftAttribute>()?;
-    m.add_class::<PyMftAttributesIter>()?;
-    m.add_class::<PyMftAttributeX10>()?;
-    m.add_class::<PyMftAttributeX20>()?;
-    m.add_class::<PyMftAttributeX30>()?;
-    m.add_class::<PyMftAttributeX40>()?;
-    m.add_class::<PyMftAttributeX80>()?;
-    m.add_class::<PyMftAttributeX90>()?;
-    m.add_class::<PyMftAttributeNonResident>()?;
-    m.add_class::<PyMftAttributeOther>()?;*/
+    m.add_class::<PyRegValue>()?;
 
     Ok(())
 }

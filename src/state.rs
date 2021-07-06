@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use blake3::{Hash, Hasher};
-use crate::file_info::FileInfo;
 use crate::cell_key_node::CellKeyNode;
 use crate::cell_key_value::CellKeyValue;
 use crate::transaction_log::TransactionLog;
-use crate::log::{LogCode, Logs};
-use crate::track_cell::{TrackHbin, TrackCell, TrackCellFlags};
+use crate::log::Logs;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ModifiedValueMap {
@@ -33,8 +31,7 @@ impl ModifiedValueMap {
     pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
         let key_value_name = &(key_path.to_string(), value_name.to_string());
         if let Some(values) = self.map.get_mut(key_value_name) {
-            let mut index = 0;
-            for value in values.iter() {
+            for (index, value) in values.iter().enumerate() {
                 if let Some(value_hash) = value.hash {
                     if hash == &value_hash {
                         values.remove(index);
@@ -44,7 +41,6 @@ impl ModifiedValueMap {
                         break;
                     }
                 }
-                index += 1;
             }
         }
     }
@@ -76,8 +72,7 @@ impl ModifiedKeyMap {
     pub(crate) fn remove(&mut self, path: &str, hash: &Hash) {
         let parent_path = &path[0..path.rfind('\\').unwrap_or_default()];
         if let Some(keys) = self.map.get_mut(parent_path) {
-            let mut index = 0;
-            for key in keys.iter() {
+            for (index, key) in keys.iter().enumerate() {
                 if let Some(key_hash) = key.hash {
                     if hash == &key_hash && path == key.path {
                         keys.remove(index);
@@ -87,7 +82,6 @@ impl ModifiedKeyMap {
                         break;
                     }
                 }
-                index += 1;
             }
         }
     }
@@ -108,9 +102,6 @@ pub(crate) struct State {
     // Path filters don't include the root name, but the cell key's path does.
     // This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
-
-   // pub track_cells: Vec<TrackCell>,
-    pub track_hbins: Vec<TrackHbin>,
 
     pub info: Logs,
 
@@ -139,30 +130,6 @@ impl State {
         self.root_key_path_offset
     }
 
-    pub(crate) fn update_track_cells(&mut self, file_offset_absolute: usize) {
-        /*if self.recover_deleted {
-            match TrackHbin::find_hbin_mut(&mut self.track_hbins, file_offset_absolute) {
-                Some(hbin) => {
-                    match hbin.track_cells.binary_search_by_key(&file_offset_absolute, |a| a.file_offset_absolute) {
-                        Ok(index) => hbin.track_cells[index as usize].cell_flags |= TrackCellFlags::TRACK_CELL_USED,
-                        Err(e) => self.info.add(LogCode::WarningOther, &format!("Missing track_cell for file_offset_absolute {} ({})", file_offset_absolute, e))
-                    }
-                },
-                None => self.info.add(LogCode::WarningOther, &format!("Missing track_hbin for file_offset_absolute {}", file_offset_absolute))
-            }
-        }*/
-    }
-
-    pub(crate) fn untouched_cells(&self) {
-        for th in &self.track_hbins {
-            for tc in &th.track_cells {
-                if !tc.cell_flags.contains(TrackCellFlags::TRACK_CELL_USED) { //&& tc.cell_type != CellType::CellOther {
-                    println!("unused: {} {:?} (is allocated: {})", tc.file_offset_absolute, tc.cell_type, tc.cell_flags.contains(TrackCellFlags::TRACK_CELL_ALLOCATED));
-                }
-            }
-        }
-    }
-
     pub(crate) fn from_transaction_logs(logs: Option<Vec<TransactionLog>>, recover_deleted: bool) -> Self {
         State { transaction_logs: logs, recover_deleted, ..Default::default() }
     }
@@ -177,7 +144,6 @@ impl Default for State {
             key_complete: false,
             root_key_path_offset: 0,
             transaction_logs: None,
-            track_hbins: Vec::new(),
             info: Logs::default(),
             hasher: Hasher::new(),
             sequence_numbers: HashMap::new(),

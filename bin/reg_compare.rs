@@ -9,7 +9,6 @@ use notatin::{
     err::Error,
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
-    filter::{Filter, FindPath},
     util::format_date_time
 };
 
@@ -19,20 +18,20 @@ fn main() -> Result<(), Error> {
     let filter = None;//Some(Filter::from_path(FindPath::from_key(r"ControlSet001\Services", false, true)));
 
     fn write_value(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode, value: &CellKeyValue, prefix: &str) {
-        writeln!(writer, "{}\t{} {}\t{:?}\t{}\t{:?}", prefix, cell_key_node.path, value.get_pretty_name(), value.data_type, value.hash.unwrap().to_hex(), value.get_content().0);
+        writeln!(writer, "{}\t{} {}\t{:?}\t{}\t{:?}", prefix, cell_key_node.path, value.get_pretty_name(), value.data_type, value.hash.unwrap().to_hex(), value.get_content().0).unwrap();
     }
 
     fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode, prefix: &str) {
-        writeln!(writer, "{}\t{}\t{}\t{:?}\t{:?}\t{}", prefix, cell_key_node.path, format_date_time(cell_key_node.last_key_written_date_and_time), cell_key_node.key_node_flags, cell_key_node.access_flags, cell_key_node.hash.unwrap().to_hex());
+        writeln!(writer, "{}\t{}\t{}\t{:?}\t{:?}\t{}", prefix, cell_key_node.path, format_date_time(cell_key_node.last_key_written_date_and_time), cell_key_node.key_node_flags, cell_key_node.access_flags, cell_key_node.hash.unwrap().to_hex()).unwrap();
     }
 
-    let write_file = File::create("compare_two_files_softwareKim.txt").unwrap();
+    let write_file = File::create("compare_two_files_softwareKim.txt")?;
     let mut writer = BufWriter::new(write_file);
 
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
     // add all items from file1 into original_map
-    let mut parser1 = Parser::from_path(file1, None, filter.clone(), false).unwrap();
+    let mut parser1 = Parser::from_path(file1, None, filter.clone(), false)?;
     for key in parser1.iter() {
         original_map.insert((key.path.clone(), None), key.hash);
         for value in &key.sub_values {

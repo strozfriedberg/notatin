@@ -122,7 +122,7 @@ impl FindPath {
 
     fn from_key_value_internal(key_path: &str, value: Option<String>, key_path_has_root: bool, children: bool)-> FindPath {
         FindPath {
-            key_path: key_path.to_ascii_lowercase(),
+            key_path: key_path.trim_end_matches('\\').to_ascii_lowercase(),
             value: value.map(|v| v.to_ascii_lowercase()),
             key_path_has_root,
             children
@@ -224,7 +224,7 @@ mod tests {
                 file_offset_absolute: 0,
                 size: 48,
                 value_name_size: 18,
-                data_size: 8,
+                data_size_raw: 8,
                 data_offset_relative: 1928,
                 data_type_raw: 0,
                 flags_raw: 0,

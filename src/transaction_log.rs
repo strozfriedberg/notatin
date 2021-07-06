@@ -13,7 +13,6 @@ use crate::err::Error;
 use crate::util;
 use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
-use crate::track_cell::{TrackCell, TrackCellFlags, TrackHbin};
 use crate::cell_key_node::CellKeyNode;
 use crate::cell_key_value::CellKeyValue;
 use crate::parser::{Parser, RegItems};
@@ -431,15 +430,15 @@ impl TransactionAnalyzer<'_> {
         let (_, mut full_value) =
             CellKeyValue::from_bytes(
                 self.prior_file_info,
-                state,
                 &self.prior_file_info.buffer[file_offset_absolute..],
                 Some(old_sequence_number)
             )?;
         full_value.read_value_bytes(self.prior_file_info, state);
         full_value.updated_by_sequence_num = Some(self.new_sequence_number);
+        let name = full_value.value_name.clone();
         match modified_list_type {
-            ModifiedListType::Updated => state.updated_values.add(&path, &full_value.value_name.clone(), full_value),
-            ModifiedListType::Deleted => state.deleted_values.add(&path, &full_value.value_name.clone(), full_value)
+            ModifiedListType::Updated => state.updated_values.add(&path, &name, full_value),
+            ModifiedListType::Deleted => state.deleted_values.add(&path, &name, full_value)
         }
         Ok(())
     }

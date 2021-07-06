@@ -18,7 +18,7 @@ def get_py_version_cfgs():
 install_requires = ["setuptools-rust"]
 
 setup(
-    name="pyreg",
+    name="asdf_notatin",
     version="0.0.1",
     classifiers=[
         "License :: OSI Approved :: MIT License",
@@ -31,7 +31,7 @@ setup(
     ],
     rust_extensions=[
         RustExtension(
-            target="pyreg",
+            target="asdf_notatin",
             path="Cargo.toml",
             rustc_flags=get_py_version_cfgs(),
         ),

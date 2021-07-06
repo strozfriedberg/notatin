@@ -7,7 +7,6 @@ use nom::{
 use serde::Serialize;
 use crate::err::Error;
 use crate::file_info::FileInfo;
-use crate::state::State;
 use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::log::Logs;
@@ -52,15 +51,13 @@ impl CellBigData {
     /// Returns a tuple of the full content buffer and the absolute data offsets
     pub(crate) fn get_big_data_bytes(
         file_info: &FileInfo,
-        state: &mut State,
         offset: usize,
         data_type: &CellKeyValueDataTypes,
         data_size: u32
     ) -> Result<(Vec<u8>, Vec<usize>), Error> {
-        let (_, (hive_bin_cell_big_data, offset_ptr)) = CellBigData::from_bytes(&file_info.buffer[offset..])?;
+        let (_, (hive_bin_cell_big_data, _)) = CellBigData::from_bytes(&file_info.buffer[offset..])?;
         let (_, data_offsets_absolute) = hive_bin_cell_big_data.parse_big_data_offsets(file_info)?;
 
-        state.update_track_cells(file_info.get_file_offset_from_ptr(offset_ptr));
         let mut big_data_buffer: Vec<u8> = Vec::new();
         let mut data_size_remaining = data_size;
         for offset in data_offsets_absolute.iter() {
@@ -74,7 +71,6 @@ impl CellBigData {
                             CellKeyValue::BIG_DATA_SIZE_THRESHOLD
                         )
                     );
-                state.update_track_cells(*offset as usize);
                 big_data_buffer.extend_from_slice(&input[..size_to_read as usize]);
                 data_size_remaining -= size_to_read;
             }
@@ -113,10 +109,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_is_big_data_block() {
+        assert_eq!(true, CellBigData::is_big_data_block(&[0, 0, 0, 0, 0x64, 0x62]));
+        assert_eq!(false, CellBigData::is_big_data_block(&[0, 0, 0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn test_parse_big_data_size() {
+        let file_info = FileInfo {
+            hbin_offset_absolute: 0,
+            buffer: [0,1,2,3].to_vec()
+        };
+        let (input, size) = CellBigData::parse_big_data_size(&file_info, 0).unwrap();
+        assert_eq!(size, 0x03020100);
+        assert_eq!(input, &[0;0]);
+    }
+
+    #[test]
+    fn test_parse_big_data_offsets() {
+        let file_info = FileInfo {
+            hbin_offset_absolute: 0,
+            buffer: [ 0xF0, 0xFF, 0xFF, 0xFF, 0x20, 0x30, 0x00, 0x00, 0x20, 0x70, 0x00, 0x00].to_vec()
+        };
+
+        let cell_big_data = CellBigData {
+            size: 0,
+            count: 2,
+            segment_list_offset_relative: 0,
+            logs: Logs::default()
+        };
+        let (_, offsets) = cell_big_data.parse_big_data_offsets(&file_info).unwrap();
+        assert_eq!(vec![0x00003020, 0x00007020], offsets);
+    }
+
+    #[test]
     fn test_parse_sub_key_list_db() {
-        let f = std::fs::read("test_data/FuseHive").unwrap();
-        let slice = &f[4552..4568];
-        let (_, (big_data, _)) = CellBigData::from_bytes(slice).unwrap();
+        let slice = [0xF0, 0xFF, 0xFF, 0xFF, 0x64, 0x62, 0x02, 0x00, 0xD8, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+        let (_, (big_data, _)) = CellBigData::from_bytes(&slice).unwrap();
         let expected_output =
             CellBigData {
                 size: 16,

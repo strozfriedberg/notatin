@@ -28,19 +28,25 @@ use crate::impl_serialize_for_bitflags;
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum CellKeyValueDataTypes {
-    REG_NONE                           = 0x0000,
-    REG_SZ                             = 0x0001,
-    REG_EXPAND_SZ                      = 0x0002,
-    REG_BIN                            = 0x0003,
-    REG_DWORD                          = 0x0004,
-    REG_DWORD_BIG_ENDIAN               = 0x0005,
-    REG_LINK                           = 0x0006,
-    REG_MULTI_SZ                       = 0x0007,
-    REG_RESOURCE_LIST                  = 0x0008,
-    REG_FULL_RESOURCE_DESCRIPTOR       = 0x0009,
-    REG_RESOURCE_REQUIREMENTS_LIST     = 0x000A,
-    REG_QWORD                          = 0x000B,
-    REG_FILETIME                       = 0x0010,
+    REG_NONE                           = 0x0000, //ez
+    REG_SZ                             = 0x0001, //ez
+    REG_EXPAND_SZ                      = 0x0002, //ez
+    REG_BIN                            = 0x0003, //ez
+    REG_DWORD                          = 0x0004, //ez
+    REG_DWORD_BIG_ENDIAN               = 0x0005, //ez
+    REG_LINK                           = 0x0006, //ez
+    REG_MULTI_SZ                       = 0x0007, //ez - RegMultiSz, wb: REG_DEVPROP_TYPE_UINT32
+    REG_RESOURCE_LIST                  = 0x0008, //ez
+    REG_FULL_RESOURCE_DESCRIPTOR       = 0x0009, //ez
+    REG_RESOURCE_REQUIREMENTS_LIST     = 0x000A, //ez
+    REG_QWORD                          = 0x000B, //ez
+    REG_DEVPROP_TYPE_GUID              = 0x000D, //wb
+    REG_DEVPROP_TYPE_FILETIME          = 0x0010, //wb
+    REG_DEVPROP_TYPE_BOOLEAN           = 0x0011, //wb
+    REG_DEVPROP_TYPE_STRING            = 0x0012, //wb decode_devprop_string
+    REG_DEVPROP_TYPE_SECURITY_DESCRIPTOR_STRING = 0x0014, //wb decode_devprop_string
+    REG_DEVPROP_TYPE_STRING_INDIRECT   = 0x0019, //wb decode_devprop_string
+    REG_DEVPROP_TYPE_STRING_LIST       = 0x2012, //wb
     // Per https://github.com/williballenthin/python-registry/blob/master/Registry/RegistryParse.py
     // Composite value types used in settings.dat registry hive, used to store AppContainer settings in Windows Apps aka UWP.
     REG_COMPOSITE_UINT8                = 0x0101,
@@ -82,21 +88,32 @@ impl CellKeyValueDataTypes {
         match input_vec {
             None => Ok(CellValue::ValueNone),
             Some(input_vec) => {
+                if let Some(data_type_len) = self.get_data_type_len() {
+                    if input_vec.len() < data_type_len {
+                        logs.add(LogCode::WarningConversion, &"Too few input bytes for data type");
+                        return Ok(CellValue::ValueBinary(input_vec.to_vec()));
+                    }
+                }
                 let input = &input_vec[..];
                 let cv = match self {
                     CellKeyValueDataTypes::REG_NONE =>
                         CellValue::ValueNone,
+                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_STRING |
                     CellKeyValueDataTypes::REG_SZ |
                     CellKeyValueDataTypes::REG_EXPAND_SZ |
+                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_STRING_INDIRECT |
                     CellKeyValueDataTypes::REG_LINK =>
                         CellValue::ValueString(util::from_utf16_le_string(input, input.len(), logs, &"Get value content")),
-                    CellKeyValueDataTypes::REG_COMPOSITE_UINT8 =>
+                    CellKeyValueDataTypes::REG_COMPOSITE_UINT8 |
+                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_BOOLEAN |
+                    CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN =>
                         CellValue::ValueU32(u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32),
                     CellKeyValueDataTypes::REG_COMPOSITE_INT16 =>
                         CellValue::ValueI32(i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into()?) as i32),
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT16 =>
                         CellValue::ValueU32(u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into()?) as u32),
                     CellKeyValueDataTypes::REG_DWORD |
+                    //CellKeyValueDataTypes::REG_DEVPROP_TYPE_UINT32 |
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT32 =>
                         CellValue::ValueU32(u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into()?) as u32),
                     CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN =>
@@ -105,11 +122,13 @@ impl CellKeyValueDataTypes {
                         CellValue::ValueI32(i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into()?)),
                     CellKeyValueDataTypes::REG_COMPOSITE_INT64 =>
                         CellValue::ValueI64(i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into()?)),
+                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_FILETIME |
                     CellKeyValueDataTypes::REG_QWORD |
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT64 =>
                         CellValue::ValueU64(u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into()?)),
                     CellKeyValueDataTypes::REG_BIN =>
                         CellValue::ValueBinary(input.to_vec()),
+                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_STRING_LIST |
                     CellKeyValueDataTypes::REG_MULTI_SZ =>
                         CellValue::ValueMultiString(util::from_utf16_le_strings(input, input.len(), logs, &"Get value content")),
                     _ =>
@@ -120,32 +139,37 @@ impl CellKeyValueDataTypes {
         }
     }
 
-    pub(crate) fn get_value_bytes(&self, input: &[u8]) -> Vec<u8> {
-        let slice = match self {
+    pub(crate) fn get_data_type_len(&self) -> Option<usize> {
+        match self {
             CellKeyValueDataTypes::REG_NONE =>
-                &input[0..0],
+                Some(0),
             CellKeyValueDataTypes::REG_COMPOSITE_UINT8 =>
-                &input[0..mem::size_of::<u8>()],
+                Some(mem::size_of::<u8>()),
             CellKeyValueDataTypes::REG_COMPOSITE_INT16 =>
-                &input[0..mem::size_of::<i16>()],
+                Some(mem::size_of::<i16>()),
             CellKeyValueDataTypes::REG_COMPOSITE_UINT16 =>
-                &input[0..mem::size_of::<u16>()],
+                Some(mem::size_of::<u16>()),
             CellKeyValueDataTypes::REG_DWORD |
-            CellKeyValueDataTypes::REG_COMPOSITE_UINT32 =>
-                &input[0..mem::size_of::<u32>()],
+            CellKeyValueDataTypes::REG_COMPOSITE_UINT32 |
             CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN =>
-                &input[0..mem::size_of::<u32>()],
+                Some(mem::size_of::<u32>()),
             CellKeyValueDataTypes::REG_COMPOSITE_INT32 =>
-                &input[0..mem::size_of::<i32>()],
+                Some(mem::size_of::<i32>()),
             CellKeyValueDataTypes::REG_COMPOSITE_INT64 =>
-                &input[0..mem::size_of::<i64>()],
+                Some(mem::size_of::<i64>()),
             CellKeyValueDataTypes::REG_QWORD |
             CellKeyValueDataTypes::REG_COMPOSITE_UINT64 =>
-                &input[0..mem::size_of::<u64>()],
+                Some(mem::size_of::<u64>()),
             _ =>
-                input
-        };
-        slice.to_vec()
+                None
+        }
+    }
+
+    pub(crate) fn get_value_bytes(&self, input: &[u8]) -> Vec<u8> {
+        match self.get_data_type_len() {
+            Some(data_type_len) => input[0..std::cmp::min(data_type_len, input.len())].to_vec(),
+            None => input.to_vec()
+        }
     }
 }
 
@@ -163,7 +187,7 @@ pub struct CellKeyValueDetail {
     pub file_offset_absolute: usize,
     pub size: u32,
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
-    pub data_size: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
+    pub data_size_raw: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
     pub data_offset_relative: u32,
     pub data_type_raw: u32,
     pub flags_raw: u16,
@@ -179,6 +203,8 @@ pub struct CellKeyValue {
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
     pub data_offsets_absolute: Vec<usize>,
+    /// value_name is an empty string for an unnamed value. This is displayed as `(Default)` in Windows Registry Editor;
+    /// use `CellKeyValue::get_pretty_name()` to get `(Default)` rather than empty string for the name
     pub value_name: String,
     pub logs: Logs,
 
@@ -202,7 +228,6 @@ impl CellKeyValue {
 
     pub(crate) fn from_bytes<'a>(
         file_info: &FileInfo,
-        state: &mut State,
         input: &'a [u8],
         sequence_num: Option<u32>
     ) -> IResult<&'a [u8], Self> {
@@ -212,7 +237,7 @@ impl CellKeyValue {
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("vk")(input)?;
         let (input, value_name_size) = le_u16(input)?;
-        let (input, data_size) = le_u32(input)?;
+        let (input, data_size_raw) = le_u32(input)?;
         let (input, data_offset_relative) = le_u32(input)?;
         let (input, data_type_raw) = le_u32(input)?;
         let (input, flags_raw) = le_u16(input)?;
@@ -220,7 +245,7 @@ impl CellKeyValue {
         let (input, padding) = le_u16(input)?;
         let (input, value_name_bytes) = take!(input, value_name_size)?;
 
-        const DEVPROP_MASK_TYPE: u32 = 0x00000FFF;
+        const DEVPROP_MASK_TYPE: u32 = 0x0000FFFF;
         let data_type_bytes = data_type_raw & DEVPROP_MASK_TYPE;
         let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
             None => CellKeyValueDataTypes::REG_UNKNOWN,
@@ -230,7 +255,7 @@ impl CellKeyValue {
         let mut logs = Logs::default();
         let value_name;
         if value_name_size == 0 {
-            value_name = String::new();//String::from("(Default)");
+            value_name = String::new();
         }
         else {
             value_name = util::string_from_bytes(
@@ -243,7 +268,6 @@ impl CellKeyValue {
         let size_abs =  size.abs() as u32;
         let (input, slack) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
-        state.update_track_cells(file_offset_absolute);
         Ok((
             input,
             CellKeyValue {
@@ -251,7 +275,7 @@ impl CellKeyValue {
                     file_offset_absolute,
                     size: size_abs,
                     value_name_size,
-                    data_size,
+                    data_size_raw,
                     data_offset_relative,
                     data_type_raw,
                     flags_raw,
@@ -272,23 +296,22 @@ impl CellKeyValue {
         ))
     }
 
-    pub(crate) fn read_value_bytes_direct(
+    fn read_value_bytes_direct(
         file_offset_absolute: usize,
-        data_size: u32,
+        data_size_raw: u32,
         data_offset_relative: u32,
         data_type: &CellKeyValueDataTypes,
         file_info: &FileInfo,
-        state: &mut State,
         logs: &mut Logs,
     ) -> (Vec<u8>, Vec<usize>) {
         const DATA_IS_RESIDENT_MASK: u32 = 0x80000000;
         let value_bytes;
         let mut data_offsets_absolute = Vec::new();
-        if data_size & DATA_IS_RESIDENT_MASK == 0 {
+        if data_size_raw & DATA_IS_RESIDENT_MASK == 0 {
             let mut offset = data_offset_relative as usize + file_info.hbin_offset_absolute;
-            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size && CellBigData::is_big_data_block(&file_info.buffer[offset..]) {
+            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw && CellBigData::is_big_data_block(&file_info.buffer[offset..]) {
                 let (vb, offsets) =
-                    CellBigData::get_big_data_bytes(file_info, state, offset, data_type, data_size)
+                    CellBigData::get_big_data_bytes(file_info, offset, data_type, data_size_raw)
                         .or_else(
                             |err| -> Result<(Vec<u8>, Vec<usize>), Error> {
                                 logs.add(LogCode::WarningBigDataContent, &err);
@@ -300,17 +323,16 @@ impl CellKeyValue {
                 data_offsets_absolute.extend(offsets);
             }
             else {
-                state.update_track_cells(offset);
                 offset += mem::size_of::<i32>(); // skip over the size bytes
                 data_offsets_absolute.push(offset);
-                value_bytes = data_type.get_value_bytes(&file_info.buffer[offset .. offset + data_size as usize]);
+                value_bytes = data_type.get_value_bytes(&file_info.buffer[offset .. offset + data_size_raw as usize]);
             }
         }
         else {
             const DATA_OFFSET_RELATIVE_OFFSET: usize = 12;
             data_offsets_absolute.push(file_offset_absolute + DATA_OFFSET_RELATIVE_OFFSET);
             let resident_value = data_offset_relative.to_le_bytes();
-            value_bytes = data_type.get_value_bytes(&resident_value[..(data_size ^ DATA_IS_RESIDENT_MASK) as usize]);
+            value_bytes = data_type.get_value_bytes(&resident_value[..(data_size_raw ^ DATA_IS_RESIDENT_MASK) as usize]);
         }
         (value_bytes, data_offsets_absolute)
     }
@@ -324,11 +346,10 @@ impl CellKeyValue {
         let (value_bytes, data_offsets_absolute) =
             Self::read_value_bytes_direct(
                 self.detail.file_offset_absolute,
-                self.detail.data_size,
+                self.detail.data_size_raw,
                 self.detail.data_offset_relative,
                 &self.data_type,
                 file_info,
-                state,
                 &mut self.logs
             );
 
@@ -355,7 +376,7 @@ impl CellKeyValue {
         }
     }
 
-    pub(crate) fn hash(state: &mut State, data_type_raw: u32, flags_raw: u16, value_bytes: &[u8]) -> Hash {
+    fn hash(state: &mut State, data_type_raw: u32, flags_raw: u16, value_bytes: &[u8]) -> Hash {
         state.hasher.reset();
         state.hasher.update(&data_type_raw.to_le_bytes());
         state.hasher.update(&flags_raw.to_le_bytes());
@@ -389,7 +410,7 @@ struct CellKeyValueForSerialization<'a> {
     detail: &'a CellKeyValueDetail,
     data_type: &'a CellKeyValueDataTypes,
     flags: &'a CellKeyValueFlags,
-    value_name: &'a String,
+    value_name: String,
     cell_parse_warnings: &'a Logs,
     sequence_num: &'a Option<u32>,
     updated_by_sequence_num: &'a Option<u32>,
@@ -406,7 +427,7 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
             detail: &other.detail,
             data_type: &other.data_type,
             flags: &other.flags,
-            value_name: &other.value_name,
+            value_name: other.get_pretty_name(),
             cell_parse_warnings: &other.logs,
             data_offsets_absolute: &other.data_offsets_absolute,
             sequence_num: &other.sequence_num,
@@ -425,23 +446,31 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_value() {
-        let mut file_info = FileInfo::from_path("test_data/NTUSER.DAT").unwrap();
-        file_info.hbin_offset_absolute = 4096;
+        let slice = [
+            0xD0, 0xFF, 0xFF, 0xFF, 0x76, 0x6B, 0x12, 0x00, 0x08, 0x00, 0x00, 0x00,
+            0x18, 0x0F, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x49, 0x45, 0x35, 0x5F, 0x55, 0x41, 0x5F, 0x42, 0x61, 0x63, 0x6B, 0x75,
+            0x70, 0x5F, 0x46, 0x6C, 0x61, 0x67, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00
+        ];
+        let file_info = FileInfo {
+            hbin_offset_absolute: 4096,
+            buffer: slice.to_vec()
+        };
         let mut state = State::default();
-        let (_, mut key_value) = CellKeyValue::from_bytes(&file_info, &mut state, &file_info.buffer[4400..4448], None).unwrap();
+        let (_, mut key_value) = CellKeyValue::from_bytes(&file_info, &mut state, &file_info.buffer[..], None).unwrap();
 
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
-                file_offset_absolute: 4400,
+                file_offset_absolute: 0,
                 size: 48,
                 value_name_size: 18,
-                data_size: 8,
-                data_offset_relative: 1928,
+                data_size_raw: 8,
+                data_offset_relative: 3864,
                 data_type_raw: 1,
                 flags_raw: 1,
-                padding: 1280,
+                padding: 0,
                 value_bytes: None,
-                slack: vec![0, 0, 32, 2, 0, 0]
+                slack: vec![0, 0, 1, 0, 0, 0]
             },
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,

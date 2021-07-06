@@ -28,7 +28,6 @@ pub mod sub_key_list_lf;
 pub mod sub_key_list_lh;
 pub mod sub_key_list_li;
 pub mod sub_key_list_ri;
-pub mod track_cell;
 pub mod transaction_log;
 pub(crate) mod macros;
 pub(crate) mod tests;

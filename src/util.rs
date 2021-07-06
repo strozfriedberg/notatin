@@ -86,7 +86,7 @@ pub(crate) fn parser_eat_remaining(
 }
 
 /// Converts a u64 filetime to a DateTime<Utc>
-pub(crate) fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
+pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
     const UNIX_EPOCH_SECONDS_SINCE_WINDOWS_EPOCH: i128 = 11644473600;
     const UNIX_EPOCH_NANOS: i128 = UNIX_EPOCH_SECONDS_SINCE_WINDOWS_EPOCH * 1_000_000_000;
     let filetime_nanos: i128 = filetime as i128 * 100;
@@ -199,6 +199,23 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
 mod tests {
     use super::*;
     use crate::log::Log;
+
+    fn nanos_to_micros_round_half_even(nanos: u64) -> u64 {
+        let nanos_e7 = nanos % 1000 / 100;
+        let nanos_e6 = nanos % 10000 / 1000;
+        let mut micros = (nanos / 10000) * 10;
+        if nanos_e7 < 5 {
+            micros += nanos_e6;
+        }
+        else if nanos_e7 > 5{
+            micros += nanos_e6 + 1;
+        }
+        else {
+            let m = (nanos % 10000 / 1000) % 2;
+            micros += nanos_e6 + ((nanos % 10000 / 1000) % 2);
+        }
+        return micros
+    }
 
     #[test]
     fn test_get_date_time_from_filetime() {

@@ -2,25 +2,25 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use notatin::parser::Parser;
 
 fn test_read_small_reg() {
-    let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, false).unwrap();
+    let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
     for _key in parser.iter() {
     }
 }
 
 fn test_read_small_reg_with_deleted() {
-    let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, true).unwrap();
+    let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
     for _key in parser.iter() {
     }
 }
 
 fn test_read_reg_without_logs() {
-    let mut parser = Parser::from_path("test_data/SYSTEM", None, false).unwrap();
+    let mut parser = Parser::from_path("test_data/SYSTEM", None, None, false).unwrap();
     for _key in parser.iter() {
     }
 }
 
 fn test_read_reg_with_logs() {
-    let mut parser = Parser::from_path("test_data/SYSTEM", Some(vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]), false).unwrap();
+    let mut parser = Parser::from_path("test_data/SYSTEM", Some(vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]), None, true).unwrap();
     for _key in parser.iter() {
     }
 }
