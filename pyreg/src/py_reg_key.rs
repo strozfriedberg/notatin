@@ -1,17 +1,15 @@
 use pyo3::prelude::*;
 
 use crate::err::PyRegError;
-use crate::util::{Output, date_to_pyobject};
+use crate::util::date_to_pyobject;
 use crate::py_reg_value::PyRegValue;
 use crate::py_reg_parser::{PyRegKeysIterator, PyRegParser};
 use notatin::{
-    parser::Parser,
-    filter::{Filter, FindPath},
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
 };
 use pyo3::{Py, PyIterProtocol, PyResult, Python};
-use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
+use pyo3::exceptions::PyNotImplementedError;
 
 #[pyclass(subclass)]
 pub struct PyRegKey {

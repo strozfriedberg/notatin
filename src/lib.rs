@@ -6,6 +6,7 @@ extern crate md5;
 extern crate nom;
 extern crate num;
 extern crate num_traits;
+extern crate regex;
 extern crate serde;
 extern crate thiserror;
 extern crate winstructs;

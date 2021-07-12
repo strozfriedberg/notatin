@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use regex::Regex;
 use crate::base_block::{BaseBlock, BaseBlockBase, FileType};
 use crate::err::Error;
 use crate::cell_key_node::CellKeyNode;
@@ -408,7 +409,7 @@ impl Parser {
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
             if !self.stack_to_return.is_empty() {
                 let last = self.stack_to_return.last().expect("We checked that stack_to_return wasn't empty");
-                if last.track_returned == last.number_of_sub_keys {
+                if last.track_returned == last.to_return {
                     return Some(self.stack_to_return.pop().expect("We checked that stack_to_return wasn't empty"));
                 }
             }
@@ -416,7 +417,7 @@ impl Parser {
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, false, None, self.get_modified);
-                //debug_assert_eq!(node.number_of_sub_keys as usize, children.len());
+                node.to_return = children.len() as u32;
                 self.stack_to_traverse.extend(children);
             }
             if !self.stack_to_return.is_empty() {
@@ -458,8 +459,7 @@ mod tests {
         fs::File,
         io::{BufWriter, Write},
     };
-    use blake3::Hash;
-    use crate::filter::{Filter, FindPath};
+    use crate::filter::{Filter, FindPath, RegQueryComponent, RegQuery};
     use crate::util;
 
     #[test]
@@ -518,7 +518,7 @@ mod tests {
             true
         ).unwrap();
 
-        let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser.count_all_keys_and_values_with_modified();
+        let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
         assert_eq!(
             (19908, 423, 0, 49616, 196, 0),
             (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
@@ -534,9 +534,22 @@ mod tests {
             true
         ).unwrap();
 
-        let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser.count_all_keys_and_values_with_modified();
+        let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (19908, 423, 0, 49616, 196, 0),
+            (12, 6, 0, 18, 0, 0),
+            (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
+        );
+
+        let mut parser = Parser::from_path(
+            "/home/kstone/code/rust_parser_2/test_data/SoftwareKim",
+            None,
+            Some(Filter::from_path(FindPath::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
+            true
+        ).unwrap();
+
+        let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
+        assert_eq!(
+            (12, 0, 0, 18, 0, 0),
             (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
         );
     }
@@ -566,10 +579,12 @@ mod tests {
     fn test_cell_key_node_count_all_keys_and_values_with_kv_filter2() {
         let filter = Filter::from_path(FindPath::from_key_value(r"ControlSet001\Control\DeviceContainers\{48ae4b41-eeac-57b9-8d0c-6752dfa94bf5}\Properties\{78c34fc8-104a-4aca-9ea4-524d52996e57}\0050", "", false));
         let mut parser = Parser::from_path("test_data/asdf_test_data/SYSTEM", None, Some(filter), false).unwrap();
-        let mut key = parser.next_key().unwrap();
-        let value = key.next_value();
-        let t=3;
-
+        let (keys, values) = parser.count_all_keys_and_values();
+        assert_eq!(
+            (8, 1),
+            (keys, values),
+            "key and/or value count doesn't match expected"
+        );
     }
 
     #[test]
@@ -661,6 +676,77 @@ mod tests {
     }
 
     #[test]
+    fn test_reg_query() {
+        let reg_query = RegQuery {
+            key_path:vec![
+                RegQueryComponent::ComponentString("control Panel".to_string().to_ascii_lowercase()),
+                RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
+                RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap())
+            ],
+            value: None,
+            children: false
+        };
+        let filter = Filter {
+            find_path: None,
+            reg_query: Some(reg_query)
+        };
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let mut parser_iter = parser.iter();
+        let key = parser_iter.next().unwrap();
+        assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
+        let key = parser_iter.next().unwrap();
+        assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Preference", key.path);
+        let kv = parser.count_all_keys_and_values();
+        assert_eq!((5, 10), kv);
+
+        let reg_query = RegQuery {
+            key_path:vec![
+                RegQueryComponent::ComponentString("control Panel".to_string().to_ascii_lowercase()),
+                RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
+                RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap())
+            ],
+            value: Some(RegQueryComponent::ComponentRegex(Regex::new(".*o.+").unwrap())),
+            children: false
+        };
+        let filter = Filter {
+            find_path: None,
+            reg_query: Some(reg_query)
+        };
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let kv = parser.count_all_keys_and_values();
+        assert_eq!((5, 6), kv);
+
+        let reg_query = RegQuery {
+            key_path:vec![
+                RegQueryComponent::ComponentString("appevents".to_string().to_ascii_lowercase()),
+                RegQueryComponent::ComponentString("schemes".to_string().to_ascii_lowercase()),
+                RegQueryComponent::ComponentString("apps".to_string().to_ascii_lowercase()),
+                RegQueryComponent::ComponentString("Explorer".to_string().to_ascii_lowercase()),
+                RegQueryComponent::ComponentRegex(Regex::new(".*a.*").unwrap()),
+                RegQueryComponent::ComponentString(".current".to_string().to_ascii_lowercase()),
+            ],
+            value: None,
+            children: false
+        };
+        let filter = Filter {
+            find_path: None,
+            reg_query: Some(reg_query)
+        };
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let mut parser_iter = parser.iter();
+        let key = parser_iter.next().unwrap();
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SecurityBand\.current", key.path);
+        let key = parser_iter.next().unwrap();
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SecurityBand", key.path);
+        let key = parser_iter.next().unwrap();
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SearchProviderDiscovered\.Current", key.path);
+        let key = parser_iter.next().unwrap();
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SearchProviderDiscovered", key.path);
+        let kv = parser.count_all_keys_and_values();
+        assert_eq!((13, 4), kv);
+    }
+
+    #[test]
     fn dump_registry() {
         let filter = Filter::from_path(FindPath::from_key("Software\\7-Zip\\FM", false, false));
         let write_file = File::create("office_NTUSER.DAT.jsonl").unwrap();
@@ -675,8 +761,14 @@ mod tests {
     #[test]
     fn common_export_format() {
         //let mut parser = Parser::from_path_with_logs("test_data/SYSTEM", vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]).unwrap();
-        let mut parser = Parser::from_path("test_data/asdf_test_data/office_NTUSER.DAT", None, None, true).unwrap();
-        let write_file = File::create("office_NTUSER.DAT_common_export_format.txt").unwrap();
-        util::write_common_export_format(&mut parser, write_file).unwrap();
+        let paths = vec![
+            "test_data/SYSTEM"
+        ];
+        for path in paths {
+            let name = str::replace(path, "/", "__");
+            let mut parser = Parser::from_path(path, None, None, true).unwrap();
+            let write_file = File::create(format!("{}_common_export_format.txt", name)).unwrap();
+            util::write_common_export_format(&mut parser, write_file).unwrap();
+        }
     }
 }

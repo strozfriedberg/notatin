@@ -28,25 +28,19 @@ use crate::impl_serialize_for_bitflags;
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum CellKeyValueDataTypes {
-    REG_NONE                           = 0x0000, //ez
-    REG_SZ                             = 0x0001, //ez
-    REG_EXPAND_SZ                      = 0x0002, //ez
-    REG_BIN                            = 0x0003, //ez
-    REG_DWORD                          = 0x0004, //ez
-    REG_DWORD_BIG_ENDIAN               = 0x0005, //ez
-    REG_LINK                           = 0x0006, //ez
-    REG_MULTI_SZ                       = 0x0007, //ez - RegMultiSz, wb: REG_DEVPROP_TYPE_UINT32
-    REG_RESOURCE_LIST                  = 0x0008, //ez
-    REG_FULL_RESOURCE_DESCRIPTOR       = 0x0009, //ez
-    REG_RESOURCE_REQUIREMENTS_LIST     = 0x000A, //ez
-    REG_QWORD                          = 0x000B, //ez
-    REG_DEVPROP_TYPE_GUID              = 0x000D, //wb
-    REG_DEVPROP_TYPE_FILETIME          = 0x0010, //wb
-    REG_DEVPROP_TYPE_BOOLEAN           = 0x0011, //wb
-    REG_DEVPROP_TYPE_STRING            = 0x0012, //wb decode_devprop_string
-    REG_DEVPROP_TYPE_SECURITY_DESCRIPTOR_STRING = 0x0014, //wb decode_devprop_string
-    REG_DEVPROP_TYPE_STRING_INDIRECT   = 0x0019, //wb decode_devprop_string
-    REG_DEVPROP_TYPE_STRING_LIST       = 0x2012, //wb
+    REG_NONE                           = 0x0000,
+    REG_SZ                             = 0x0001,
+    REG_EXPAND_SZ                      = 0x0002,
+    REG_BIN                            = 0x0003,
+    REG_DWORD                          = 0x0004,
+    REG_DWORD_BIG_ENDIAN               = 0x0005,
+    REG_LINK                           = 0x0006,
+    REG_MULTI_SZ                       = 0x0007,
+    REG_RESOURCE_LIST                  = 0x0008,
+    REG_FULL_RESOURCE_DESCRIPTOR       = 0x0009,
+    REG_RESOURCE_REQUIREMENTS_LIST     = 0x000A,
+    REG_QWORD                          = 0x000B,
+    REG_FILETIME                       = 0x0010,
     // Per https://github.com/williballenthin/python-registry/blob/master/Registry/RegistryParse.py
     // Composite value types used in settings.dat registry hive, used to store AppContainer settings in Windows Apps aka UWP.
     REG_COMPOSITE_UINT8                = 0x0101,
@@ -96,16 +90,11 @@ impl CellKeyValueDataTypes {
                 }
                 let input = &input_vec[..];
                 let cv = match self {
-                    CellKeyValueDataTypes::REG_NONE =>
-                        CellValue::ValueNone,
-                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_STRING |
                     CellKeyValueDataTypes::REG_SZ |
                     CellKeyValueDataTypes::REG_EXPAND_SZ |
-                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_STRING_INDIRECT |
                     CellKeyValueDataTypes::REG_LINK =>
                         CellValue::ValueString(util::from_utf16_le_string(input, input.len(), logs, &"Get value content")),
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT8 |
-                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_BOOLEAN |
                     CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN =>
                         CellValue::ValueU32(u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32),
                     CellKeyValueDataTypes::REG_COMPOSITE_INT16 =>
@@ -113,7 +102,6 @@ impl CellKeyValueDataTypes {
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT16 =>
                         CellValue::ValueU32(u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into()?) as u32),
                     CellKeyValueDataTypes::REG_DWORD |
-                    //CellKeyValueDataTypes::REG_DEVPROP_TYPE_UINT32 |
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT32 =>
                         CellValue::ValueU32(u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into()?) as u32),
                     CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN =>
@@ -122,13 +110,12 @@ impl CellKeyValueDataTypes {
                         CellValue::ValueI32(i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into()?)),
                     CellKeyValueDataTypes::REG_COMPOSITE_INT64 =>
                         CellValue::ValueI64(i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into()?)),
-                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_FILETIME |
                     CellKeyValueDataTypes::REG_QWORD |
-                    CellKeyValueDataTypes::REG_COMPOSITE_UINT64 =>
+                    CellKeyValueDataTypes::REG_COMPOSITE_UINT64 |
+                    CellKeyValueDataTypes::REG_FILETIME =>
                         CellValue::ValueU64(u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into()?)),
                     CellKeyValueDataTypes::REG_BIN =>
                         CellValue::ValueBinary(input.to_vec()),
-                    CellKeyValueDataTypes::REG_DEVPROP_TYPE_STRING_LIST |
                     CellKeyValueDataTypes::REG_MULTI_SZ =>
                         CellValue::ValueMultiString(util::from_utf16_le_strings(input, input.len(), logs, &"Get value content")),
                     _ =>
@@ -141,8 +128,6 @@ impl CellKeyValueDataTypes {
 
     pub(crate) fn get_data_type_len(&self) -> Option<usize> {
         match self {
-            CellKeyValueDataTypes::REG_NONE =>
-                Some(0),
             CellKeyValueDataTypes::REG_COMPOSITE_UINT8 =>
                 Some(mem::size_of::<u8>()),
             CellKeyValueDataTypes::REG_COMPOSITE_INT16 =>
@@ -158,7 +143,8 @@ impl CellKeyValueDataTypes {
             CellKeyValueDataTypes::REG_COMPOSITE_INT64 =>
                 Some(mem::size_of::<i64>()),
             CellKeyValueDataTypes::REG_QWORD |
-            CellKeyValueDataTypes::REG_COMPOSITE_UINT64 =>
+            CellKeyValueDataTypes::REG_COMPOSITE_UINT64 |
+            CellKeyValueDataTypes::REG_FILETIME =>
                 Some(mem::size_of::<u64>()),
             _ =>
                 None
@@ -204,7 +190,7 @@ pub struct CellKeyValue {
     pub flags: CellKeyValueFlags,
     pub data_offsets_absolute: Vec<usize>,
     /// value_name is an empty string for an unnamed value. This is displayed as `(Default)` in Windows Registry Editor;
-    /// use `CellKeyValue::get_pretty_name()` to get `(Default)` rather than empty string for the name
+    /// use `CellKeyValue::get_pretty_name()` to get `(default)` rather than empty string for the name
     pub value_name: String,
     pub logs: Logs,
 
@@ -386,7 +372,7 @@ impl CellKeyValue {
 
     pub fn get_pretty_name(&self) -> String {
         if self.value_name.is_empty() {
-            "(Default)".to_string()
+            "(default)".to_string()
         }
         else {
             self.value_name.clone()
@@ -457,7 +443,7 @@ mod tests {
             buffer: slice.to_vec()
         };
         let mut state = State::default();
-        let (_, mut key_value) = CellKeyValue::from_bytes(&file_info, &mut state, &file_info.buffer[..], None).unwrap();
+        let (_, mut key_value) = CellKeyValue::from_bytes(&file_info, &file_info.buffer[..], None).unwrap();
 
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {

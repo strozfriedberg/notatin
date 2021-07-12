@@ -2,13 +2,12 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::fs::File;
 use notatin::{
     parser::Parser,
-    filter::{Filter, FindPath},
     cell_key_node::CellKeyNode
 };
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::{PyIterProtocol};
-use crate::util::{FileOrFileLike, Output, init_logging};
+use crate::util::{FileOrFileLike, init_logging};
 use crate::err::PyRegError;
 use crate::py_reg_key::PyRegKey;
 use crate::py_reg_value::PyRegValue;

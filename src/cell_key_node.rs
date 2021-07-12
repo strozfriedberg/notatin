@@ -80,6 +80,8 @@ pub struct CellKeyNode {
     pub cell_sub_key_offsets_absolute: Vec<u32>,
 
     #[serde(skip_serializing)]
+    pub(crate) to_return: u32,
+    #[serde(skip_serializing)]
     pub(crate) track_returned: u32,
 
     #[serde(skip_serializing)]
@@ -116,6 +118,7 @@ impl Default for CellKeyNode {
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
+            to_return: 0,
             track_returned: 0,
             versions: Vec::new(),
             deleted_keys: Vec::new(),
@@ -228,6 +231,7 @@ impl CellKeyNode {
             sub_values: Vec::new(),
             logs,
             cell_sub_key_offsets_absolute: Vec::new(),
+            to_return: 0,
             track_returned: 0,
             versions: Vec::new(),
             deleted_keys: Vec::new(),
@@ -415,8 +419,13 @@ impl CellKeyNode {
         parser: &mut Parser,
         sub_path: &str
     ) -> Option<Self> {
-        let filter = Filter::from_path(FindPath::from_key(&format!("{}\\{}", self.path, sub_path), true, false));
-        self.get_sub_key_internal(&parser.file_info, &mut parser.state, &filter, true, None)
+        if sub_path == "" {
+            Some(self.clone())
+        }
+        else {
+            let filter = Filter::from_path(FindPath::from_key(&format!("{}\\{}", self.path, sub_path), true, false));
+            self.get_sub_key_internal(&parser.file_info, &mut parser.state, &filter, true, None)
+        }
     }
 
     pub fn get_sub_key_by_index(
@@ -484,7 +493,7 @@ impl CellKeyNode {
             if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
                 cell_key_value.read_value_bytes(file_info, state);
                 self.sub_values.push(cell_key_value);
-                if iterate_flags.contains(FilterFlags::FILTER_VALUE_MATCH) {
+                if iterate_flags.contains(FilterFlags::FILTER_ITERATE_VALUES_COMPLETE) {
                     state.value_complete = true;
                 }
             }
@@ -677,6 +686,11 @@ mod tests {
 
         let invalid_sub_key = key.get_sub_key_by_path(&mut parser, &"Accessibility\\Nope");
         assert_eq!(None, invalid_sub_key);
+
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
+        let mut key = parser.get_root_key().unwrap().unwrap();
+        let sub_key = key.get_sub_key_by_path(&mut parser, &"").unwrap();
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}", sub_key.path);
     }
 
     #[test]
@@ -795,6 +809,7 @@ mod tests {
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
+            to_return: 0,
             track_returned: 0,
             versions: Vec::new(),
             deleted_keys: Vec::new(),

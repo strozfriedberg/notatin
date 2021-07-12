@@ -1,7 +1,6 @@
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use log::warn;
 use pyo3::types::{PyDateTime, PyString};
 use pyo3::ToPyObject;
 use pyo3::{PyObject, PyResult, Python};
@@ -92,9 +91,9 @@ pub fn init_logging(py: Python) -> Result<(), SetLoggerError> {
 }
 
 fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
-    let nanos_e7 = nanos % 1000 / 100;
-    let nanos_e6 = nanos % 10000 / 1000;
-    let mut micros = (nanos / 10000 * 10);
+    let nanos_e7 = (nanos % 1000) / 100;
+    let nanos_e6 = (nanos % 10000) / 1000;
+    let mut micros = (nanos / 10000) * 10;
     if nanos_e7 < 5 {
         micros += nanos_e6;
     }
@@ -102,8 +101,7 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
         micros += nanos_e6 + 1;
     }
     else {
-        let m = ((nanos % 10000 / 1000) % 2);
-        micros += nanos_e6 + ((nanos % 10000 / 1000) % 2);
+        micros += nanos_e6 + (nanos_e6 % 2);
     }
     return micros
 }
@@ -111,12 +109,6 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let gil = Python::acquire_gil();
     let py = gil.python();
-
-    /*let utc = get_utc().ok();
-
-    if utc.is_none() {
-        warn!("UTC module not found, falling back to naive timezone objects")
-    }*/
     PyDateTime::new(
         py,
         date.year(),
@@ -126,9 +118,7 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
         date.minute() as u8,
         date.second() as u8,
         nanos_to_micros_round_half_even(date.timestamp_subsec_nanos()),
-        //date.timestamp_subsec_nanos()/10,
-        // Fallback to naive timestamps (None) if for some reason `datetime.timezone.utc` is not present.
-        None//utc.as_ref(),
+        None
     )
     .map(|dt| dt.to_object(py))
 }
@@ -142,4 +132,17 @@ pub fn get_utc() -> PyResult<PyObject> {
     let utc = tz.getattr(py, "utc")?;
 
     Ok(utc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nanos_to_micros_round_half_even() {
+        assert_eq!(nanos_to_micros_round_half_even(764026300), 764026);
+        assert_eq!(nanos_to_micros_round_half_even(764026600), 764027);
+        assert_eq!(nanos_to_micros_round_half_even(764026500), 764026);
+        assert_eq!(nanos_to_micros_round_half_even(764027500), 764028);
+    }
 }

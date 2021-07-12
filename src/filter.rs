@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use regex::Regex;
 use crate::err::Error;
 use crate::hive_bin_cell;
 use crate::impl_serialize_for_bitflags;
@@ -6,21 +7,24 @@ use crate::state::State;
 
 /// Filter allows specification of conditions to be met when reading the registry.
 /// Execution will short-circuit for applicable filters (is_complete = true)
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct Filter {
-    find_path: Option<FindPath>
+    pub(crate) find_path: Option<FindPath>,
+    pub(crate) reg_query: Option<RegQuery>
 }
 
 impl Filter {
     pub fn new() -> Self {
         Filter {
-            find_path: None
+            find_path: None,
+            reg_query: None
         }
     }
 
     pub fn from_path(find_path: FindPath) -> Self {
         Filter {
-            find_path: Some(find_path)
+            find_path: Some(find_path),
+            reg_query: None
         }
     }
 
@@ -29,7 +33,7 @@ impl Filter {
         state: &mut State,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
-        if !state.key_complete && self.find_path.is_some()  {
+        if !state.key_complete && (self.find_path.is_some() || self.reg_query.is_some()) {
             self.match_cell(state, cell)
         }
         else {
@@ -47,6 +51,9 @@ impl Filter {
                 if !find_path.key_path_has_root {
                     return Ok(FilterFlags::FILTER_ITERATE_KEYS);
                 }
+            }
+            else if self.reg_query.is_some() {
+                return Ok(FilterFlags::FILTER_ITERATE_KEYS);
             }
         }
         match cell.lowercase() {
@@ -68,28 +75,68 @@ impl Filter {
         key_path: String
     ) -> FilterFlags {
         let key_path_offset = state.get_root_path_offset(&key_path);
-        self.find_path.as_ref().expect("self.find_path was checked previously")
-            .check_key_match(
+        if let Some(find_path) = &self.find_path {
+            find_path.check_key_match(
                 &key_path,
                 key_path_offset
             )
+        }
+        else if let Some(reg_query) = &self.reg_query {
+            reg_query.check_key_match(
+                &key_path,
+                key_path_offset
+            )
+        }
+        else {
+            FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
+        }
     }
 
     fn match_value(
         &self,
         value_name: String
     ) -> FilterFlags {
-        let find_path = &self.find_path.as_ref().expect("We don't end up in this function unless find_path.is_some()");
-        match &find_path.value {
-            Some(match_val) => {
-                if match_val == &value_name {
-                    FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
-                }
-                else {
-                    FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
-                }
-            },
-            None => FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
+        let mut has_regex = false;
+        if let Some(find_path) = &self.find_path {
+            match &find_path.value {
+                Some(match_val) => {
+                    if match_val == &value_name {
+                        FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_VALUES_COMPLETE | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                    }
+                    else {
+                        FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                    }
+                },
+                None => FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
+            }
+        }
+        else if let Some(reg_query) = &self.reg_query {
+            match &reg_query.value {
+                Some(match_val) => {
+                    match &match_val {
+                        RegQueryComponent::ComponentString(s) => {
+                            if s == &value_name {
+                                FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_VALUES_COMPLETE | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                            }
+                            else {
+                                FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                            }
+                        },
+                        RegQueryComponent::ComponentRegex(r) => {
+                            if r.is_match(&value_name) {
+                                FilterFlags::FILTER_VALUE_MATCH// | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                            }
+                            else {
+                                FilterFlags::FILTER_NO_MATCH// | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                            }
+                        }
+                    }
+                },
+                None => FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
+            }
+        }
+        else {
+            FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
         }
     }
 
@@ -101,13 +148,91 @@ impl Filter {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum RegQueryComponent {
+    ComponentString(String),
+    ComponentRegex(Regex),
+}
+
+/// ReqQuery is a structured filter which allows for regular expressions.
+/// The value is optional; if only a key path is specified all values will be returned.
+/// The `children` member determines if subkeys are returned.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RegQuery {
+    pub key_path: Vec<RegQueryComponent>,
+    pub value: Option<RegQueryComponent>,
+    pub children: bool
+}
+
+impl RegQuery {
+    fn check_key_match(
+        &self,
+        key_name: &str,
+        root_key_name_offset: usize
+    ) -> FilterFlags {
+        let key_path_iterator = key_name[root_key_name_offset..].split('\\'); // key path can be shorter and match
+        let mut filter_iterator = self.key_path.iter();
+        let mut filter_path_segment = filter_iterator.next();
+        let mut has_regex = false;
+
+        for key_path_segment in key_path_iterator {
+            match filter_path_segment {
+                Some(fps) => {
+                    match fps {
+                        RegQueryComponent::ComponentString(s) => {
+                            if s != &key_path_segment.to_ascii_lowercase() {
+                                return FilterFlags::FILTER_NO_MATCH;
+                            }
+                            else {
+                                filter_path_segment = filter_iterator.next();
+                            }
+                        },
+                        RegQueryComponent::ComponentRegex(r) => {
+                            has_regex = true;
+                            if r.is_match(&key_path_segment.to_ascii_lowercase()) {
+                                filter_path_segment = filter_iterator.next();
+                            }
+                            else {
+                                return FilterFlags::FILTER_NO_MATCH;
+                            }
+                        }
+                    }
+                },
+                None => return FilterFlags::FILTER_NO_MATCH
+            }
+        }
+        if filter_path_segment.is_none() { // we matched all the keys!
+            if self.value.is_none() { // we only have a key path; should return all children / values then stop
+                let mut ret = FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES;
+                if !has_regex {
+                    ret |= FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
+                }
+                ret
+            }
+            else {
+                let mut ret = FilterFlags::FILTER_ITERATE_VALUES;
+                if !has_regex {
+                    ret |= FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
+                }
+                ret
+            }
+        }
+        else {
+            FilterFlags::FILTER_ITERATE_KEYS
+        }
+    }
+}
+
+
 /// FindPath is used when looking for a particular key path and/or value name.
-/// The value name is optional; if only a key path is specified all subkeys and values will be returned.
+/// The value name is optional; if only a key path is specified all values will be returned.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FindPath {
     key_path: String,
     value: Option<String>,
+    /// True if `key_path` contains the root key name. Usually wil be false, but useful if you are searching using a path from an existing key.
     key_path_has_root: bool,
+    /// Determines if subkeys are returned.
     children: bool
 }
 
@@ -169,11 +294,12 @@ impl FindPath {
 
 bitflags! {
     pub struct FilterFlags: u16 {
-        const FILTER_NO_MATCH              = 0x0001;
-        const FILTER_ITERATE_KEYS          = 0x0002;
-        const FILTER_ITERATE_VALUES        = 0x0004;
-        const FILTER_ITERATE_KEYS_COMPLETE = 0x0008;
-        const FILTER_VALUE_MATCH           = 0x0010;
+        const FILTER_NO_MATCH                = 0x0001;
+        const FILTER_ITERATE_KEYS            = 0x0002;
+        const FILTER_ITERATE_VALUES          = 0x0004;
+        const FILTER_ITERATE_KEYS_COMPLETE   = 0x0008;
+        const FILTER_VALUE_MATCH             = 0x0010;
+        const FILTER_ITERATE_VALUES_COMPLETE = 0x0020;
     }
 }
 impl_serialize_for_bitflags! {FilterFlags}
@@ -242,12 +368,12 @@ mod tests {
             sequence_num: None,
             updated_by_sequence_num: None
         };
-        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_VALUES_COMPLETE,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),
             "check_cell: Same case value match failed");
 
         key_value.value_name = String::from("flags");
-        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_VALUES_COMPLETE,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),
             "check_cell: Different case value match failed");
 

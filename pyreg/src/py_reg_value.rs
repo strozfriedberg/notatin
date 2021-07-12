@@ -1,17 +1,10 @@
 use pyo3::prelude::*;
 
-use crate::err::PyRegError;
-use crate::util::date_to_pyobject;
-use chrono::{Datelike, DateTime, Timelike, Utc};
 use notatin::{
-    parser::Parser,
-    filter::Filter,
-    cell_key_value::{CellKeyValue, CellKeyValueDetail, CellKeyValueFlags, CellKeyValueDataTypes},
-    cell_value::CellValue,
-    log::Logs,
-    util
+    cell_key_value::CellKeyValue,
+    cell_value::CellValue
 };
-use pyo3::{Py, PyIterProtocol, PyObject, PyResult, Python};
+use pyo3::{Py, PyObject, PyResult, Python};
 
 #[pyclass(subclass)]
 pub struct PyRegValue {
@@ -63,34 +56,11 @@ impl PyRegValue {
         match content {
             CellValue::ValueString(content) => Some(content.to_object(py)),
             CellValue::ValueI32(content) => Some(content.to_object(py)),
-            CellValue::ValueU32(content) => {
-                if self.inner.data_type == CellKeyValueDataTypes::REG_DEVPROP_TYPE_BOOLEAN || self.inner.data_type == CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN {
-                    return Some((content != 0).to_object(py));
-                }
-                return Some(content.to_object(py));
-            },
-            CellValue::ValueU64(content) => {
-                if self.inner.data_type == CellKeyValueDataTypes::REG_DEVPROP_TYPE_FILETIME {
-                    let datetime = util::get_date_time_from_filetime(content);
-                    if let Ok(py_datetime) = pyo3::types::PyDateTime::new(
-                        py,
-                        datetime.year(),
-                        datetime.month() as u8,
-                        datetime.day() as u8,
-                        datetime.hour() as u8,
-                        datetime.minute() as u8,
-                        datetime.second() as u8,
-                        datetime.timestamp_subsec_micros(),
-                        None
-                    ) {
-                        return Some(py_datetime.to_object(py));
-                    }
-                }
-                return Some(content.to_object(py));
-            },
+            CellValue::ValueU32(content) => Some(content.to_object(py)),
+            CellValue::ValueU64(content) => Some(content.to_object(py)),
             CellValue::ValueI64(content) => Some(content.to_object(py)),
-            CellValue::ValueMultiString(content) => Some(content.join(", ").to_object(py)),
-            CellValue::ValueBinary(content) => Some(pyo3::types::PyBytes::new(py, &self.inner.detail.value_bytes.clone().unwrap_or_default()).to_object(py)),
+            CellValue::ValueMultiString(content) => Some(content.to_object(py)),
+            CellValue::ValueBinary(content) => Some(pyo3::types::PyBytes::new(py, &content).to_object(py)),
             _ => None
         }
     }
@@ -113,6 +83,10 @@ impl PyRegValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use notatin::{
+        cell_key_value::{CellKeyValueDetail, CellKeyValueDataTypes, CellKeyValueFlags},
+        log::Logs
+    };
 
     #[test]
     fn test_get_content() {
@@ -145,8 +119,7 @@ mod tests {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
-        let content: std::result::Result<String, pyo3::PyErr> = py_reg_value.get_content(py).extract(py);
+        let content: std::result::Result<String, pyo3::PyErr> = py_reg_value.get_content(py).unwrap().extract(py);
         assert_eq!(content.unwrap(), "5.0".to_string());
-
     }
 }
