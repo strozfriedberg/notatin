@@ -8,7 +8,7 @@ use crate::file_info::{FileInfo, ReadSeek};
 use crate::state::State;
 use crate::log::{LogCode, Logs};
 use crate::transaction_log::TransactionLog;
-use crate::filter::{Filter, FindPath};
+use crate::filter::{Filter, RegQuery};
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -313,7 +313,7 @@ impl Parser {
         name: &str,
     ) -> Result<Option<CellKeyNode>, Error> {
         let key_path_sans_root = &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
-        let filter = Filter::from_path(FindPath::from_key(&(key_path_sans_root.to_string() + "\\" + name), false, false));
+        let filter = Filter::from_path(RegQuery::from_key(&(key_path_sans_root.to_string() + "\\" + name), false, false));
         cell_key_node
             .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, true, None, false)
             .0
@@ -458,7 +458,8 @@ mod tests {
         fs::File,
         io::{BufWriter, Write},
     };
-    use crate::filter::{Filter, FindPath, RegQueryComponent, RegQuery};
+    use regex::Regex;
+    use crate::filter::{Filter, RegQueryComponent, RegQuery};
     use crate::util;
 
     #[test]
@@ -529,7 +530,7 @@ mod tests {
         let mut parser = Parser::from_path(
             "/home/kstone/code/rust_parser_2/test_data/SoftwareKim",
             Some(vec!["/home/kstone/code/rust_parser_2/test_data/SoftwareKim.LOG1", "/home/kstone/code/rust_parser_2/test_data/SoftwareKim.LOG2"]),
-            Some(Filter::from_path(FindPath::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
+            Some(Filter::from_path(RegQuery::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
             true
         ).unwrap();
 
@@ -542,7 +543,7 @@ mod tests {
         let mut parser = Parser::from_path(
             "/home/kstone/code/rust_parser_2/test_data/SoftwareKim",
             None,
-            Some(Filter::from_path(FindPath::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
+            Some(Filter::from_path(RegQuery::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
             true
         ).unwrap();
 
@@ -554,41 +555,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cell_key_node_count_all_keys_and_values_with_kv_filter() {
-        let filter = Filter::from_path(FindPath::from_key_value("Control Panel\\Accessibility\\HighContrast", "Flags", false));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let (keys, values) = parser.count_all_keys_and_values();
-        assert_eq!(
-            (4, 1),
-            (keys, values)
-        );
-
-        let mut md5_context =  md5::Context::new();
-        for key in parser.iter() {
-            md5_context.consume(key.path);
-        }
-        assert_eq!(
-           "75639d0ba098a3f4ab15a5e906dadcc1",
-           format!("{:x}", md5_context.compute()),
-           "Expected hash of paths doesn't match"
-        );
-    }
-
-    #[test]
-    fn test_cell_key_node_count_all_keys_and_values_with_kv_filter2() {
-        let filter = Filter::from_path(FindPath::from_key_value(r"ControlSet001\Control\DeviceContainers\{48ae4b41-eeac-57b9-8d0c-6752dfa94bf5}\Properties\{78c34fc8-104a-4aca-9ea4-524d52996e57}\0050", "", false));
-        let mut parser = Parser::from_path("test_data/asdf_test_data/SYSTEM", None, Some(filter), false).unwrap();
-        let (keys, values) = parser.count_all_keys_and_values();
-        assert_eq!(
-            (8, 1),
-            (keys, values),
-            "key and/or value count doesn't match expected"
-        );
-    }
-
-    #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let filter = Filter::from_path(FindPath::from_key(&r"Software\Microsoft".to_string(), false, true));
+        let filter = Filter::from_path(RegQuery::from_key(&r"Software\Microsoft".to_string(), false, true));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let (keys, values) = parser.count_all_keys_and_values();
         assert_eq!(
@@ -635,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_parser_get_sub_key() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.iter().next().unwrap();
         let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
@@ -645,7 +613,7 @@ mod tests {
         let sub_key = parser.get_sub_key(&mut key, "Nope").unwrap();
         assert_eq!(None, sub_key);
 
-        let filter = Filter::from_path(FindPath::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", true, false));
+        let filter = Filter::from_path(RegQuery::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", true, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.iter().next().unwrap();
         let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
@@ -658,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_get_parent_key() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility\\Keyboard Response", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.iter().next().unwrap();
         let parent_key = parser.get_parent_key(&mut key).unwrap().unwrap();
@@ -682,11 +650,10 @@ mod tests {
                 RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
                 RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap())
             ],
-            value: None,
+            key_path_has_root: false,
             children: false
         };
         let filter = Filter {
-            find_path: None,
             reg_query: Some(reg_query)
         };
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
@@ -700,23 +667,6 @@ mod tests {
 
         let reg_query = RegQuery {
             key_path:vec![
-                RegQueryComponent::ComponentString("control Panel".to_string().to_ascii_lowercase()),
-                RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
-                RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap())
-            ],
-            value: Some(RegQueryComponent::ComponentRegex(Regex::new(".*o.+").unwrap())),
-            children: false
-        };
-        let filter = Filter {
-            find_path: None,
-            reg_query: Some(reg_query)
-        };
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let kv = parser.count_all_keys_and_values();
-        assert_eq!((5, 6), kv);
-
-        let reg_query = RegQuery {
-            key_path:vec![
                 RegQueryComponent::ComponentString("appevents".to_string().to_ascii_lowercase()),
                 RegQueryComponent::ComponentString("schemes".to_string().to_ascii_lowercase()),
                 RegQueryComponent::ComponentString("apps".to_string().to_ascii_lowercase()),
@@ -724,11 +674,10 @@ mod tests {
                 RegQueryComponent::ComponentRegex(Regex::new(".*a.*").unwrap()),
                 RegQueryComponent::ComponentString(".current".to_string().to_ascii_lowercase()),
             ],
-            value: None,
+            key_path_has_root: false,
             children: false
         };
         let filter = Filter {
-            find_path: None,
             reg_query: Some(reg_query)
         };
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
@@ -747,7 +696,7 @@ mod tests {
 
     #[test]
     fn dump_registry() {
-        let filter = Filter::from_path(FindPath::from_key("Software\\7-Zip\\FM", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Software\\7-Zip\\FM", false, false));
         let write_file = File::create("office_NTUSER.DAT.jsonl").unwrap();
         let mut writer = BufWriter::new(&write_file);
 

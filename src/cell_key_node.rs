@@ -24,7 +24,7 @@ use crate::sub_key_list_lf::SubKeyListLf;
 use crate::sub_key_list_lh::SubKeyListLh;
 use crate::sub_key_list_li::SubKeyListLi;
 use crate::sub_key_list_ri::SubKeyListRi;
-use crate::filter::{Filter, FilterFlags, FindPath};
+use crate::filter::{Filter, FilterFlags, RegQuery};
 use crate::impl_serialize_for_bitflags;
 use crate::impl_flags_from_bits;
 use crate::parser::Parser;
@@ -423,7 +423,7 @@ impl CellKeyNode {
             Some(self.clone())
         }
         else {
-            let filter = Filter::from_path(FindPath::from_key(&format!("{}\\{}", self.path, sub_path), true, false));
+            let filter = Filter::from_path(RegQuery::from_key(&format!("{}\\{}", self.path, sub_path), true, false));
             self.get_sub_key_internal(&parser.file_info, &mut parser.state, &filter, true, None)
         }
     }
@@ -658,12 +658,12 @@ mod tests {
     use super::*;
     use std::convert::TryInto;
     use nom::error::ErrorKind;
-    use crate::filter::FindPath;
+    use crate::filter::RegQuery;
     use crate::cell_key_value::{CellKeyValueDetail, CellKeyValueDataTypes, CellKeyValueFlags};
 
     #[test]
     fn test_iterator() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         for mut key in parser.iter() {
             for val in key.value_iter() {
@@ -674,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_get_sub_key() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.next_key().unwrap();
 
@@ -695,7 +695,7 @@ mod tests {
 
     #[test]
     fn test_get_sub_key_by_index() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.next_key().unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_next_sub_key() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.next_key().unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn test_get_value() {
-        let filter = Filter::from_path(FindPath::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         for key in parser.iter() {
             let val = key.get_value("delayBeforeAcceptance");
