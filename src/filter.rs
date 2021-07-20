@@ -96,7 +96,6 @@ impl Filter {
         &self,
         value_name: String
     ) -> FilterFlags {
-        let mut has_regex = false;
         if let Some(find_path) = &self.find_path {
             match &find_path.value {
                 Some(match_val) => {

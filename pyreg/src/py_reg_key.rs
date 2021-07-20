@@ -15,12 +15,6 @@ use pyo3::exceptions::PyNotImplementedError;
 pub struct PyRegKey {
     pub(crate) inner: CellKeyNode,
     #[pyo3(get)]
-    pub path: String,
-    #[pyo3(get)]
-    pub number_of_sub_keys: u32,
-    #[pyo3(get)]
-    pub number_of_key_values: u32,
-    #[pyo3(get)]
     pub last_key_written_date_and_time: PyObject,
 }
 
@@ -68,7 +62,7 @@ impl PyRegKey {
         &mut self,
         parser: &mut PyRegParser,
         path: &str
-    ) -> PyResult<Option<Py<PyRegKey>>> {
+    ) -> Option<Py<PyRegKey>> {
         match &mut parser.inner {
             Some(parser) => {
                 match self.inner.get_sub_key_by_path(parser, &path) {
@@ -77,26 +71,63 @@ impl PyRegKey {
                         let py = gil.python();
                         let ret = PyRegKey::from_cell_key_node(py, key);
                         if let Ok(py_reg_key) = ret {
-                            return Ok(Some(py_reg_key));
+                            return Some(py_reg_key);
                         }
                     },
-                    _ => return Ok(None)
+                    _ => return None
                 }
             },
-            _ => return Ok(None)
+            _ => return None
         }
-        Ok(None)
+        None
     }
 
     /// name(self, /)
     /// --
     ///
     /// Returns the name of the key
+    #[getter]
     pub fn name(
         &self,
         py: Python
     ) -> PyObject {
         self.inner.key_name.to_object(py)
+    }
+
+    /// path(self, /)
+    /// --
+    ///
+    /// Returns the path of the key
+    #[getter]
+    pub fn path(
+        &self,
+        py: Python
+    ) -> PyObject {
+        self.inner.path.to_object(py)
+    }
+
+    /// number_of_sub_keys(self, /)
+    /// --
+    ///
+    /// Returns the number of sub keys
+    #[getter]
+    pub fn number_of_sub_keys(
+        &self,
+        py: Python
+    ) -> PyObject {
+        self.inner.number_of_sub_keys.to_object(py)
+    }
+
+    /// number_of_key_values(self, /)
+    /// --
+    ///
+    /// Returns the number of key values
+    #[getter]
+    pub fn number_of_key_values(
+        &self,
+        py: Python
+    ) -> PyObject {
+        self.inner.number_of_key_values.to_object(py)
     }
 }
 
@@ -108,9 +139,6 @@ impl PyRegKey {
         Py::new(
             py,
             PyRegKey {
-                path: cell_key_node.path.clone(),
-                number_of_sub_keys: cell_key_node.number_of_sub_keys,
-                number_of_key_values: cell_key_node.number_of_key_values,
                 last_key_written_date_and_time: date_to_pyobject(&cell_key_node.last_key_written_date_and_time)?,
                 inner: cell_key_node,
             },
@@ -190,13 +218,12 @@ impl PyRegValuesIterator {
     fn next(&mut self) -> PyResult<Option<PyObject>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let obj = match self.inner.next_value() {
+        match self.inner.next_value() {
             Some(value) => {
                 Ok(Some(self.reg_value_to_pyobject(Ok(value), py)))
             }
             None => Ok(None)
-        };
-        return obj;
+        }
     }
 }
 
@@ -212,14 +239,13 @@ impl PyRegSubKeysIterator {
     ) -> PyResult<Option<PyObject>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let obj = match self.sub_keys.get(self.index) {
+        match self.sub_keys.get(self.index) {
             Some(key) => {
                 self.index += 1;
                 Ok(Some(PyRegKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py)))
             }
             None => Ok(None)
-        };
-        return obj;
+        }
     }
 }
 

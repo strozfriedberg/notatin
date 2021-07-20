@@ -13,6 +13,7 @@ pub struct PyRegValue {
 
 #[pymethods]
 impl PyRegValue {
+    #[getter]
     pub fn value(
         &self,
         py: Python
@@ -20,6 +21,7 @@ impl PyRegValue {
         pyo3::types::PyBytes::new(py, &self.inner.detail.value_bytes.clone().unwrap_or_default()).to_object(py)
     }
 
+    #[getter]
     pub fn pretty_name(
         &self,
         py: Python
@@ -27,6 +29,7 @@ impl PyRegValue {
         self.inner.get_pretty_name().to_object(py)
     }
 
+    #[getter]
     pub fn name(
         &self,
         py: Python
@@ -34,6 +37,7 @@ impl PyRegValue {
         self.inner.value_name.to_object(py)
     }
 
+    #[getter]
     pub fn raw_data_type(
         &self,
         py: Python
@@ -41,6 +45,7 @@ impl PyRegValue {
         self.inner.detail.data_type_raw.to_object(py)
     }
 
+    #[getter]
     pub fn data_type(
         &self,
         py: Python
@@ -48,7 +53,8 @@ impl PyRegValue {
         self.inner.detail.data_type_raw.to_object(py)
     }
 
-    pub fn get_content(
+    #[getter]
+    pub fn content(
         &self,
         py: Python
     ) -> Option<PyObject> {
@@ -74,7 +80,7 @@ impl PyRegValue {
         Py::new(
             py,
             PyRegValue {
-                inner: cell_key_value.clone()
+                inner: cell_key_value
             },
         )
     }

@@ -196,16 +196,15 @@ impl PyRegKeysIterator {
         }
     }
 
-    fn next(&mut self) -> PyResult<Option<PyObject>> {
+    fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let obj = match self.inner.next_key() {
+        match self.inner.next_key() {
             Some(key) => {
-                Ok(Some(Self::reg_key_to_pyobject(Ok(key), py)))
+                Some(Self::reg_key_to_pyobject(Ok(key), py))
             }
-            None => Ok(None)
-        };
-        return obj;
+            None => None
+        }
     }
 }
 
@@ -225,7 +224,7 @@ impl PyIterProtocol for PyRegKeysIterator {
         Ok(slf.into())
     }
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        slf.next()
+        Ok(slf.next())
     }
 }
 
