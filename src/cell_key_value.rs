@@ -487,7 +487,7 @@ mod tests {
         let mut file_info = FileInfo::from_path("test_data/FuseHive").unwrap();
         file_info.hbin_offset_absolute = 4096;
         let mut state = State::default();
-        let (key_node, _) = CellKeyNode::read(&file_info, &mut state, 4416, &String::new(), &Filter::new(), None, false).unwrap();
+        let (key_node, _) = CellKeyNode::read(&file_info, &mut state, 4416, &String::new(), None, false, None, false).unwrap();
         let key_node = key_node.unwrap();
         assert_eq!(
             "v".to_string(),

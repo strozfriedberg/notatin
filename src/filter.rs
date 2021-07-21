@@ -25,16 +25,29 @@ impl Filter {
         }
     }
 
+    pub fn is_valid(&self) -> bool {
+        self.reg_query.is_some()
+    }
+
+    fn key_path_has_root(&self) -> bool {
+        if let Some(reg_query) = &self.reg_query {
+            reg_query.key_path_has_root
+        }
+        else {
+            false
+        }
+    }
+
     pub(crate) fn check_cell(
         &self,
         state: &mut State,
         cell: &dyn hive_bin_cell::Cell
     ) -> Result<FilterFlags, Error> {
-        if !state.key_complete && self.reg_query.is_some() {
+        if self.reg_query.is_some() {
             self.match_cell(state, cell)
         }
         else {
-            Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
+            Ok(FilterFlags::FILTER_ITERATE_KEYS)
         }
     }
 
@@ -56,7 +69,7 @@ impl Filter {
                     Ok(self.match_key(state, cell_lowercase))
                 }
                 else {
-                    Ok(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES)
+                    Ok(FilterFlags::FILTER_ITERATE_KEYS)
                 }
             },
             None => Err(Error::Any{detail: String::from("Missing cell name")})
@@ -68,15 +81,14 @@ impl Filter {
         state: &mut State,
         key_path: String
     ) -> FilterFlags {
-        let key_path_offset = state.get_root_path_offset(&key_path);
         if let Some(reg_query) = &self.reg_query {
             reg_query.check_key_match(
                 &key_path,
-                key_path_offset
+                state.get_root_path_offset(&key_path)
             )
         }
         else {
-            FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
+            FilterFlags::FILTER_ITERATE_KEYS
         }
     }
 
@@ -89,7 +101,7 @@ impl Filter {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum RegQueryComponent {
+pub enum RegQueryComponent {
     ComponentString(String),
     ComponentRegex(Regex),
 }
@@ -107,7 +119,7 @@ pub struct RegQuery {
 impl RegQuery {
     pub fn from_key(key_path: &str, key_path_has_root: bool, children: bool) -> RegQuery {
         let mut query_components = Vec::new();
-        for segment in key_path.trim_end_matches('\\').to_ascii_lowercase().split("\\") {
+        for segment in key_path.trim_end_matches('\\').to_ascii_lowercase().split('\\') {
             query_components.push(RegQueryComponent::ComponentString(segment.to_string()));
         }
         RegQuery {
@@ -128,7 +140,6 @@ impl RegQuery {
         let key_path_iterator = key_name[root_key_name_offset..].split('\\'); // key path can be shorter and match
         let mut filter_iterator = self.key_path.iter();
         let mut filter_path_segment = filter_iterator.next();
-        let mut has_regex = false;
 
         for key_path_segment in key_path_iterator {
             match filter_path_segment {
@@ -143,7 +154,6 @@ impl RegQuery {
                             }
                         },
                         RegQueryComponent::ComponentRegex(r) => {
-                            has_regex = true;
                             if r.is_match(&key_path_segment.to_ascii_lowercase()) {
                                 filter_path_segment = filter_iterator.next();
                             }
@@ -156,12 +166,8 @@ impl RegQuery {
                 None => return FilterFlags::FILTER_NO_MATCH
             }
         }
-    if filter_path_segment.is_none() { // we matched all the keys!
-            let mut ret = FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES;
-            if !has_regex {
-                ret |= FilterFlags::FILTER_ITERATE_KEYS_COMPLETE;
-            }
-            ret
+        if filter_path_segment.is_none() { // we matched all the keys!
+            FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_KEY_MATCH
         }
         else {
             FilterFlags::FILTER_ITERATE_KEYS
@@ -173,10 +179,8 @@ bitflags! {
     pub struct FilterFlags: u16 {
         const FILTER_NO_MATCH                = 0x0001;
         const FILTER_ITERATE_KEYS            = 0x0002;
-        const FILTER_ITERATE_VALUES          = 0x0004;
-        const FILTER_ITERATE_KEYS_COMPLETE   = 0x0008;
-        const FILTER_VALUE_MATCH             = 0x0010;
-        const FILTER_ITERATE_VALUES_COMPLETE = 0x0020;
+        const FILTER_ITERATE_KEYS_COMPLETE   = 0x0004;
+        const FILTER_KEY_MATCH               = 0x0008;
     }
 }
 impl_serialize_for_bitflags! {FilterFlags}
@@ -200,12 +204,12 @@ mod tests {
             path: String::from("HighContrast"),
             ..Default::default()
         };
-        assert_eq!(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_KEY_MATCH,
             filter.clone().check_cell(&mut state, &key_node).unwrap(),
             "check_cell: Same case key match failed");
 
         key_node.path = String::from("Highcontrast");
-        assert_eq!(FilterFlags::FILTER_ITERATE_VALUES | FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_KEY_MATCH,
             filter.clone().check_cell(&mut state, &key_node).unwrap(),
             "check_cell: Different case key match failed");
 

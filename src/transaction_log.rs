@@ -278,7 +278,7 @@ impl TransactionLog {
         let mut reg_items: RegItems = HashMap::new();
         if parser.state.recover_deleted {
             parser.init_root()?;
-            for key in parser.iter() {
+            for key in parser.iter_postorder() {
                 reg_items.insert((key.path.clone(), None), (key.hash.expect("Must have a hash here"), key.detail.file_offset_absolute, sequence_num));
                 for value in key.sub_values {
                     reg_items.insert((key.path.clone(), Some(value.value_name)), (value.hash.expect("Must have a hash here"), value.detail.file_offset_absolute, sequence_num));
@@ -405,7 +405,8 @@ impl TransactionAnalyzer<'_> {
                 state,
                 file_offset_absolute,
                 parent_path,
-                &Filter::new(),
+                None,
+                false,
                 Some(old_sequence_number),
                 false
             )?;

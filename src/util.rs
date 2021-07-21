@@ -188,7 +188,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     ##*/
 
     fn escape_string(orig: &str) -> String {
-        if orig.contains(",") || orig.contains("\""){
+        if orig.contains(',') || orig.contains('\"'){
             let escaped = &str::replace(orig, "\"", "\"\"");
             format!("\"{}\"", escaped)
         }
@@ -233,7 +233,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
         )?;
         for value in key.sub_values {
             let name;
-            if value.value_name == "" {
+            if value.value_name.is_empty() {
                 name = "(default)";
             }
             else {

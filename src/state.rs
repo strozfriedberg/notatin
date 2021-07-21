@@ -95,10 +95,6 @@ pub(crate) struct State {
     // parser iteration
     pub cell_key_node_stack: Vec<CellKeyNode>,
 
-    // filter evaulation
-    pub value_complete: bool,
-    pub key_complete: bool,
-
     // Path filters don't include the root name, but the cell key's path does.
     // This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
@@ -115,11 +111,6 @@ pub(crate) struct State {
 }
 
 impl State {
-    pub(crate) fn reset_filter_state(&mut self) {
-        self.key_complete = false;
-        self.value_complete = false;
-    }
-
     pub(crate) fn get_root_path_offset(&mut self, key_path: &str) -> usize {
         if self.root_key_path_offset == 0 {
             match key_path[1..].find('\\') {
@@ -140,8 +131,6 @@ impl Default for State {
         Self {
             cell_key_node_stack: Vec::new(),
             recover_deleted: false,
-            value_complete: false,
-            key_complete: false,
             root_key_path_offset: 0,
             transaction_logs: None,
             info: Logs::default(),

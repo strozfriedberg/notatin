@@ -57,6 +57,13 @@ pub struct CellKeyNodeDetail {
     pub slack: Vec<u8>
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub(crate) enum FilterState {
+    NoMatch,
+    DescendentOfMatch,
+    ExactMatch
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
@@ -83,6 +90,8 @@ pub struct CellKeyNode {
     pub(crate) to_return: u32,
     #[serde(skip_serializing)]
     pub(crate) track_returned: u32,
+    #[serde(skip_serializing)]
+    pub(crate) filter_state: Option<FilterState>,
 
     #[serde(skip_serializing)]
     pub versions: Vec<Self>,
@@ -120,6 +129,7 @@ impl Default for CellKeyNode {
             cell_sub_key_offsets_absolute: Vec::new(),
             to_return: 0,
             track_returned: 0,
+            filter_state: None,
             versions: Vec::new(),
             deleted_keys: Vec::new(),
             deleted_values: Vec::new(),
@@ -232,6 +242,7 @@ impl CellKeyNode {
             logs,
             cell_sub_key_offsets_absolute: Vec::new(),
             to_return: 0,
+            filter_state: None,
             track_returned: 0,
             versions: Vec::new(),
             deleted_keys: Vec::new(),
@@ -281,6 +292,22 @@ impl CellKeyNode {
         }
     }
 
+    pub(crate) fn is_filter_match_or_descendent(&self) -> bool {
+        match self.filter_state {
+            Some(FilterState::ExactMatch) |
+            Some(FilterState::DescendentOfMatch) => true,
+            _ => false
+        }
+    }
+
+    fn should_read_values(
+        filter: Option<&Filter>,
+        filter_flags: FilterFlags,
+        self_is_filter_match_or_descendent: bool
+    ) -> bool {
+        self_is_filter_match_or_descendent || filter.is_none() || !filter.unwrap().is_valid() || filter_flags.contains(FilterFlags::FILTER_KEY_MATCH)
+    }
+
     /// Reads a key node from a file buffer.
     /// Returns a tuple of CellKeyNode and a found_key bool (used to stop iterating over keys at this level of the tree in subsequent iteration)
     pub(crate) fn read(
@@ -288,36 +315,34 @@ impl CellKeyNode {
         state: &mut State,
         offset: usize,
         cur_path: &str,
-        filter: &Filter,
+        filter: Option<&Filter>,
+        self_is_filter_match_or_descendent: bool,
         sequence_num: Option<u32>,
         update_modified_lists: bool
     ) -> Result<(Option<Self>, bool), Error> {
         let (_, mut cell_key_node) = Self::from_bytes(file_info, state, &file_info.buffer[offset..], cur_path, sequence_num)?;
 
-        let filter_flags = filter.check_cell(state, &cell_key_node)?;
+        let filter_flags = match filter {
+            Some(filter) => filter.check_cell(state, &cell_key_node)?,
+            _ => FilterFlags::FILTER_ITERATE_KEYS
+        };
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok((None, false));
         }
 
-        if filter_flags.contains(FilterFlags::FILTER_ITERATE_VALUES) && cell_key_node.number_of_key_values > 0 {
-            cell_key_node.read_values(file_info, state, filter, sequence_num)?;
+        if cell_key_node.number_of_key_values > 0 && Self::should_read_values(filter, filter_flags, self_is_filter_match_or_descendent) {
+            cell_key_node.read_values(file_info, state, sequence_num)?;
         }
-        let found_key;
-        if filter_flags.contains(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE) {
-            // found_key is used to stop iterating over keys at this level of the tree.
-            // state.key_complete is used to indicate that the filter was matched and to stop applying it to descendents
-            found_key = true;
-            state.key_complete = filter.return_sub_keys()
-        }
-        else {
-            found_key = false;
+
+        if filter_flags.contains(FilterFlags::FILTER_KEY_MATCH) {
+            cell_key_node.filter_state = Some(FilterState::ExactMatch);
         }
 
         if update_modified_lists {
             cell_key_node.update_modified_lists(state);
         }
 
-        Ok((Some(cell_key_node), found_key))
+        Ok((Some(cell_key_node), filter_flags.contains(FilterFlags::FILTER_KEY_MATCH)))
     }
 
     pub fn read_sub_keys(
@@ -347,16 +372,25 @@ impl CellKeyNode {
     ) -> (Vec<Self>, bool) {
         let mut children = Vec::with_capacity(self.number_of_sub_keys as usize);
         let mut found_key = false;
-        if self.number_of_sub_keys > 0 && (force || !state.key_complete || filter.return_sub_keys()) {
+        if self.number_of_sub_keys > 0 {//} && (force || filter.return_sub_keys()) {
             match Self::parse_sub_key_list(file_info, state, self.detail.sub_keys_list_offset_relative) {
                 Ok(cell_sub_key_offsets_absolute) => {
+                    let self_is_filter_match_or_descendent = self.is_filter_match_or_descendent();
+                    let sub_filter;
+                    if self_is_filter_match_or_descendent && filter.return_sub_keys() {
+                        sub_filter = None;
+                    }
+                    else {
+                        sub_filter = Some(filter);
+                    }
                     for val in cell_sub_key_offsets_absolute.iter() {
                         let ret = Self::read(
                             file_info,
                             state,
                             *val as usize,
                             &self.path,
-                            filter,
+                            sub_filter,
+                            self_is_filter_match_or_descendent,
                             sequence_num,
                             update_deleted_version_lists
                         );
@@ -368,12 +402,20 @@ impl CellKeyNode {
                                 )
                             },
                             Ok((kn, found_key_ret)) => {
-                                if let Some(kn) = kn {
+                                if let Some(mut kn) = kn {
+                                    if kn.filter_state == None {
+                                        if self_is_filter_match_or_descendent {
+                                            kn.filter_state = Some(FilterState::DescendentOfMatch);
+                                        }
+                                        else if filter.is_valid() {
+                                            kn.filter_state = Some(FilterState::NoMatch);
+                                        }
+                                    }
                                     children.push(kn);
                                 };
                                 if found_key_ret {
                                     found_key = found_key_ret;
-                                    break;
+                                   // break;
                                 }
                             }
                         }
@@ -419,7 +461,7 @@ impl CellKeyNode {
         parser: &mut Parser,
         sub_path: &str
     ) -> Option<Self> {
-        if sub_path == "" {
+        if sub_path.is_empty() {
             Some(self.clone())
         }
         else {
@@ -442,7 +484,8 @@ impl CellKeyNode {
                             &mut parser.state,
                             *offset as usize,
                             &self.path,
-                            &Filter::new(),
+                            None,
+                            self.is_filter_match_or_descendent(),
                             None,
                             true
                         );
@@ -476,7 +519,6 @@ impl CellKeyNode {
         &mut self,
         file_info: &FileInfo,
         state: &mut State,
-        filter: &Filter,
         sequence_num: Option<u32>
     ) -> Result<(), Error> {
         self.sub_values = Vec::with_capacity(self.number_of_key_values as usize);
@@ -489,18 +531,8 @@ impl CellKeyNode {
             }
             let (_, mut cell_key_value) = CellKeyValue::from_bytes(file_info, &file_info.buffer[(*val as usize + file_info.hbin_offset_absolute)..], sequence_num)?;
 
-            let iterate_flags = filter.check_cell(state, &cell_key_value)?;
-            if !iterate_flags.contains(FilterFlags::FILTER_NO_MATCH) {
-                cell_key_value.read_value_bytes(file_info, state);
-                self.sub_values.push(cell_key_value);
-                if iterate_flags.contains(FilterFlags::FILTER_ITERATE_VALUES_COMPLETE) {
-                    state.value_complete = true;
-                }
-            }
-
-            if state.value_complete {
-                break;
-            }
+            cell_key_value.read_value_bytes(file_info, state);
+            self.sub_values.push(cell_key_value);
         }
         Ok(())
     }
@@ -673,10 +705,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_sub_key() {
+    fn test_get_sub_key_by_path() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.next_key().unwrap();
+        let mut key = parser.next_key_postorder(true).unwrap();
 
         let sub_key = key.get_sub_key_by_path(&mut parser, &"Accessibility").unwrap();
         assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility", sub_key.path);
@@ -697,7 +729,7 @@ mod tests {
     fn test_get_sub_key_by_index() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.next_key().unwrap();
+        let mut key = parser.next_key_postorder(true).unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
         assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription", sub_key.path);
         let sub_key = key.get_sub_key_by_index(&mut parser, 11).unwrap();
@@ -711,7 +743,7 @@ mod tests {
     fn test_next_sub_key() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.next_key().unwrap();
+        let mut key = parser.next_key_postorder(true).unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
         assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription", sub_key.path);
         let sub_key = key.next_sub_key(&mut parser).unwrap();
@@ -719,10 +751,22 @@ mod tests {
     }
 
     #[test]
-    fn test_get_value() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
+    fn test_get_value2() {
+        //let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Input Method", false, true));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, true));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        for key in parser.iter() {
+        for key in parser.iter_postorder()  {
+            let t=3;
+            println!("{}", key.path);
+            //let val = key.get_value("delayBeforeAcceptance");
+        }
+    }
+
+    #[test]
+    fn test_get_value() {
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, false));
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        for key in parser.iter_postorder()  {
             let val = key.get_value("delayBeforeAcceptance");
             let hash_array: [u8; blake3::OUT_LEN] = [0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3, 0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0, 0xb5, 0xa3, 0xb2, 0xef].try_into().unwrap();
 
@@ -811,6 +855,7 @@ mod tests {
             cell_sub_key_offsets_absolute: Vec::new(),
             to_return: 0,
             track_returned: 0,
+            filter_state: None,
             versions: Vec::new(),
             deleted_keys: Vec::new(),
             deleted_values: Vec::new(),

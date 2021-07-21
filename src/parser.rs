@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use crate::base_block::{BaseBlock, BaseBlockBase, FileType};
 use crate::err::Error;
-use crate::cell_key_node::CellKeyNode;
+use crate::cell_key_node::{CellKeyNode, FilterState};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::state::State;
@@ -100,9 +100,6 @@ impl Parser {
     }
 
     pub(crate) fn init_root(&mut self) -> Result<(), Error> {
-        self.state.key_complete = false;
-        self.state.value_complete = false;
-
         let input = &self.file_info.buffer[self.file_info.hbin_offset_absolute..];
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.file_info, input)?;
         self.hive_bin_header = Some(hive_bin_header);
@@ -112,7 +109,8 @@ impl Parser {
                 &mut self.state,
                 self.file_info.get_file_offset(input),
                 &String::new(),
-                &self.filter,
+                Some(&self.filter),
+                true,
                 None,
                 true
             )?;
@@ -249,7 +247,7 @@ impl Parser {
     ) -> (usize, usize) {
         let mut keys = 0;
         let mut values = 0;
-        for key in self.iter() {
+        for key in self.iter_postorder() {
             keys += 1;
             values += key.sub_values.len();
         }
@@ -297,7 +295,8 @@ impl Parser {
                     &mut self.state,
                     bb.base.root_cell_offset_relative as usize + self.file_info.hbin_offset_absolute,
                     &String::new(),
-                    &Filter::new(),
+                    None,
+                    true,
                     None,
                     true
                 )?;
@@ -366,7 +365,8 @@ impl Parser {
             &mut self.state,
             cell_key_node.parent_key_offset_relative as usize + self.file_info.hbin_offset_absolute,
             &parent_path,
-            &Filter::new(),
+            None,
+            true,
             None,
             true
         )?;
@@ -376,14 +376,27 @@ impl Parser {
     pub fn iter(&mut self) -> ParserIterator<'_> {
         self.init_iter_inner(true);
         ParserIterator {
-            inner: self
+            inner: self,
+            postorder: false,
+            filter_include_ancestors: true
+        }
+    }
+
+    pub fn iter_postorder(&mut self) -> ParserIterator<'_> {
+        self.init_iter_inner(true);
+        ParserIterator {
+            inner: self,
+            postorder: true,
+            filter_include_ancestors: true
         }
     }
 
     pub(crate) fn iter_skip_modified(&mut self) -> ParserIterator<'_> {
         self.init_iter_inner(false);
         ParserIterator {
-            inner: self
+            inner: self,
+            postorder: true,
+            filter_include_ancestors: true
         }
     }
 
@@ -392,7 +405,6 @@ impl Parser {
     }
 
     fn init_iter_inner(&mut self, get_modified: bool) {
-        self.state.reset_filter_state();
         self.stack_to_traverse = Vec::new();
         self.stack_to_return = Vec::new();
         self.get_modified = get_modified;
@@ -401,8 +413,8 @@ impl Parser {
         }
     }
 
-    // Iterative post-order traversal
-    pub fn next_key(&mut self) -> Option<CellKeyNode> {
+    // Iterative postorder traversal
+    pub fn next_key_postorder(&mut self, filter_include_ancestors: bool) -> Option<CellKeyNode> {
         while !self.stack_to_traverse.is_empty() {
             // first check to see if we are done with anything on stack_to_return;
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
@@ -428,7 +440,26 @@ impl Parser {
 
         // Handle any remaining elements
         if !self.stack_to_return.is_empty() {
-            return Some(self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty"));
+            let to_return = self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty");
+            if filter_include_ancestors || to_return.filter_state != Some(FilterState::NoMatch) {
+                return Some(to_return);
+            }
+        }
+        None
+    }
+
+    // Iterative preorder traversal
+    pub fn next_key_preorder(&mut self, filter_include_ancestors: bool) -> Option<CellKeyNode> {
+        while !self.stack_to_traverse.is_empty() {
+            let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
+            if node.number_of_sub_keys > 0 {
+                let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, false, None, self.get_modified);
+                node.to_return = children.len() as u32;
+                self.stack_to_traverse.extend(children);
+            }
+            if filter_include_ancestors || !self.filter.is_valid() || node.is_filter_match_or_descendent() {
+                return Some(node);
+            }
         }
         None
     }
@@ -438,15 +469,21 @@ impl Parser {
 pub type RegItems = HashMap<(String, Option<String>), (blake3::Hash, usize, u32)>;
 
 pub struct ParserIterator<'a> {
-    inner: &'a mut Parser
+    inner: &'a mut Parser,
+    postorder: bool,
+    filter_include_ancestors: bool
 }
 
 impl Iterator for ParserIterator<'_> {
     type Item = CellKeyNode;
 
-    // Iterative post-order traversal
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next_key()
+        if self.postorder {
+            self.inner.next_key_postorder(self.filter_include_ancestors)
+        }
+        else {
+            self.inner.next_key_preorder(self.filter_include_ancestors)
+        }
     }
 }
 
@@ -463,7 +500,7 @@ mod tests {
     use crate::util;
 
     #[test]
-    fn test_parser_iterator() {
+    fn test_parser_iter_postorder() {
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
         let (keys, values) = parser.count_all_keys_and_values();
         assert_eq!(
@@ -472,7 +509,7 @@ mod tests {
         );
 
         let mut md5_context =  md5::Context::new();
-        for key in parser.iter() {
+        for key in parser.iter_postorder() {
             md5_context.consume(key.path);
         }
         assert_eq!(
@@ -483,13 +520,113 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_iterator_next() {
+    fn test_parser_next_key_postorder() {
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
         let mut keys = 0;
         let mut values = 0;
         parser.init_key_iter();
         loop {
-            match parser.next_key() {
+            match parser.next_key_postorder(true) {
+                Some(mut key) => {
+                    keys += 1;
+                    key.init_value_iter();
+                    loop {
+                        match key.next_value() {
+                            Some(_) => values += 1,
+                            None => break
+                        }
+                    }
+                },
+                None => break
+            };
+        }
+        assert_eq!(
+            (2853, 5523),
+            (keys, values)
+        );
+
+        let mut keys = 0;
+        let mut values = 0;
+        parser.init_key_iter();
+        loop {
+            match parser.next_key_postorder(false) {
+                Some(mut key) => {
+                    keys += 1;
+                    key.init_value_iter();
+                    loop {
+                        match key.next_value() {
+                            Some(_) => values += 1,
+                            None => break
+                        }
+                    }
+                },
+                None => break
+            };
+        }
+        assert_eq!(
+            (2853, 5523),
+            (keys, values)
+        );
+    }
+
+    #[test]
+    fn test_parser_iterator_preorder_next() {
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
+        let mut keys = 0;
+        let mut values = 0;
+        parser.init_key_iter();
+        loop {
+            match parser.next_key_preorder(true) {
+                Some(mut key) => {
+                    keys += 1;
+                    key.init_value_iter();
+                    loop {
+                        match key.next_value() {
+                            Some(_) => values += 1,
+                            None => break
+                        }
+                    }
+                },
+                None => break
+            };
+        }
+        assert_eq!(
+            (2853, 5523),
+            (keys, values)
+        );
+    }
+
+    #[test]
+    fn test_parser_iterator_postorder_next() {
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
+        let mut keys = 0;
+        let mut values = 0;
+        parser.init_key_iter();
+        loop {
+            match parser.next_key_postorder(true) {
+                Some(mut key) => {
+                    keys += 1;
+                    key.init_value_iter();
+                    loop {
+                        match key.next_value() {
+                            Some(_) => values += 1,
+                            None => break
+                        }
+                    }
+                },
+                None => break
+            };
+        }
+        assert_eq!(
+            (2853, 5523),
+            (keys, values)
+        );
+
+        let mut keys = 0;
+        let mut values = 0;
+        parser.init_key_iter();
+        loop {
+            match parser.next_key_postorder(false) {
                 Some(mut key) => {
                     keys += 1;
                     key.init_value_iter();
@@ -566,13 +703,25 @@ mod tests {
         );
 
         let mut md5_context =  md5::Context::new();
-        for key in parser.iter() {
+        for key in parser.iter_postorder() {
             md5_context.consume(key.path);
         }
         assert_eq!(
            "a9ea6a62091b803fe501d5c1c6f6d23d",
            format!("{:x}", md5_context.compute()),
            "Expected hash of paths doesn't match"
+        );
+
+        let mut keys = 0;
+        let mut values = 0;
+        for key in parser.iter() {
+            keys += 1;
+            values += key.sub_values.len();
+        }
+        assert_eq!(
+            (2392, 4791),
+            (keys, values),
+            "key and/or value count doesn't match expected"
         );
     }
 
@@ -605,7 +754,7 @@ mod tests {
     fn test_parser_get_sub_key() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.iter().next().unwrap();
+        let mut key = parser.iter_postorder().next().unwrap();
         let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
@@ -615,7 +764,7 @@ mod tests {
 
         let filter = Filter::from_path(RegQuery::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", true, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.iter().next().unwrap();
+        let mut key = parser.iter_postorder().next().unwrap();
         let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
@@ -626,12 +775,26 @@ mod tests {
 
     #[test]
     fn test_get_parent_key() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, false));
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\On", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.iter().next().unwrap();
+        let mut key = parser.iter_postorder().next().unwrap();
         let parent_key = parser.get_parent_key(&mut key).unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", parent_key.path);
         assert_eq!(2, parent_key.sub_values.len());
+    }
+
+    #[test]
+    fn test_preorder() {
+        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, true));
+        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        loop {
+            match parser.next_key_preorder(true) {
+                Some(key) => {
+                    println!("{}", key.path);
+                },
+                None => break
+            }
+        }
     }
 
     #[test]
@@ -657,13 +820,13 @@ mod tests {
             reg_query: Some(reg_query)
         };
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut parser_iter = parser.iter();
+        let mut parser_iter = parser.iter_postorder();
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Preference", key.path);
         let kv = parser.count_all_keys_and_values();
-        assert_eq!((5, 10), kv);
+        assert_eq!((5, 10), kv, "if we get 12 values back then we are incorrectly returning values for the Control Panel\\Accessibility key");
 
         let reg_query = RegQuery {
             key_path:vec![
@@ -681,7 +844,7 @@ mod tests {
             reg_query: Some(reg_query)
         };
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut parser_iter = parser.iter();
+        let mut parser_iter = parser.iter_postorder();
         let key = parser_iter.next().unwrap();
         assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SecurityBand\.current", key.path);
         let key = parser_iter.next().unwrap();
