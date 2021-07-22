@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use crate::base_block::{BaseBlock, BaseBlockBase, FileType};
 use crate::err::Error;
-use crate::cell_key_node::{CellKeyNode, FilterState};
+use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions, FilterMatchState};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::state::State;
@@ -103,16 +103,18 @@ impl Parser {
         let input = &self.file_info.buffer[self.file_info.hbin_offset_absolute..];
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.file_info, input)?;
         self.hive_bin_header = Some(hive_bin_header);
-        let (kn, _) =
+        let kn =
             CellKeyNode::read(
                 &self.file_info,
                 &mut self.state,
-                self.file_info.get_file_offset(input),
-                &String::new(),
-                Some(&self.filter),
-                true,
-                None,
-                true
+                CellKeyNodeReadOptions {
+                    offset: self.file_info.get_file_offset(input),
+                    cur_path:  &String::new(),
+                    filter: Some(&self.filter),
+                    self_is_filter_match_or_descendent: true,
+                    sequence_num: None,
+                    update_modified_lists: true
+                }
             )?;
         self.cell_key_node_root = kn;
         Ok(())
@@ -247,7 +249,20 @@ impl Parser {
     ) -> (usize, usize) {
         let mut keys = 0;
         let mut values = 0;
-        for key in self.iter_postorder() {
+        for key in self.iter_include_ancestors() {
+            keys += 1;
+            values += key.sub_values.len();
+        }
+        (keys, values)
+    }
+
+    /// Counts all subkeys and values
+    pub fn count_all_keys_and_values_skip_ancestors(
+        &mut self
+    ) -> (usize, usize) {
+        let mut keys = 0;
+        let mut values = 0;
+        for key in self.iter() {
             keys += 1;
             values += key.sub_values.len();
         }
@@ -265,7 +280,7 @@ impl Parser {
         let mut values_versions = 0;
         let mut values_deleted = 0;
 
-        for mut key in self.iter() {
+        for mut key in self.iter_include_ancestors() {
             keys += 1;
             keys_versions += key.versions.len();
             keys_deleted += key.deleted_keys.len();
@@ -290,15 +305,17 @@ impl Parser {
     pub fn get_root_key(&mut self) -> Result<Option<CellKeyNode>, Error> {
         match &self.base_block {
             Some(bb) => {
-                let (root, _) = CellKeyNode::read(
+                let root = CellKeyNode::read(
                     &self.file_info,
                     &mut self.state,
-                    bb.base.root_cell_offset_relative as usize + self.file_info.hbin_offset_absolute,
-                    &String::new(),
-                    None,
-                    true,
-                    None,
-                    true
+                    CellKeyNodeReadOptions {
+                        offset: bb.base.root_cell_offset_relative as usize + self.file_info.hbin_offset_absolute,
+                        cur_path:  &String::new(),
+                        filter: None,
+                        self_is_filter_match_or_descendent: true,
+                        sequence_num: None,
+                        update_modified_lists: true
+                    }
                 )?;
                 Ok(root)
             },
@@ -314,7 +331,7 @@ impl Parser {
         let key_path_sans_root = &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
         let filter = Filter::from_path(RegQuery::from_key(&(key_path_sans_root.to_string() + "\\" + name), false, false));
         cell_key_node
-            .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, true, None, false)
+            .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, None, false)
             .0
             .get(0)
             .map_or_else(|| Ok(None), |k| Ok(Some(k.clone())))
@@ -360,15 +377,17 @@ impl Parser {
         let last_slash_offset = parent_path.rfind('\\');
         parent_path.truncate(last_slash_offset.unwrap());
 
-        let (parent, _) = CellKeyNode::read(
+        let parent = CellKeyNode::read(
             &self.file_info,
             &mut self.state,
-            cell_key_node.parent_key_offset_relative as usize + self.file_info.hbin_offset_absolute,
-            &parent_path,
-            None,
-            true,
-            None,
-            true
+            CellKeyNodeReadOptions {
+                offset: cell_key_node.parent_key_offset_relative as usize + self.file_info.hbin_offset_absolute,
+                cur_path: &parent_path,
+                filter: None,
+                self_is_filter_match_or_descendent: true,
+                sequence_num: None,
+                update_modified_lists: true
+            }
         )?;
         Ok(parent)
     }
@@ -378,6 +397,24 @@ impl Parser {
         ParserIterator {
             inner: self,
             postorder: false,
+            filter_include_ancestors: false
+        }
+    }
+
+    pub fn iter_include_ancestors(&mut self) -> ParserIterator<'_> {
+        self.init_iter_inner(true);
+        ParserIterator {
+            inner: self,
+            postorder: false,
+            filter_include_ancestors: true
+        }
+    }
+
+    pub fn iter_postorder_include_ancestors(&mut self) -> ParserIterator<'_> {
+        self.init_iter_inner(true);
+        ParserIterator {
+            inner: self,
+            postorder: true,
             filter_include_ancestors: true
         }
     }
@@ -387,7 +424,7 @@ impl Parser {
         ParserIterator {
             inner: self,
             postorder: true,
-            filter_include_ancestors: true
+            filter_include_ancestors: false
         }
     }
 
@@ -427,9 +464,11 @@ impl Parser {
 
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
-                let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, false, None, self.get_modified);
+                let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, None, self.get_modified);
                 node.to_return = children.len() as u32;
-                self.stack_to_traverse.extend(children);
+                for c in children.into_iter().rev() {
+                    self.stack_to_traverse.push(c);
+                }
             }
             if !self.stack_to_return.is_empty() {
                 let last = self.stack_to_return.last_mut().expect("We checked that stack_to_return wasn't empty");
@@ -441,7 +480,7 @@ impl Parser {
         // Handle any remaining elements
         if !self.stack_to_return.is_empty() {
             let to_return = self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty");
-            if filter_include_ancestors || to_return.filter_state != Some(FilterState::NoMatch) {
+            if filter_include_ancestors || to_return.filter_state != Some(FilterMatchState::None) {
                 return Some(to_return);
             }
         }
@@ -451,11 +490,14 @@ impl Parser {
     // Iterative preorder traversal
     pub fn next_key_preorder(&mut self, filter_include_ancestors: bool) -> Option<CellKeyNode> {
         while !self.stack_to_traverse.is_empty() {
+            //let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
-                let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, false, None, self.get_modified);
+                let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, None, self.get_modified);
                 node.to_return = children.len() as u32;
-                self.stack_to_traverse.extend(children);
+                for c in children.into_iter().rev() {
+                    self.stack_to_traverse.push(c);
+                }
             }
             if filter_include_ancestors || !self.filter.is_valid() || node.is_filter_match_or_descendent() {
                 return Some(node);
@@ -509,11 +551,11 @@ mod tests {
         );
 
         let mut md5_context =  md5::Context::new();
-        for key in parser.iter_postorder() {
+        for key in parser.iter_postorder_include_ancestors() {
             md5_context.consume(key.path);
         }
         assert_eq!(
-           "fdc7e9feb8b1d8c6f196d11d8bbfd028",
+           "7e0d357766857c0524cc78d622709da9",
            format!("{:x}", md5_context.compute()),
            "Expected hash of paths doesn't match"
         );
@@ -657,7 +699,7 @@ mod tests {
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (19908, 423, 0, 49616, 196, 0),
+            (19908, 645, 4, 49616, 232, 1),
             (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
         );
     }
@@ -703,18 +745,18 @@ mod tests {
         );
 
         let mut md5_context =  md5::Context::new();
-        for key in parser.iter_postorder() {
+        for key in parser.iter_postorder_include_ancestors() {
             md5_context.consume(key.path);
         }
         assert_eq!(
-           "a9ea6a62091b803fe501d5c1c6f6d23d",
+           "c04d7a8f64b35f46bc93490701afbaf0",
            format!("{:x}", md5_context.compute()),
            "Expected hash of paths doesn't match"
         );
 
         let mut keys = 0;
         let mut values = 0;
-        for key in parser.iter() {
+        for key in parser.iter_include_ancestors() {
             keys += 1;
             values += key.sub_values.len();
         }
@@ -754,7 +796,7 @@ mod tests {
     fn test_parser_get_sub_key() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.iter_postorder().next().unwrap();
+        let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
         let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
@@ -764,7 +806,7 @@ mod tests {
 
         let filter = Filter::from_path(RegQuery::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", true, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.iter_postorder().next().unwrap();
+        let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
         let sub_key = parser.get_sub_key(&mut key, "Keyboard Response").unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
@@ -777,24 +819,10 @@ mod tests {
     fn test_get_parent_key() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\On", false, false));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut key = parser.iter_postorder().next().unwrap();
+        let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
         let parent_key = parser.get_parent_key(&mut key).unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", parent_key.path);
         assert_eq!(2, parent_key.sub_values.len());
-    }
-
-    #[test]
-    fn test_preorder() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, true));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        loop {
-            match parser.next_key_preorder(true) {
-                Some(key) => {
-                    println!("{}", key.path);
-                },
-                None => break
-            }
-        }
     }
 
     #[test]
@@ -820,11 +848,11 @@ mod tests {
             reg_query: Some(reg_query)
         };
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut parser_iter = parser.iter_postorder();
-        let key = parser_iter.next().unwrap();
-        assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
+        let mut parser_iter = parser.iter_postorder_include_ancestors();
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Preference", key.path);
+        let key = parser_iter.next().unwrap();
+        assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
         let kv = parser.count_all_keys_and_values();
         assert_eq!((5, 10), kv, "if we get 12 values back then we are incorrectly returning values for the Control Panel\\Accessibility key");
 
@@ -844,15 +872,15 @@ mod tests {
             reg_query: Some(reg_query)
         };
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        let mut parser_iter = parser.iter_postorder();
+        let mut parser_iter = parser.iter_postorder_include_ancestors();
         let key = parser_iter.next().unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SecurityBand\.current", key.path);
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\ActivatingDocument\.Current", key.path);
         let key = parser_iter.next().unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SecurityBand", key.path);
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\ActivatingDocument", key.path);
         let key = parser_iter.next().unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SearchProviderDiscovered\.Current", key.path);
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\Navigating\.Current", key.path);
         let key = parser_iter.next().unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\SearchProviderDiscovered", key.path);
+        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\Navigating", key.path);
         let kv = parser.count_all_keys_and_values();
         assert_eq!((13, 4), kv);
     }

@@ -5,7 +5,6 @@ use std::{
 use notatin::{
     parser::Parser,
     err::Error,
-    filter::{Filter, RegQuery},
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
     util::format_date_time
@@ -43,33 +42,34 @@ fn versions(cell_key_node: &CellKeyNode, writer: &mut BufWriter<File>, prefix: &
 }
 
 fn main() -> Result<(), Error> {
-    /*let mut parser = Parser::from_path(
+    let mut parser = Parser::from_path(
         "/home/kstone/code/rust_parser_2/test_data/SYSTEM",
         Some(vec!["/home/kstone/code/rust_parser_2/test_data/SYSTEM.LOG1", "/home/kstone/code/rust_parser_2/test_data/SYSTEM.LOG2"]),
         None,
         true
-    ).unwrap();*/
+    ).unwrap();
 
     /*let mut parser = Parser::from_path(
         "/home/kstone/code/rust_parser_2/test_data/systemKim",
         Some(vec!["/home/kstone/code/rust_parser_2/test_data/SystemKim.LOG1", "/home/kstone/code/rust_parser_2/test_data/SystemKim.LOG2"]),
+        None,
         false
     ).unwrap();*/
 
-    let mut parser = Parser::from_path(
+    /*let mut parser = Parser::from_path(
         "/home/kstone/code/rust_parser_2/test_data/SoftwareKim",
         Some(vec!["/home/kstone/code/rust_parser_2/test_data/SoftwareKim.LOG1", "/home/kstone/code/rust_parser_2/test_data/SoftwareKim.LOG2"]),
         Some(Filter::from_path(RegQuery::from_key("WOW6432Node\\TortoiseOverlays\\", false, true))),
         true
-    ).unwrap();
+    ).unwrap();*/
 
     let (k, v) = parser.count_all_keys_and_values();
     println!("{}, {}", k, v);
 
-    let write_file = File::create("software_Tuesday_values2.txt").unwrap();
+    let write_file = File::create("system_skip_matching_seq_num.txt").unwrap();
     let mut writer = BufWriter::new(write_file);
 
-    for key in parser.iter() {
+    for key in parser.iter_include_ancestors() {
         versions(&key, &mut writer, &"", &"", false)?;
     }
     writeln!(writer, "\nLogs\n-----------")?;

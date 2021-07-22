@@ -199,7 +199,7 @@ impl PyRegKeysIterator {
     fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match self.inner.next_key_preorder() {
+        match self.inner.next_key_preorder(false) {
             Some(key) => {
                 Some(Self::reg_key_to_pyobject(Ok(key), py))
             }

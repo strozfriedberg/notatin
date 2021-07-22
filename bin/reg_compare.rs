@@ -32,7 +32,7 @@ fn main() -> Result<(), Error> {
 
     // add all items from file1 into original_map
     let mut parser1 = Parser::from_path(file1, None, filter.clone(), false)?;
-    for key in parser1.iter() {
+    for key in parser1.iter_include_ancestors() {
         original_map.insert((key.path.clone(), None), key.hash);
         for value in &key.sub_values {
             original_map.insert((key.path.clone(), Some(value.get_pretty_name())), value.hash);
@@ -45,7 +45,7 @@ fn main() -> Result<(), Error> {
     //     If same, it's a match (ignore it)
     //     If different, it's an update
     let mut parser2 = Parser::from_path(file2, None, filter, false).unwrap();
-    for key in parser2.iter() {
+    for key in parser2.iter_include_ancestors() {
         match original_map.remove(&(key.path.clone(), None)) {
             Some(val) => {
                 if val != key.hash {

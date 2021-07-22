@@ -30,21 +30,18 @@ impl From<winstructs::err::Error> for Error {
 
 impl From<std::array::TryFromSliceError> for Error {
     fn from(error: std::array::TryFromSliceError) -> Self {
-        println!("from(error: std::array::TryFromSliceError");
         Error::Conversion{ detail: format!("{:#?}", error.to_string()) }
     }
 }
 
 impl From<std::path::StripPrefixError> for Error {
     fn from(error: std::path::StripPrefixError) -> Self {
-        println!("from(error: std::path::StripPrefixError");
         Error::StripPrefix{ detail: format!("{:#?}", error.to_string()) }
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
-        println!("from(error: std::io::Error");
         Error::Io{ detail: format!("{:#?}", error.to_string()) }
     }
 }

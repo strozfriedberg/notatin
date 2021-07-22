@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -94,16 +95,12 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     let nanos_e7 = (nanos % 1000) / 100;
     let nanos_e6 = (nanos % 10000) / 1000;
     let mut micros = (nanos / 10000) * 10;
-    if nanos_e7 < 5 {
-        micros += nanos_e6;
+    match nanos_e7.cmp(&5) {
+        Ordering::Greater => micros += nanos_e6 + 1,
+        Ordering::Less => micros += nanos_e6,
+        Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2)
     }
-    else if nanos_e7 > 5{
-        micros += nanos_e6 + 1;
-    }
-    else {
-        micros += nanos_e6 + (nanos_e6 % 2);
-    }
-    return micros
+    micros
 }
 
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {

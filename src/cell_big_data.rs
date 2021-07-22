@@ -7,7 +7,6 @@ use nom::{
 use serde::Serialize;
 use crate::err::Error;
 use crate::file_info::FileInfo;
-use crate::hive_bin_cell;
 use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValue};
 use crate::log::Logs;
 
@@ -95,12 +94,6 @@ impl CellBigData {
             input,
             list
         ))
-    }
-}
-
-impl hive_bin_cell::Cell for CellBigData {
-    fn size(&self) -> u32 {
-        self.size
     }
 }
 

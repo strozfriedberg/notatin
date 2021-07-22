@@ -18,7 +18,6 @@ use crate::log::{Logs, LogCode};
 use crate::util;
 use crate::file_info::FileInfo;
 use crate::state::State;
-use crate::hive_bin_cell;
 use crate::cell_value::CellValue;
 use crate::cell_big_data::CellBigData;
 use crate::impl_serialize_for_bitflags;
@@ -231,7 +230,7 @@ impl CellKeyValue {
         let (input, padding) = le_u16(input)?;
         let (input, value_name_bytes) = take!(input, value_name_size)?;
 
-        const DEVPROP_MASK_TYPE: u32 = 0x0000FFFF;
+        const DEVPROP_MASK_TYPE: u32 = 0x00000FFF;
         let data_type_bytes = data_type_raw & DEVPROP_MASK_TYPE;
         let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
             None => CellKeyValueDataTypes::REG_UNKNOWN,
@@ -380,16 +379,6 @@ impl CellKeyValue {
     }
 }
 
-impl hive_bin_cell::Cell for CellKeyValue {
-    fn size(&self) -> u32 {
-        self.detail.size
-    }
-
-    fn lowercase(&self) -> Option<String> {
-        Some(self.value_name.clone().to_ascii_lowercase())
-    }
-}
-
 /// Wrapper class to dynamically convert value_bytes into a parsed CellValue when serde serialize is called
 #[derive(Debug, Serialize)]
 struct CellKeyValueForSerialization<'a> {
@@ -427,8 +416,7 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell_key_node::CellKeyNode;
-    use crate::filter::Filter;
+    use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 
     #[test]
     fn test_parse_cell_key_value() {
@@ -487,8 +475,19 @@ mod tests {
         let mut file_info = FileInfo::from_path("test_data/FuseHive").unwrap();
         file_info.hbin_offset_absolute = 4096;
         let mut state = State::default();
-        let (key_node, _) = CellKeyNode::read(&file_info, &mut state, 4416, &String::new(), None, false, None, false).unwrap();
-        let key_node = key_node.unwrap();
+        let key_node =
+            CellKeyNode::read(
+                &file_info,
+                &mut state,
+                CellKeyNodeReadOptions {
+                    offset: 4416,
+                    cur_path:  &String::new(),
+                    filter: None,
+                    self_is_filter_match_or_descendent: false,
+                    sequence_num: None,
+                    update_modified_lists: false
+                }
+            ).unwrap().unwrap();
         assert_eq!(
             "v".to_string(),
             key_node.sub_values[1].value_name

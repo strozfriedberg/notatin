@@ -242,7 +242,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
             values += 1;
             writeln!(
                 &mut writer,
-                "value,A,{},{},{},{:?},{}",
+                "value,A,{},{},{},{:?},{},",
                 value.detail.file_offset_absolute,
                 escape_string(&key.key_name),
                 escape_string(name),

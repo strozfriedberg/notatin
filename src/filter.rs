@@ -1,12 +1,11 @@
 use bitflags::bitflags;
 use regex::Regex;
-use crate::err::Error;
-use crate::hive_bin_cell;
+use crate::cell_key_node::CellKeyNode;
 use crate::impl_serialize_for_bitflags;
 use crate::state::State;
 
-/// Filter allows specification of conditions to be met when reading the registry.
-/// Execution will short-circuit for applicable filters (is_complete = true)
+/// Filter allows specification of a condition to be met when reading the registry.
+/// Execution will short-circuit when possible
 #[derive(Clone, Debug, Default)]
 pub struct Filter {
     pub(crate) reg_query: Option<RegQuery>
@@ -29,51 +28,32 @@ impl Filter {
         self.reg_query.is_some()
     }
 
-    fn key_path_has_root(&self) -> bool {
-        if let Some(reg_query) = &self.reg_query {
-            reg_query.key_path_has_root
-        }
-        else {
-            false
-        }
-    }
-
     pub(crate) fn check_cell(
         &self,
         state: &mut State,
-        cell: &dyn hive_bin_cell::Cell
-    ) -> Result<FilterFlags, Error> {
-        if self.reg_query.is_some() {
+        cell: &CellKeyNode
+    ) -> FilterFlags {
+        if self.is_valid() {
             self.match_cell(state, cell)
         }
         else {
-            Ok(FilterFlags::FILTER_ITERATE_KEYS)
+            FilterFlags::FILTER_ITERATE_KEYS
         }
     }
 
     pub(crate) fn match_cell(
         &self,
         state: &mut State,
-        cell: &dyn hive_bin_cell::Cell
-    ) -> Result<FilterFlags, Error> {
+        cell: &CellKeyNode
+    ) -> FilterFlags {
         if cell.is_key_root() {
             if let Some(reg_query) = &self.reg_query {
                 if !reg_query.key_path_has_root {
-                    return Ok(FilterFlags::FILTER_ITERATE_KEYS);
+                    return FilterFlags::FILTER_ITERATE_KEYS;
                 }
             }
         }
-        match cell.lowercase() {
-            Some(cell_lowercase) => {
-                if cell.is_key() {
-                    Ok(self.match_key(state, cell_lowercase))
-                }
-                else {
-                    Ok(FilterFlags::FILTER_ITERATE_KEYS)
-                }
-            },
-            None => Err(Error::Any{detail: String::from("Missing cell name")})
-        }
+        self.match_key(state, cell.lowercase())
     }
 
     fn match_key(
@@ -110,9 +90,9 @@ pub enum RegQueryComponent {
 #[derive(Clone, Debug, Default)]
 pub struct RegQuery {
     pub(crate) key_path: Vec<RegQueryComponent>,
-    /// True if `key_path` contains the root key name. Usually wil be false, but useful if you are searching using a path from an existing key.
+    /// True if `key_path` contains the root key name. Usually will be false, but useful if you are searching using a path from an existing key.
     pub(crate) key_path_has_root: bool,
-    /// Determines if subkeys are returned.
+    /// Determines if subkeys are returned during iteration
     pub(crate) children: bool
 }
 
@@ -177,10 +157,9 @@ impl RegQuery {
 
 bitflags! {
     pub struct FilterFlags: u16 {
-        const FILTER_NO_MATCH                = 0x0001;
-        const FILTER_ITERATE_KEYS            = 0x0002;
-        const FILTER_ITERATE_KEYS_COMPLETE   = 0x0004;
-        const FILTER_KEY_MATCH               = 0x0008;
+        const FILTER_NO_MATCH     = 0x0001;
+        const FILTER_ITERATE_KEYS = 0x0002;
+        const FILTER_KEY_MATCH    = 0x0004;
     }
 }
 impl_serialize_for_bitflags! {FilterFlags}
@@ -189,12 +168,6 @@ impl_serialize_for_bitflags! {FilterFlags}
 mod tests {
     use super::*;
     use crate::cell_key_node;
-
-    #[test]
-    fn test_find_path_build() {
-        //let find_path = RegQuery::from_key("First segment\\secondSEGMENT", false, true);
-        //assert_eq!(find_path.key_path, String::from("first segment\\secondsegment"));
-    }
 
     #[test]
     fn test_check_cell_match_key() {

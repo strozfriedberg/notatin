@@ -32,19 +32,19 @@ impl PyRegKey {
     /// --
     ///
     /// Returns an option with the requested value, or None.
-    fn value(&mut self, name: &str) -> PyResult<Option<Py<PyRegValue>>> {
+    fn value(&mut self, name: &str) -> Option<Py<PyRegValue>> {
         match self.inner.get_value(name) {
             Some(value) => {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
                 let ret = PyRegValue::from_cell_key_value(py, value);
                 if let Ok(py_reg_value) = ret {
-                    return Ok(Some(py_reg_value));
+                    return Some(py_reg_value);
                 }
             },
-            _ => return Ok(None)
+            _ => return None
         }
-        Ok(None)
+        None
     }
 
     /// sub_keys(self, parser, /)
@@ -215,14 +215,14 @@ impl PyRegValuesIterator {
         }
     }
 
-    fn next(&mut self) -> PyResult<Option<PyObject>> {
+    fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         match self.inner.next_value() {
             Some(value) => {
-                Ok(Some(self.reg_value_to_pyobject(Ok(value), py)))
+                Some(self.reg_value_to_pyobject(Ok(value), py))
             }
-            None => Ok(None)
+            None => None
         }
     }
 }
@@ -234,17 +234,15 @@ pub struct PyRegSubKeysIterator {
 }
 
 impl PyRegSubKeysIterator {
-    fn next(
-        &mut self
-    ) -> PyResult<Option<PyObject>> {
+    fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         match self.sub_keys.get(self.index) {
             Some(key) => {
                 self.index += 1;
-                Ok(Some(PyRegKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py)))
+                Some(PyRegKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py))
             }
-            None => Ok(None)
+            None => None
         }
     }
 }
@@ -265,7 +263,7 @@ impl PyIterProtocol for PyRegValuesIterator {
         Ok(slf.into())
     }
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        slf.next()
+        Ok(slf.next())
     }
 }
 
@@ -275,6 +273,6 @@ impl PyIterProtocol for PyRegSubKeysIterator {
         Ok(slf.into())
     }
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        slf.next()
+        Ok(slf.next())
     }
 }

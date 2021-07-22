@@ -8,12 +8,11 @@ use serde::Serialize;
 use crate::base_block::BaseBlockBase;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::state::State;
-use crate::filter::Filter;
 use crate::err::Error;
 use crate::util;
 use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
-use crate::cell_key_node::CellKeyNode;
+use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 use crate::cell_key_value::CellKeyValue;
 use crate::parser::{Parser, RegItems};
 
@@ -200,10 +199,10 @@ impl TransactionLog {
         for log_entry in &self.log_entries {
             println!("log_entry sequence_number: {}", log_entry.sequence_number);
             if log_entry.has_valid_hashes {
-                if log_entry.sequence_number <= base_block_base.secondary_sequence_number {
+                if log_entry.sequence_number < base_block_base.secondary_sequence_number {
                     parser.state.info.add(
                         LogCode::WarningTransactionLog,
-                        &format!("Skipping log entry; the log entry sequence number ({}) is less than or equal to the primary file's secondary sequence number ({})", log_entry.sequence_number, base_block_base.secondary_sequence_number)
+                        &format!("Skipping log entry; the log entry sequence number ({}) is less than to the primary file's secondary sequence number ({})", log_entry.sequence_number, base_block_base.secondary_sequence_number)
                     );
                 }
                 else if !log_entry.is_valid_hive_bin_data_size() {
@@ -278,7 +277,7 @@ impl TransactionLog {
         let mut reg_items: RegItems = HashMap::new();
         if parser.state.recover_deleted {
             parser.init_root()?;
-            for key in parser.iter_postorder() {
+            for key in parser.iter_postorder_include_ancestors() {
                 reg_items.insert((key.path.clone(), None), (key.hash.expect("Must have a hash here"), key.detail.file_offset_absolute, sequence_num));
                 for value in key.sub_values {
                     reg_items.insert((key.path.clone(), Some(value.value_name)), (value.hash.expect("Must have a hash here"), value.detail.file_offset_absolute, sequence_num));
@@ -399,16 +398,18 @@ impl TransactionAnalyzer<'_> {
         modified_list_type: ModifiedListType
     ) -> Result<(), Error> {
         let parent_path = &path[0..path.rfind('\\').unwrap_or_default()];
-        let (full_key, _) =
+        let full_key =
             CellKeyNode::read(
                 self.prior_file_info,
                 state,
-                file_offset_absolute,
-                parent_path,
-                None,
-                false,
-                Some(old_sequence_number),
-                false
+                CellKeyNodeReadOptions {
+                    offset: file_offset_absolute,
+                    cur_path: &parent_path,
+                    filter: None,
+                    self_is_filter_match_or_descendent: false,
+                    sequence_num: Some(old_sequence_number),
+                    update_modified_lists: false
+                }
             )?;
         if let Some(mut full_key) = full_key {
             full_key.updated_by_sequence_num = Some(self.new_sequence_number);

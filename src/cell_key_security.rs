@@ -7,7 +7,6 @@ use nom::{
 use std::io::Cursor;
 use winstructs::security::SecurityDescriptor;
 use serde::Serialize;
-use crate::hive_bin_cell;
 use crate::err::Error;
 use crate::log::Logs;
 
@@ -65,12 +64,6 @@ impl CellKeySecurity {
                 logs: Logs::default()
             },
         ))
-    }
-}
-
-impl hive_bin_cell::Cell for CellKeySecurity {
-    fn size(&self) -> u32 {
-        self.detail.size
     }
 }
 
