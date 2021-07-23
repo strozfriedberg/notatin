@@ -1,12 +1,13 @@
 use nom::{
     IResult,
     bytes::complete::tag,
-    number::complete::{le_u16, le_i32, le_u32}
+    number::complete::{le_u16, le_i32, le_u32},
+    take
 };
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::util;
-use crate::warn::Warnings;
+use crate::log::Logs;
 
 // Subkeys list with name hints
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -29,26 +30,21 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLf {
 impl SubKeyListLf {
     /// Uses nom to parse an lf sub key list (lf) hive bin cell.
     fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], Self> {
-        let start_pos = input.as_ptr() as usize;
         let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("lf")(input)?;
         let (input, count)      = le_u16(input)?;
         let (input, items)      = nom::multi::count(SubKeyListLfItem::from_bytes(), count.into())(input)?;
-
-        let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
-
         Ok((
             input,
             SubKeyListLf {
-                size: size_abs,
+                size: size.abs() as u32,
                 count,
                 items
             },
         ))
     }
 
-    pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
+    pub(crate) fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
         |input: &[u8]| {
             let (input, ret) = SubKeyListLf::from_bytes_internal(input)?;
             Ok((
@@ -63,7 +59,7 @@ impl SubKeyListLf {
 pub struct SubKeyListLfItem {
     pub named_key_offset_relative: u32, // The offset value is in bytes and relative from the start of the hive bin data
     pub name_hint: String, // The first 4 ASCII characters of a key name string (used to speed up lookups)
-    pub parse_warnings: Warnings
+    pub logs: Logs
 }
 
 impl SubKeyListLfItem {
@@ -71,13 +67,13 @@ impl SubKeyListLfItem {
         |input: &[u8]| {
             let (input, named_key_offset_relative) = le_u32(input)?;
             let (input, name_hint) = take!(input, 4usize)?;
-            let mut parse_warnings = Warnings::default();
+            let mut logs = Logs::default();
             Ok((
                 input,
                 SubKeyListLfItem {
                     named_key_offset_relative,
-                    name_hint: util::from_utf8(&name_hint, &mut parse_warnings, "SubKeyListLfItem::key_name"),
-                    parse_warnings
+                    name_hint: util::from_utf8(&name_hint, &mut logs, "SubKeyListLfItem::key_name"),
+                    logs
                 },
             ))
         }
@@ -94,8 +90,8 @@ mod tests {
         let lf = SubKeyListLf {
             size: 64,
             count: 2,
-            items: vec![SubKeyListLfItem { named_key_offset_relative: 12345, name_hint: "aaaa".to_string(), parse_warnings: Warnings::default() },
-                        SubKeyListLfItem { named_key_offset_relative: 54321, name_hint: "zzzz".to_string(), parse_warnings: Warnings::default()  }]
+            items: vec![SubKeyListLfItem { named_key_offset_relative: 12345, name_hint: "aaaa".to_string(), logs: Logs::default() },
+                        SubKeyListLfItem { named_key_offset_relative: 54321, name_hint: "zzzz".to_string(), logs: Logs::default()  }]
         };
         assert_eq!(lf.size, lf.size());
         assert_eq!(vec![16441, 58417], lf.get_offset_list(4096));
@@ -114,12 +110,12 @@ mod tests {
                 SubKeyListLfItem {
                     named_key_offset_relative: 105464,
                     name_hint: "Scre".to_string(),
-                    parse_warnings: Warnings::default()
+                    logs: Logs::default()
                 },
                 SubKeyListLfItem {
                     named_key_offset_relative: 105376,
                     name_hint: "Scre".to_string(),
-                    parse_warnings: Warnings::default()
+                    logs: Logs::default()
                 }
             ]
         };

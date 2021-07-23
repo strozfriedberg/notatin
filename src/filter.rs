@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use crate::err::Error;
 use crate::hive_bin_cell;
 use crate::impl_serialize_for_bitflags;
-use crate::registry::State;
+use crate::state::State;
 
 /// Filter allows specification of conditions to be met when reading the registry.
 /// Execution will short-circuit for applicable filters (is_complete = true)
@@ -76,7 +76,7 @@ impl Filter {
         match &find_path.value {
             Some(match_val) => {
                 if match_val == &value_name {
-                    FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
+                    FilterFlags::FILTER_VALUE_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
                 }
                 else {
                     FilterFlags::FILTER_NO_MATCH | FilterFlags::FILTER_ITERATE_KEYS_COMPLETE
@@ -85,29 +85,38 @@ impl Filter {
             None => FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_ITERATE_VALUES
         }
     }
+
+    pub(crate) fn return_sub_keys(&self) -> bool {
+        match &self.find_path {
+            Some(fp) => fp.children,
+            _ => false
+        }
+    }
 }
 
 /// FindPath is used when looking for a particular key path and/or value name.
 /// The value name is optional; if only a key path is specified all subkeys and values will be returned.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FindPath {
-    key_path: String,//PathBuf,
-    value: Option<String>
+    key_path: String,
+    value: Option<String>,
+    children: bool
 }
 
 impl FindPath {
-    pub fn from_key(key_path: &str) -> FindPath {
-        FindPath::from_key_value_internal(key_path, None)
+    pub fn from_key(key_path: &str, children: bool) -> FindPath {
+        FindPath::from_key_value_internal(key_path, None, children)
     }
 
     pub fn from_key_value(key_path: &str, value: &str) -> FindPath {
-        FindPath::from_key_value_internal(key_path, Some(value.to_string()))
+        FindPath::from_key_value_internal(key_path, Some(value.to_string()), false)
     }
 
-    fn from_key_value_internal(key_path: &str, value: Option<String>) -> FindPath {
+    fn from_key_value_internal(key_path: &str, value: Option<String>, children: bool)-> FindPath {
         FindPath {
             key_path: key_path.to_ascii_lowercase(),
-            value: value.map(|v| v.to_ascii_lowercase())
+            value: value.map(|v| v.to_ascii_lowercase()),
+            children
         }
     }
 
@@ -152,6 +161,7 @@ bitflags! {
         const FILTER_ITERATE_KEYS          = 0x0002;
         const FILTER_ITERATE_VALUES        = 0x0004;
         const FILTER_ITERATE_KEYS_COMPLETE = 0x0008;
+        const FILTER_VALUE_MATCH           = 0x0010;
     }
 }
 impl_serialize_for_bitflags! {FilterFlags}
@@ -159,7 +169,7 @@ impl_serialize_for_bitflags! {FilterFlags}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::warn::Warnings;
+    use crate::log::Logs;
     use crate::cell_key_node;
     use crate::cell_key_value;
 
@@ -172,8 +182,8 @@ mod tests {
 
     #[test]
     fn test_check_cell_match_key() {
+        let mut state = State::default();
         let filter = Filter::from_path(FindPath::from_key_value("HighContrast", "Flags"));
-        let mut state = State::new(&[0;0], 0);
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
             ..Default::default()
@@ -195,29 +205,32 @@ mod tests {
 
     #[test]
     fn test_check_cell_match_value() {
+        let mut state = State::default();
         let filter = Filter::from_path(FindPath::from_key_value("", "Flags"));
-        let mut state = State::new(&[0;0], 0);
         let mut key_value = cell_key_value::CellKeyValue {
             detail: cell_key_value::CellKeyValueDetail {
                 file_offset_absolute: 0,
                 size: 48,
                 value_name_size: 18,
                 data_size: 8,
-                data_offset: 1928,
+                data_offset_relative: 1928,
+                data_type_raw: 0,
                 padding: 1280,
+                value_bytes: None,
+                slack: vec![]
             },
             flags: cell_key_value::CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_type: cell_key_value::CellKeyValueDataTypes::REG_SZ,
             value_name: String::from("Flags"),
-            value_content: None,
-            parse_warnings: Warnings::default()
+            data_offsets_absolute: Vec::new(),
+            logs: Logs::default()
         };
-        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),
             "check_cell: Same case value match failed");
 
         key_value.value_name = String::from("flags");
-        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE,
+        assert_eq!(FilterFlags::FILTER_ITERATE_KEYS_COMPLETE | FilterFlags::FILTER_VALUE_MATCH,
             filter.clone().check_cell(&mut state, &key_value).unwrap(),
             "check_cell: Different case value match failed");
 

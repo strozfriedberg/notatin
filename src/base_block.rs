@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+use std::mem;
 use nom::{
     IResult,
     bytes::complete::tag,
@@ -10,15 +12,16 @@ use enum_primitive_derive::Primitive;
 use num_traits::FromPrimitive;
 use winstructs::guid::Guid;
 use crate::util;
-use crate::warn::{WarningCode, Warnings};
+use crate::log::{LogCode, Logs};
 use crate::impl_enum_from_value;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 pub enum FileType {
-    Primary = 0,
-    TransactionLog = 1,
-    Unknown = 0x0fffffff
+    Primary                 = 0,
+    TransactionLog          = 1,
+    TransactionLogNewFormat = 6,
+    Unknown                 = 0x0fffffff
 }
 impl_enum_from_value!{ FileType }
 
@@ -30,10 +33,33 @@ pub enum FileFormat {
 }
 impl_enum_from_value!{ FileFormat }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BaseBlock {
+    pub base: BaseBlockBase,
+    pub ext: BaseBlockExtended
+}
+
+impl BaseBlock {
+    /// Parses the registry file header.
+    pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, base) = BaseBlockBase::from_bytes(input)?;
+        let (input, ext) = BaseBlockExtended::from_bytes(input)?;
+
+        Ok((
+            input,
+            Self {
+                base,
+                ext,
+            },
+        ))
+    }
+}
+
 // Structure comments adapted from https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
-pub struct FileBaseBlock {
+/// Contains the data found in the header of both primary and log registry files
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BaseBlockBase {
     /// This number is incremented by 1 in the beginning of a write operation on the primary file.
     pub primary_sequence_number: u32,
     /// This number is incremented by 1 at the end of a write operation on the primary file. The primary sequence number and the secondary sequence number should be equal after a successful write operation.
@@ -54,15 +80,12 @@ pub struct FileBaseBlock {
     pub unk2: Vec<u8>,
     /// XOR-32 checksum of the previous 508 bytes
     pub checksum: u32,
-    pub reserved: FileBaseBlockReserved,
-    pub boot_type: u32,
-    pub boot_recover: u32,
-    pub parse_warnings: Warnings
+    pub logs: Logs
 }
 
-impl FileBaseBlock {
+impl BaseBlockBase {
     /// Parses the registry file header.
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, _signature) = tag("regf")(input)?;
         let (input, primary_sequence_number) = le_u32(input)?;
         let (input, secondary_sequence_number) = le_u32(input)?;
@@ -77,38 +100,76 @@ impl FileBaseBlock {
         let (input, filename_bytes) = take(64usize)(input)?;
         let (input, unk2) = take(396usize)(input)?;
         let (input, checksum) = le_u32(input)?;
-        let (input, reserved) = FileBaseBlockReserved::from_bytes(input)?;
-        let (input, boot_type) = le_u32(input)?;
-        let (input, boot_recover) = le_u32(input)?;
 
-        let mut parse_warnings = Warnings::default();
+        let mut logs = Logs::default();
         Ok((
             input,
-            FileBaseBlock {
+            Self {
                 primary_sequence_number,
                 secondary_sequence_number,
                 last_modification_date_and_time: util::get_date_time_from_filetime(last_modification_date_and_time),
                 major_version,
                 minor_version,
-                file_type: FileType::from_value(file_type_bytes, &mut parse_warnings),
-                format: FileFormat::from_value(format_bytes, &mut parse_warnings),
+                file_type: FileType::from_value(file_type_bytes, &mut logs),
+                format: FileFormat::from_value(format_bytes, &mut logs),
                 root_cell_offset_relative,
                 hive_bins_data_size,
                 clustering_factor,
-                filename: util::from_utf16_le_string(filename_bytes, 64, &mut parse_warnings, &"Filename"),
+                filename: util::from_utf16_le_string(filename_bytes, 64, &mut logs, &"Filename"),
                 unk2: unk2.to_vec(),
                 checksum,
+                logs
+            },
+        ))
+    }
+
+    pub(crate) fn calculate_checksum(bytes: &[u8]) -> u32 {
+        let mut index = 0;
+        let mut xsum = 0;
+
+        let slice_to_u32 = |s: &[u8]| -> [u8; 4] { s.try_into().expect("slice with incorrect length") };
+        let size_of_u32 = mem::size_of::<u32>();
+
+        while index <= 0x01FB {
+            xsum ^= u32::from_le_bytes(slice_to_u32(&bytes[index..index + size_of_u32]));
+            index += size_of_u32;
+        }
+        match xsum {
+            0 => 1,
+            0xFFFFFFFF => 0xFFFFFFFE,
+            _ => xsum
+        }
+    }
+}
+
+/// Contains the additional data found in the header of a primary registry files
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BaseBlockExtended {
+    pub reserved: FileBaseBlockReserved,
+    pub boot_type: u32,
+    pub boot_recover: u32,
+}
+
+impl BaseBlockExtended {
+    /// Parses the registry file header.
+    pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+        let (input, reserved) = FileBaseBlockReserved::from_bytes(input)?;
+        let (input, boot_type) = le_u32(input)?;
+        let (input, boot_recover) = le_u32(input)?;
+
+        Ok((
+            input,
+            Self {
                 reserved,
                 boot_type,
-                boot_recover,
-                parse_warnings
+                boot_recover
             },
         ))
     }
 }
 
 // Relevant to win10+. See https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#base-block for additional info in this area
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FileBaseBlockReserved {
     pub rm_id: Guid,
     pub log_id: Guid,
@@ -118,7 +179,7 @@ pub struct FileBaseBlockReserved {
     pub last_reorganized_timestamp: DateTime<Utc>,
     #[serde(serialize_with = "util::data_as_hex")]
     pub remaining: Vec<u8>,
-    pub parse_warnings: Warnings
+    pub logs: Logs
 }
 
 impl Eq for FileBaseBlockReserved {}
@@ -137,7 +198,7 @@ impl PartialEq for FileBaseBlockReserved {
 
 impl FileBaseBlockReserved {
     /// Uses nom to parse the file base block reserved structure.
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
+    pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, rm_id) = take(16usize)(input)?;
         let (input, log_id) = take(16usize)(input)?;
         let (input, flags) = le_u32(input)?;
@@ -146,18 +207,18 @@ impl FileBaseBlockReserved {
         let (input, last_reorganized_timestamp) = le_u64(input)?;
         let (input, remaining) = take(3512usize)(input)?;
 
-        let mut parse_warnings = Warnings::default();
+        let mut logs = Logs::default();
         Ok((
             input,
             FileBaseBlockReserved {
-                rm_id: util::get_guid_from_buffer(rm_id, &mut parse_warnings),
-                log_id: util::get_guid_from_buffer(log_id, &mut parse_warnings),
-                flags: FileBaseBlockReservedFlags::from_value(flags, &mut parse_warnings),
-                tm_id: util::get_guid_from_buffer(tm_id, &mut parse_warnings),
+                rm_id: util::get_guid_from_buffer(rm_id, &mut logs),
+                log_id: util::get_guid_from_buffer(log_id, &mut logs),
+                flags: FileBaseBlockReservedFlags::from_value(flags, &mut logs),
+                tm_id: util::get_guid_from_buffer(tm_id, &mut logs),
                 signature,
                 last_reorganized_timestamp: util::get_date_time_from_filetime(last_reorganized_timestamp),
                 remaining: remaining.to_vec(),
-                parse_warnings
+                logs
             },
         ))
     }
@@ -188,25 +249,29 @@ mod tests {
 
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
 
-        let ret = FileBaseBlock::from_bytes(&f[0..4096]);
-        let expected_header = FileBaseBlock {
-            primary_sequence_number: 10407,
-            secondary_sequence_number: 10407,
-            last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460),
-            major_version: 1,
-            minor_version: 3,
-            file_type: FileType::Primary,
-            format: FileFormat::DirectMemoryLoad,
-            root_cell_offset_relative: 32,
-            hive_bins_data_size: 1060864,
-            clustering_factor: 1,
-            filename: "\\??\\C:\\Users\\nfury\\ntuser.dat".to_string(),
-            unk2,
-            checksum: 738555936,
-            reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,
-            boot_type: 0,
-            boot_recover: 0,
-            parse_warnings: Warnings::default()
+        let ret = BaseBlock::from_bytes(&f[0..4096]);
+        let expected_header = BaseBlock {
+            base: BaseBlockBase {
+                primary_sequence_number: 10407,
+                secondary_sequence_number: 10407,
+                last_modification_date_and_time: util::get_date_time_from_filetime(129782121007374460),
+                major_version: 1,
+                minor_version: 3,
+                file_type: FileType::Primary,
+                format: FileFormat::DirectMemoryLoad,
+                root_cell_offset_relative: 32,
+                hive_bins_data_size: 1060864,
+                clustering_factor: 1,
+                filename: "\\??\\C:\\Users\\nfury\\ntuser.dat".to_string(),
+                unk2,
+                checksum: 738555936,
+                logs: Logs::default()
+            },
+            ext: BaseBlockExtended {
+                reserved: FileBaseBlockReserved::from_bytes(&[0; 3576]).finish().unwrap().1,
+                boot_type: 0,
+                boot_recover: 0
+            }
         };
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_header));
@@ -215,12 +280,18 @@ mod tests {
             ret
         );
 
-        let ret = FileBaseBlock::from_bytes(&f[0..10]);
+        let ret = BaseBlock::from_bytes(&f[0..10]);
         let remaining = &f[8..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {input: remaining, code: ErrorKind::Eof}));
         assert_eq!(
             expected_error,
             ret
         );
+    }
+
+    #[test]
+    fn test_calculate_checksum() {
+        let bytes = [0x72, 0x65, 0x67, 0x66, 0xd8, 0x00, 0x00, 0x00, 0xd8, 0x00, 0x00, 0x00, 0xa2, 0x18, 0x01, 0x35, 0x47, 0x9f, 0xce, 0x01, 0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x30, 0x71, 0x00, 0x01, 0x00, 0x00, 0x00, 0x53, 0x00, 0x59, 0x00, 0x53, 0x00, 0x54, 0x00, 0x45, 0x00, 0x4d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x9d, 0xae, 0x86, 0x7e, 0xae, 0xe3, 0x11, 0x80, 0xba, 0x00, 0x26, 0xb9, 0x56, 0xc9, 0x68, 0x00, 0x9d, 0xae, 0x86, 0x7e, 0xae, 0xe3, 0x11, 0x80, 0xba, 0x00, 0x26, 0xb9, 0x56, 0xc9, 0x68, 0x01, 0x00, 0x00, 0x00, 0x01, 0x9d, 0xae, 0x86, 0x7e, 0xae, 0xe3, 0x11, 0x80, 0xba, 0x00, 0x26, 0xb9, 0x56, 0xc9, 0x68, 0x72, 0x6d, 0x74, 0x6d, 0xf9, 0x49, 0xdb, 0x2b, 0x1a, 0xe3, 0xd0, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0xca, 0x62, 0xcc, 0x00];
+        assert_eq!(0xCC62_CA20, BaseBlockBase::calculate_checksum(&bytes));
     }
 }

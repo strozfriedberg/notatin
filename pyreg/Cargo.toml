@@ -1,0 +1,19 @@
+[package]
+name = "pyreg"
+version = "0.1.0"
+authors = ["Kimberly Stone <kimberly.stone@aon.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+notatin = { path = "..", no-default-features = true }
+pyo3 = { version = "0.12.1", features = ["extension-module"] }
+pyo3-file = "0.3.2"
+num-traits = "0.2"
+log = "0.4"
+chrono = "0.4"
+serde_json = "1"
+csv = "1"
+serde = { version = "1.0", features = ["derive"] }

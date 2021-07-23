@@ -5,10 +5,10 @@ use nom::{
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use crate::registry::State;
+use crate::file_info::FileInfo;
 use crate::util;
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
     /// The absolute offset of the hive bin, calculated at parse time
     pub file_offset_absolute: usize,
@@ -27,8 +27,8 @@ pub struct HiveBinHeader {
 }
 
 impl HiveBinHeader {
-    pub fn from_bytes<'a>(state: &State, input: &'a[u8]) -> IResult<&'a[u8], Self> {
-        let file_offset_absolute = state.get_file_offset(input);
+    pub(crate) fn from_bytes<'a>(file_info: &FileInfo, input: &'a[u8]) -> IResult<&'a[u8], Self> {
+        let file_offset_absolute = file_info.get_file_offset(input);
         let (input, _signature) = tag("hbin")(input)?;
         let (input, offset_from_first_hbin) = le_u32(input)?;
         let (input, size) = le_u32(input)?;
@@ -60,9 +60,9 @@ mod tests {
 
     #[test]
     fn test_parse_hive_bin_header() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let state = State::new(&f, 4096);
-        let ret = HiveBinHeader::from_bytes(&state, &f[4096..4128]);
+        let mut file_info = FileInfo::from_path("test_data/NTUSER.DAT").unwrap();
+        file_info.hbin_offset_absolute = 4096;
+        let ret = HiveBinHeader::from_bytes(&file_info, &file_info.buffer[4096..4128]);
 
         let expected_output = HiveBinHeader {
             file_offset_absolute: 4096,

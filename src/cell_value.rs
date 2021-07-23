@@ -1,7 +1,7 @@
 use serde::Serialize;
 use crate::util;
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum CellValue {
     ValueNone,
     #[serde(serialize_with = "util::data_as_hex")]

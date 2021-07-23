@@ -1,21 +1,47 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use notatin::filter::Filter;
-use notatin::registry::Parser;
+use notatin::parser::Parser;
 
 fn test_read_small_reg() {
-    let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-
-    let mut filter = Filter::new();
-
-    let mut parser = Parser::new(&f, &mut filter);
-    parser.init().expect("should be Ok");
+    let parser = Parser::from_path("test_data/NTUSER.DAT", None, false).unwrap();
     for _key in parser {
     }
 }
 
-pub fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("read small reg", |b| b.iter(|| test_read_small_reg()));
+fn test_read_small_reg_with_deleted() {
+    let parser = Parser::from_path("test_data/NTUSER.DAT", None, true).unwrap();
+    for _key in parser {
+    }
 }
 
-criterion_group!(benches, criterion_benchmark);
+fn test_read_reg_without_logs() {
+    let parser = Parser::from_path("test_data/SYSTEM", None, true).unwrap();
+    for _key in parser {
+    }
+}
+
+fn test_read_reg_with_logs() {
+    let parser = Parser::from_path("test_data/SYSTEM", Some(vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]), true).unwrap();
+    for _key in parser {
+    }
+}
+
+pub fn bench(c: &mut Criterion) {
+    let mut group1 = c.benchmark_group("read small reg");
+    group1
+        .sample_size(1000)
+        .measurement_time(std::time::Duration::from_secs(5))
+        .bench_function("read small reg", |b| b.iter(|| test_read_small_reg()))
+        .bench_function("read small reg with deleted", |b| b.iter(|| test_read_small_reg_with_deleted()));
+    group1.finish();
+
+    let mut group2 = c.benchmark_group("read reg");
+    group2
+        .sample_size(500)
+        .measurement_time(std::time::Duration::from_secs(25))
+        .bench_function("read reg without logs", |b| b.iter(|| test_read_reg_without_logs()))
+        .bench_function("read reg with logs", |b| b.iter(|| test_read_reg_with_logs()));
+    group2.finish();
+}
+
+criterion_group!(benches, bench);
 criterion_main!(benches);

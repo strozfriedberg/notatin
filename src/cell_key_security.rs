@@ -1,15 +1,15 @@
 use nom::{
     IResult,
     bytes::complete::tag,
-    number::complete::{le_u16, le_u32, le_i32}
+    number::complete::{le_u16, le_u32, le_i32},
+    take
 };
 use std::io::Cursor;
 use winstructs::security::SecurityDescriptor;
 use serde::Serialize;
 use crate::hive_bin_cell;
 use crate::err::Error;
-use crate::warn::Warnings;
-use crate::util;
+use crate::log::Logs;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeySecurityDetail {
@@ -35,13 +35,12 @@ pub struct CellKeySecurityDetail {
 pub struct CellKeySecurity {
     pub detail: CellKeySecurityDetail,
     pub security_descriptor: Vec<u8>,
-    pub parse_warnings: Warnings
+    pub logs: Logs
 }
 
 impl CellKeySecurity {
     /// Uses nom to parse a key security (sk) hive bin cell.
-    pub fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
-        let start_pos = input.as_ptr() as usize;
+    fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("sk")(input)?;
         let (input, unknown1) = le_u16(input)?;
@@ -51,14 +50,11 @@ impl CellKeySecurity {
         let (input, security_descriptor_size) = le_u32(input)?;
         let (input, security_descriptor) = take!(input, security_descriptor_size)?;
 
-        let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
-
         Ok((
             input,
             CellKeySecurity {
                 detail: CellKeySecurityDetail {
-                    size: size_abs,
+                    size: size.abs() as u32,
                     unknown1,
                     flink,
                     blink,
@@ -66,7 +62,7 @@ impl CellKeySecurity {
                     security_descriptor_size,
                 },
                 security_descriptor: security_descriptor.to_vec(),
-                parse_warnings: Warnings::default()
+                logs: Logs::default()
             },
         ))
     }
@@ -86,15 +82,15 @@ impl hive_bin_cell::Cell for CellKeySecurity {
     }
 }
 
-pub fn read_cell_key_security(
-    file_buffer: &[u8],
+pub(crate) fn read_cell_key_security(
+    buffer: &[u8],
     security_key_offset: u32,
-    hbin_offset_absolute: u32
+    hbin_offset_absolute: usize
 ) -> Result<Vec<SecurityDescriptor>, Error> {
     let mut security_descriptors = Vec::new();
     let mut offset: usize = security_key_offset as usize;
     loop {
-        let (_, cell_key_security) = CellKeySecurity::from_bytes(&file_buffer[offset + hbin_offset_absolute as usize..])?;
+        let (_, cell_key_security) = CellKeySecurity::from_bytes(&buffer[offset + hbin_offset_absolute..])?;
         security_descriptors.push(
             SecurityDescriptor::from_stream(&mut Cursor::new(cell_key_security.security_descriptor))?
         );
@@ -112,10 +108,10 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn test_parse_cell_key_security() {
+    fn test_parse_cell_key_security() {
         let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
         let slice = &f[5472..5736];
-        let ret = CellKeySecurity::from_bytes(slice);
+        let (_, sec) = CellKeySecurity::from_bytes(slice).unwrap();
 
         let expected_output = CellKeySecurity {
             detail: CellKeySecurityDetail {
@@ -127,16 +123,12 @@ mod tests {
                 security_descriptor_size: 156,
             },
             security_descriptor: vec![1, 0, 4, 144, 128, 0, 0, 0, 144, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 2, 0, 108, 0, 4, 0, 0, 0, 0, 3, 36, 0, 63, 0, 15, 0, 1, 5, 0, 0, 0, 0, 0, 5, 21, 0, 0, 0, 151, 42, 103, 121, 160, 84, 74, 182, 25, 135, 40, 126, 81, 4, 0, 0, 0, 3, 20, 0, 63, 0, 15, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0, 0, 3, 24, 0, 63, 0, 15, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 0, 3, 20, 0, 25, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 5, 32, 0, 0, 0, 32, 2, 0, 0, 1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0 ],
-            parse_warnings: Warnings::default()
+            logs: Logs::default()
         };
 
-        let remaining: [u8; 0] = [];
-
-        let expected = Ok((&remaining[..], expected_output));
-
         assert_eq!(
-            expected,
-            ret
+            expected_output,
+            sec
         );
     }
 }

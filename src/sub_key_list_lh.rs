@@ -5,7 +5,6 @@ use nom::{
 };
 use serde::Serialize;
 use crate::hive_bin_cell;
-use crate::util;
 
 // Subkeys list with name hints
 #[derive(Debug, Eq, PartialEq, Serialize)]
@@ -18,26 +17,21 @@ pub struct SubKeyListLh {
 impl SubKeyListLh {
     /// Uses nom to parse an lf sub key list (lf) hive bin cell.
     fn from_bytes_internal(input: &[u8]) -> IResult<&[u8], Self> {
-        let start_pos = input.as_ptr() as usize;
         let (input, size)       = le_i32(input)?;
         let (input, _signature) = tag("lh")(input)?;
         let (input, count)      = le_u16(input)?;
         let (input, items)      = nom::multi::count(SubKeyListLhItem::from_bytes(), count.into())(input)?;
-
-        let size_abs = size.abs() as u32;
-        let (input, _) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
-
         Ok((
             input,
             SubKeyListLh {
-                size: size_abs,
+                size: size.abs() as u32,
                 count,
                 items
             },
         ))
     }
 
-    pub fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
+    pub(crate) fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Box<dyn hive_bin_cell::CellSubKeyList>> {
         |input: &[u8]| {
             let (input, ret) = SubKeyListLh::from_bytes_internal(input)?;
             Ok((
@@ -102,7 +96,7 @@ mod tests {
     fn test_parse_sub_key_list_lh() {
         let f = std::fs::read("test_data/lh_block").unwrap();
         let slice = &f[..];
-        let ret = SubKeyListLh::from_bytes_internal(slice);
+        let (_, key_list) = SubKeyListLh::from_bytes_internal(slice).unwrap();
 
         let expected_output = SubKeyListLh {
             size: 96,
@@ -118,12 +112,9 @@ mod tests {
                 SubKeyListLhItem {named_key_offset_relative:7352, name_hash:123397}
             ]
         };
-
-        let remaining: [u8; 0] = [0; 0];
-        let expected = Ok((&remaining[..], expected_output));
         assert_eq!(
-            expected,
-            ret
+            expected_output,
+            key_list
         );
     }
 }
