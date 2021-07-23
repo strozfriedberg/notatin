@@ -90,7 +90,6 @@ def test_value_value(sample_parser):
         val = value.value
         assert val == b'8\x000\x00\x00\x00'
 
-
 def test_value_get_content2(sample_parser2):
     with open(sample_parser2, "rb") as m:
         parser = PyRegParser(m)
@@ -178,4 +177,4 @@ def test_timestamp():
     us5 = int((decimal.Decimal(ticks5 * datetime_resolution) / decimal.Decimal(resolution)).quantize(1, mode))
     # convert to datetime
     date5 = epoch + datetime.timedelta(microseconds=us5)
-    t = 3
+ """

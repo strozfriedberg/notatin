@@ -901,7 +901,7 @@ mod tests {
     fn common_export_format() {
         //let mut parser = Parser::from_path_with_logs("test_data/SYSTEM", vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]).unwrap();
         let paths = vec![
-            "test_data/SYSTEM"
+            "test_data/SOFTWARE_lznt1"
         ];
         for path in paths {
             let name = str::replace(path, "/", "__");

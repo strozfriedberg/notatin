@@ -57,6 +57,13 @@ impl Logs {
         }
         Ok(())
     }
+
+    pub(crate) fn is_empty(&mut self) -> bool {
+        match &self.logs {
+            None => true,
+            Some(logs) => logs.is_empty()
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
