@@ -178,17 +178,17 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_KEY_MATCH,
-            filter.clone().check_cell(&mut state, &key_node).unwrap(),
+            filter.clone().check_cell(&mut state, &key_node),
             "check_cell: Same case key match failed");
 
         key_node.path = String::from("Highcontrast");
         assert_eq!(FilterFlags::FILTER_ITERATE_KEYS | FilterFlags::FILTER_KEY_MATCH,
-            filter.clone().check_cell(&mut state, &key_node).unwrap(),
+            filter.clone().check_cell(&mut state, &key_node),
             "check_cell: Different case key match failed");
 
         key_node.path = String::from("badVal");
         assert_eq!(FilterFlags::FILTER_NO_MATCH,
-            filter.clone().check_cell(&mut state, &key_node).unwrap(),
+            filter.clone().check_cell(&mut state, &key_node),
             "check_cell: No match key match failed");
     }
 }
