@@ -5,9 +5,9 @@ mod tests {
 
     #[test]
     fn python_registry_test_issue22() {
-        let parser = Parser::from_path("test_data/issue22.hive", None, false).unwrap();
+        let mut parser = Parser::from_path("test_data/issue22.hive", None, None, false).unwrap();
 
-        for key in parser {
+        for key in parser.iter() {
             let reg_val = key.sub_values.into_iter().find(|val| val.value_name == "TimeZoneKeyName").unwrap();
             let expected_value_content = CellValue::ValueString("W. Europe Standard Time".to_string());
             assert_eq!((expected_value_content, None), reg_val.get_content());

@@ -60,12 +60,19 @@ mod tests {
 
     #[test]
     fn test_parse_hive_bin_header() {
-        let mut file_info = FileInfo::from_path("test_data/NTUSER.DAT").unwrap();
-        file_info.hbin_offset_absolute = 4096;
-        let ret = HiveBinHeader::from_bytes(&file_info, &file_info.buffer[4096..4128]);
+        let buffer = [0x68, 0x62, 0x69, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7C, 0x60, 0xD7, 0xC4,
+        0x26, 0x14, 0xCD, 0x01, 0x00, 0x00, 0x00, 0x00];
+
+        let file_info = FileInfo {
+            hbin_offset_absolute: 4096,
+            buffer: buffer.to_vec()
+        };
+
+        let ret = HiveBinHeader::from_bytes(&file_info, &file_info.buffer[..]);
 
         let expected_output = HiveBinHeader {
-            file_offset_absolute: 4096,
+            file_offset_absolute: 0,
             offset_from_first_hbin: 0,
             size: 4096,
             unknown1: 0,

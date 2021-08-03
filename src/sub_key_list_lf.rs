@@ -72,7 +72,7 @@ impl SubKeyListLfItem {
                 input,
                 SubKeyListLfItem {
                     named_key_offset_relative,
-                    name_hint: util::from_utf8(&name_hint, &mut logs, "SubKeyListLfItem::key_name"),
+                    name_hint: util::from_ascii(&name_hint, &mut logs, "SubKeyListLfItem::key_name"),
                     logs
                 },
             ))
@@ -99,9 +99,12 @@ mod tests {
 
     #[test]
     fn test_parse_sub_key_list_lf() {
-        let f = std::fs::read("test_data/NTUSER.DAT").unwrap();
-        let slice = &f[4360..4384];
-        let ret = SubKeyListLf::from_bytes_internal(slice);
+        let slice = [
+            0xE8, 0xFF, 0xFF, 0xFF, 0x6C, 0x66, 0x02, 0x00, 0xF8, 0x9B, 0x01, 0x00,
+            0x53, 0x63, 0x72, 0x65, 0xA0, 0x9B, 0x01, 0x00, 0x53, 0x63, 0x72, 0x65
+        ];
+
+        let ret = SubKeyListLf::from_bytes_internal(&slice);
 
         let expected_output = SubKeyListLf {
             size: 24,

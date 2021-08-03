@@ -17,8 +17,8 @@ pub enum Error {
 }
 
 impl From<nom::Err<nom::error::Error<&[u8]>>> for Error {
-    fn from(error: nom::Err<nom::error::Error<&[u8]>>) -> Self {
-        Error::Nom{ detail: format!("{:#?}", error.to_string()) }
+    fn from(_error: nom::Err<nom::error::Error<&[u8]>>) -> Self {
+        Error::Nom{ detail: "Nom parsing error".to_string()}
     }
 }
 

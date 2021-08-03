@@ -4,7 +4,6 @@ use crate::err::Error;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FileInfo {
-    pub start_pos: usize,
     pub hbin_offset_absolute: usize,
     pub buffer: Vec<u8>,
 }
@@ -22,7 +21,6 @@ impl FileInfo {
         data_primary.read_to_end(&mut file_buffer_primary)?;
 
         Ok(Self {
-            start_pos: file_buffer_primary.as_ptr() as usize,
             hbin_offset_absolute: 0,
             buffer: file_buffer_primary
         })
@@ -33,7 +31,7 @@ impl FileInfo {
     }
 
     pub(crate) fn get_file_offset_from_ptr(&self, ptr: usize) -> usize {
-        ptr - self.start_pos
+        ptr - self.buffer.as_ptr() as usize//self.start_pos
     }
 }
 
