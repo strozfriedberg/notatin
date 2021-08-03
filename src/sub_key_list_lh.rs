@@ -48,7 +48,7 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListLh {
     }
 
     fn get_offset_list(&self, hbin_offset_absolute: u32) -> Vec<u32> {
-        self.items.iter().map(|x| x.named_key_offset_relative + hbin_offset_absolute).collect()
+        self.items.iter().filter_map(|x| x.named_key_offset_relative.checked_add(hbin_offset_absolute)).collect()
     }
 }
 
@@ -63,7 +63,6 @@ impl SubKeyListLhItem {
         |input: &[u8]| {
             let (input, named_key_offset_relative) = le_u32(input)?;
             let (input, name_hash) = le_u32(input)?;
-
             Ok((
                 input,
                 SubKeyListLhItem {

@@ -16,6 +16,14 @@ pub enum CellValue {
     ValueError
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub enum CellState {
+    Allocated,
+    ModifiedTransactionLog,
+    DeletedTransactionLog,
+    DeletedPrimaryFile
+}
+
 pub enum DecodeFormat {
     Lznt1,
     Rot13,

@@ -1,4 +1,5 @@
 use std::io::{BufWriter, Write};
+use std::fmt;
 use serde::Serialize;
 use crate::err::Error;
 
@@ -65,6 +66,12 @@ impl Logs {
             }
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for Logs {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.get_string())
     }
 }
 

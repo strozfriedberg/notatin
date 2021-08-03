@@ -23,7 +23,7 @@ pub struct Parser {
     hive_bin_header: Option<HiveBinHeader>,
     cell_key_node_root: Option<CellKeyNode>,
 
-    // members to support iteration
+    // members to support iteration. TODO: move into ParserIterator, along with state. Then Parser can be used immutably
     stack_to_traverse: Vec<CellKeyNode>,
     stack_to_return: Vec<CellKeyNode>,
     get_modified: bool
@@ -286,13 +286,22 @@ impl Parser {
         let mut values_versions = 0;
         let mut values_deleted = 0;
 
-        for mut key in self.iter_include_ancestors() {
-            keys += 1;
+        for key in self.iter_include_ancestors() {
+            if key.is_deleted() {
+                keys_deleted += 1;
+            }
+            else {
+                keys += 1;
+            }
             keys_versions += key.versions.len();
-            keys_deleted += key.deleted_keys.len();
-            values_deleted += key.deleted_values.len();
-            values += key.sub_values.len();
+
             for value in key.value_iter() {
+                if value.is_deleted() {
+                    values_deleted += 1;
+                }
+                else {
+                    values += 1;
+                }
                 values_versions += value.versions.len();
             }
         }
@@ -307,7 +316,7 @@ impl Parser {
         &self.state.info
     }
 
-    // the methods below are here to support the python interface
+    // the methods below are here primarily to support the python interface
     pub fn get_root_key(&mut self) -> Result<Option<CellKeyNode>, Error> {
         match &self.base_block {
             Some(bb) => {
@@ -360,6 +369,9 @@ impl Parser {
                         }
                         if let Some(slash_offset) = key_path.find('\\') {
                             key_path = &key_path[slash_offset + 1 .. ];
+                        }
+                        else { // key_path _is_ root
+                            key_path = "";
                         }
                     }
                     let key = root.get_sub_key_by_path(self, &key_path);
@@ -463,7 +475,7 @@ impl Parser {
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
             if !self.stack_to_return.is_empty() {
                 let last = self.stack_to_return.last().expect("We checked that stack_to_return wasn't empty");
-                if last.track_returned == last.to_return {
+                if last.iteration_state.track_returned == last.iteration_state.to_return {
                     return Some(self.stack_to_return.pop().expect("We checked that stack_to_return wasn't empty"));
                 }
             }
@@ -471,14 +483,14 @@ impl Parser {
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, None, self.get_modified);
-                node.to_return = children.len() as u32;
+                node.iteration_state.to_return = children.len() as u32;
                 for c in children.into_iter().rev() {
                     self.stack_to_traverse.push(c);
                 }
             }
             if !self.stack_to_return.is_empty() {
                 let last = self.stack_to_return.last_mut().expect("We checked that stack_to_return wasn't empty");
-                last.track_returned += 1;
+                last.iteration_state.track_returned += 1;
             }
             self.stack_to_return.push(node);
         }
@@ -486,7 +498,7 @@ impl Parser {
         // Handle any remaining elements
         if !self.stack_to_return.is_empty() {
             let to_return = self.stack_to_return.pop().expect("We just checked that stack_to_return wasn't empty");
-            if filter_include_ancestors || to_return.filter_state != Some(FilterMatchState::None) {
+            if filter_include_ancestors || to_return.iteration_state.filter_state != Some(FilterMatchState::None) {
                 return Some(to_return);
             }
         }
@@ -496,13 +508,15 @@ impl Parser {
     // Iterative preorder traversal
     pub fn next_key_preorder(&mut self, filter_include_ancestors: bool) -> Option<CellKeyNode> {
         while !self.stack_to_traverse.is_empty() {
-            //let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             let mut node = self.stack_to_traverse.pop().expect("We checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let (children, _) = node.read_sub_keys_internal(&self.file_info, &mut self.state, &self.filter, None, self.get_modified);
-                node.to_return = children.len() as u32;
+                node.iteration_state.to_return = children.len() as u32;
                 for c in children.into_iter().rev() {
                     self.stack_to_traverse.push(c);
+                }
+                for d in node.deleted_keys.iter() {
+                    self.stack_to_traverse.push(d.clone());
                 }
             }
             if filter_include_ancestors || !self.filter.is_valid() || node.is_filter_match_or_descendent() {
@@ -570,15 +584,9 @@ mod tests {
         parser.init_key_iter();
         loop {
             match parser.next_key_postorder(true) {
-                Some(mut key) => {
+                Some(key) => {
                     keys += 1;
-                    key.init_value_iter();
-                    loop {
-                        match key.next_value() {
-                            Some(_) => values += 1,
-                            None => break
-                        }
-                    }
+                    values += key.value_iter().count();
                 },
                 None => break
             };
@@ -593,15 +601,9 @@ mod tests {
         parser.init_key_iter();
         loop {
             match parser.next_key_postorder(false) {
-                Some(mut key) => {
+                Some(key) => {
                     keys += 1;
-                    key.init_value_iter();
-                    loop {
-                        match key.next_value() {
-                            Some(_) => values += 1,
-                            None => break
-                        }
-                    }
+                    values += key.value_iter().count();
                 },
                 None => break
             };
@@ -620,15 +622,9 @@ mod tests {
         parser.init_key_iter();
         loop {
             match parser.next_key_preorder(true) {
-                Some(mut key) => {
+                Some(key) => {
                     keys += 1;
-                    key.init_value_iter();
-                    loop {
-                        match key.next_value() {
-                            Some(_) => values += 1,
-                            None => break
-                        }
-                    }
+                    values += key.value_iter().count();
                 },
                 None => break
             };
@@ -647,15 +643,9 @@ mod tests {
         parser.init_key_iter();
         loop {
             match parser.next_key_postorder(true) {
-                Some(mut key) => {
+                Some(key) => {
                     keys += 1;
-                    key.init_value_iter();
-                    loop {
-                        match key.next_value() {
-                            Some(_) => values += 1,
-                            None => break
-                        }
-                    }
+                    values += key.value_iter().count();
                 },
                 None => break
             };
@@ -670,15 +660,9 @@ mod tests {
         parser.init_key_iter();
         loop {
             match parser.next_key_postorder(false) {
-                Some(mut key) => {
+                Some(key) => {
                     keys += 1;
-                    key.init_value_iter();
-                    loop {
-                        match key.next_value() {
-                            Some(_) => values += 1,
-                            None => break
-                        }
-                    }
+                    values += key.value_iter().count();
                 },
                 None => break
             };

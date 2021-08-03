@@ -18,6 +18,7 @@ use crate::err::Error;
 use crate::log::{Logs, LogCode};
 use crate::util;
 use crate::cell_key_value::CellKeyValue;
+use crate::cell_value::CellState;
 use crate::cell_key_security;
 use crate::sub_key_list_lf::SubKeyListLf;
 use crate::sub_key_list_lh::SubKeyListLh;
@@ -63,6 +64,14 @@ pub(crate) enum FilterMatchState {
     Exact
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CellKeyNodeIteration {
+    pub(crate) to_return: u32,
+    pub(crate) track_returned: u32,
+    pub(crate) filter_state: Option<FilterMatchState>,
+    pub(crate) sub_keys_iter_index: usize,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetail,
@@ -76,38 +85,26 @@ pub struct CellKeyNode {
     pub number_of_key_values: u32,
     pub key_name: String,
 
-    pub allocated: bool,
     pub path: String,
-    pub sub_values: Vec<CellKeyValue>,
+    pub state: CellState,
+    pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
     pub logs: Logs,
+    pub sequence_num: Option<u32>,
+    pub updated_by_sequence_num: Option<u32>,
+    #[serde(skip_serializing)]
+    pub hash: Option<Hash>,
 
     /// Absolute offsets of any sub key cells
     #[serde(skip_serializing)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
 
     #[serde(skip_serializing)]
-    pub(crate) to_return: u32,
-    #[serde(skip_serializing)]
-    pub(crate) track_returned: u32,
-    #[serde(skip_serializing)]
-    pub(crate) filter_state: Option<FilterMatchState>,
-
-    #[serde(skip_serializing)]
     pub versions: Vec<Self>,
     #[serde(skip_serializing)]
     pub deleted_keys: Vec<Self>,
-    #[serde(skip_serializing)]
-    pub deleted_values: Vec<CellKeyValue>,
-    #[serde(skip_serializing)]
-    pub hash: Option<Hash>,
-    pub sequence_num: Option<u32>,
-    pub updated_by_sequence_num: Option<u32>,
 
     #[serde(skip_serializing)]
-    pub(crate) sub_values_iter_index: usize,
-    #[serde(skip_serializing)]
-    pub(crate) sub_keys_iter_index: usize,
-
+    pub(crate) iteration_state: CellKeyNodeIteration,
 }
 
 impl Default for CellKeyNode {
@@ -121,22 +118,22 @@ impl Default for CellKeyNode {
             number_of_sub_keys: u32::default(),
             number_of_key_values: u32::default(),
             key_name: String::default(),
-            allocated: bool::default(),
             path: String::default(),
+            state: CellState::Allocated,
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
-            to_return: 0,
-            track_returned: 0,
-            filter_state: None,
+            iteration_state: CellKeyNodeIteration {
+                to_return: 0,
+                track_returned: 0,
+                filter_state: None,
+                sub_keys_iter_index: 0
+            },
             versions: Vec::new(),
             deleted_keys: Vec::new(),
-            deleted_values: Vec::new(),
             hash: None,
             sequence_num: None,
-            updated_by_sequence_num: None,
-            sub_values_iter_index: 0,
-            sub_keys_iter_index: 0
+            updated_by_sequence_num: None
          }
     }
 }
@@ -158,10 +155,17 @@ impl CellKeyNode {
         cur_path: &str,
         sequence_num: Option<u32>
     ) -> IResult<&'a [u8], Self> {
+        const MIN_CELL_KEY_SIZE: u32 = 72;
+        const MAX_CELL_KEY_SIZE: u32 = 1100; // 256 char max name, may be UTF-16 (can require 2 code points for some characters) => max 1024 bytes + 76 for the rest of the struct = 1100
         let start_pos = input.as_ptr() as usize;
         let file_offset_absolute = file_info.get_file_offset_from_ptr(start_pos);
 
         let (input, size) = le_i32(input)?;
+        let size_abs =  size.abs() as u32;
+        if !(MIN_CELL_KEY_SIZE..=MAX_CELL_KEY_SIZE).contains(&size_abs) {
+            return Err(nom::Err::Error(nom::error::Error {input, code: nom::error::ErrorKind::Count}));
+        }
+
         let (input, _signature) = tag("nk")(input)?;
         let (input, flags) = le_u16(input)?;
         let (input, last_key_written_date_and_time) = le_u64(input)?;
@@ -197,7 +201,6 @@ impl CellKeyNode {
         let mut path = cur_path.to_owned();
         path.push('\\');
         path += &key_name;
-        let size_abs =  size.abs() as u32;
         let (input, slack) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         let cell_key_node = Self {
@@ -226,28 +229,32 @@ impl CellKeyNode {
             number_of_sub_keys,
             number_of_key_values,
             key_name,
-            allocated: size < 0,
             path,
+            state: CellState::Allocated,
             sub_values: Vec::new(),
             logs,
             cell_sub_key_offsets_absolute: Vec::new(),
-            to_return: 0,
-            filter_state: None,
-            track_returned: 0,
+            iteration_state: CellKeyNodeIteration {
+                to_return: 0,
+                track_returned: 0,
+                filter_state: None,
+                sub_keys_iter_index: 0
+            },
             versions: Vec::new(),
             deleted_keys: Vec::new(),
-            deleted_values: Vec::new(),
             hash: Some(Self::hash(state, flags, last_key_written_date_and_time, access_bits)),
             sequence_num,
-            updated_by_sequence_num: None,
-            sub_values_iter_index: 0,
-            sub_keys_iter_index: 0
+            updated_by_sequence_num: None
         };
 
         Ok((
             input,
             cell_key_node
         ))
+    }
+
+    pub fn is_deleted(&self) -> bool {
+        self.state == CellState::DeletedPrimaryFile || self.state == CellState::DeletedTransactionLog
     }
 
     fn hash(state: &mut State, flags_raw: u16, last_key_written_raw: u64, access_bits_raw: u32) -> Hash {
@@ -276,14 +283,15 @@ impl CellKeyNode {
             if let Some(updated_values) = state.updated_values.get(&self.path, &val.value_name) {
                 val.versions = updated_values.to_vec();
             }
-            if let Some(deleted_values) = state.deleted_values.get(&self.path, &val.value_name) {
-                self.deleted_values = deleted_values.to_vec();
-            }
+        }
+
+        if let Some(deleted_values) = state.deleted_values.get(&self.path) {
+            self.sub_values.extend(deleted_values.to_vec());
         }
     }
 
     pub(crate) fn is_filter_match_or_descendent(&self) -> bool {
-        matches!(self.filter_state, Some(FilterMatchState::Exact) | Some(FilterMatchState::Descendent))
+        matches!(self.iteration_state.filter_state, Some(FilterMatchState::Exact) | Some(FilterMatchState::Descendent))
     }
 
     fn should_read_values(
@@ -316,7 +324,7 @@ impl CellKeyNode {
         }
 
         if filter_flags.contains(FilterFlags::FILTER_KEY_MATCH) {
-            cell_key_node.filter_state = Some(FilterMatchState::Exact);
+            cell_key_node.iteration_state.filter_state = Some(FilterMatchState::Exact);
         }
 
         if options.update_modified_lists {
@@ -384,15 +392,15 @@ impl CellKeyNode {
                             },
                             Ok(kn) => {
                                 if let Some(mut kn) = kn {
-                                    if kn.filter_state == None {
+                                    if kn.iteration_state.filter_state == None {
                                         if self_is_filter_match_or_descendent {
-                                            kn.filter_state = Some(FilterMatchState::Descendent);
+                                            kn.iteration_state.filter_state = Some(FilterMatchState::Descendent);
                                         }
                                         else if filter.is_valid() {
-                                            kn.filter_state = Some(FilterMatchState::None);
+                                            kn.iteration_state.filter_state = Some(FilterMatchState::None);
                                         }
                                     }
-                                    else if kn.filter_state == Some(FilterMatchState::Exact) {
+                                    else if kn.iteration_state.filter_state == Some(FilterMatchState::Exact) {
                                         found_key = true
                                     }
                                     children.push(kn);
@@ -533,10 +541,10 @@ impl CellKeyNode {
         val.cloned()
     }
 
-    pub fn value_iter(&mut self) -> CellKeyNodeValueIterator<'_> {
-        self.sub_values_iter_index = 0;
+    pub fn value_iter(&self) -> CellKeyNodeValueIterator<'_> {
         CellKeyNodeValueIterator {
-            inner: self
+            inner: self,
+            sub_values_iter_index: 0
         }
     }
 
@@ -581,28 +589,24 @@ impl CellKeyNode {
         }
     }
 
-    pub fn init_value_iter(&mut self) {
-        self.sub_values_iter_index = 0
+    pub fn init_sub_key_iter(&mut self) {
+        self.iteration_state.sub_keys_iter_index = 0
     }
 
-    pub fn next_value(&mut self) -> Option<CellKeyValue> {
-        match self.sub_values.get(self.sub_values_iter_index) {
+    pub fn next_value(&self, mut sub_values_iter_index: usize) -> Option<(CellKeyValue, usize)> {
+        match self.sub_values.get(sub_values_iter_index) {
             Some(value) => {
-                self.sub_values_iter_index += 1;
-                Some(value.clone())
+                sub_values_iter_index += 1;
+                Some((value.clone(), sub_values_iter_index))
             },
             _ => None
         }
     }
 
-    pub fn init_sub_key_iter(&mut self) {
-        self.sub_keys_iter_index = 0
-    }
-
     pub fn next_sub_key(&mut self, parser: &mut Parser) -> Option<CellKeyNode> {
-        match self.get_sub_key_by_index(parser, self.sub_keys_iter_index) {
+        match self.get_sub_key_by_index(parser, self.iteration_state.sub_keys_iter_index) {
             Some(sub_key) => {
-                self.sub_keys_iter_index += 1;
+                self.iteration_state.sub_keys_iter_index += 1;
                 Some(sub_key)
             },
             _ => None
@@ -619,14 +623,23 @@ impl CellKeyNode {
 }
 
 pub struct CellKeyNodeValueIterator<'a> {
-    inner: &'a mut CellKeyNode
+    inner: &'a CellKeyNode,
+    sub_values_iter_index: usize
 }
 
 impl Iterator for CellKeyNodeValueIterator<'_> {
     type Item = CellKeyValue;
 
+    // Why isn't this just implemented entirely here, rather than in 'CellKeyValue::next_value(...)'?
+    // Because pyo3 doesn't allow exposure of objects with lifetimes, so we need to be able to call CellKeyValue::next_value directly in pyreg
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next_value()
+        match self.inner.next_value(self.sub_values_iter_index) {
+            Some((val, sub_values_iter_index)) => {
+                self.sub_values_iter_index = sub_values_iter_index;
+                Some(val)
+            },
+            _ => None
+        }
     }
 }
 
@@ -686,7 +699,7 @@ mod tests {
     fn test_iterator() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        for mut key in parser.iter_include_ancestors() {
+        for key in parser.iter_include_ancestors() {
             for val in key.value_iter() {
                 println!("{}", val.value_name);
             }
@@ -766,6 +779,7 @@ mod tests {
                 value_name: "DelayBeforeAcceptance".to_string(),
                 logs: Logs::default(),
                 versions: Vec::new(),
+                state: CellState::Allocated,
                 hash: Some(hash_array.into()),
                 sequence_num: None,
                 updated_by_sequence_num: None
@@ -825,22 +839,22 @@ mod tests {
             number_of_sub_keys: 10,
             number_of_key_values: 0,
             key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
-            allocated: true,
             path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
+            state: CellState::Allocated,
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
-            to_return: 0,
-            track_returned: 0,
-            filter_state: None,
+            iteration_state: CellKeyNodeIteration {
+                to_return: 0,
+                track_returned: 0,
+                filter_state: None,
+                sub_keys_iter_index: 0
+            },
             versions: Vec::new(),
             deleted_keys: Vec::new(),
-            deleted_values: Vec::new(),
             hash: Some(hash_array.into()),
             sequence_num: None,
-            updated_by_sequence_num: None,
-            sub_values_iter_index: 0,
-            sub_keys_iter_index: 0
+            updated_by_sequence_num: None
         };
         assert_eq!(
             expected_output,

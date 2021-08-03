@@ -9,84 +9,206 @@ use notatin::{
     err::Error,
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
-    util::format_date_time
+    util::format_date_time,
+    filter::{Filter, RegQuery}
 };
+use clap::{Arg, App};
 
 fn main() -> Result<(), Error> {
-    let file1 = "/home/kstone/code/rust_parser_2/test_data/SYSTEM";
-    let file2 = "/home/kstone/code/rust_parser_2/SYSTEM_transaction_logs_applied";
-    let filter = None;//Some(Filter::from_path(FindPath::from_key(r"ControlSet001\Services", false, true)));
+    let matches = App::new("Notatin Registry Compare")
+    .version("1.0")
+    .arg(Arg::from_usage("-f --filter=[STRING] 'Key path to filter on (ex: \'ControlSet001\\Services\')'"))
+    .arg(Arg::with_name("base")
+        .short("b")
+        .long("base")
+        .value_name("FILES")
+        .help("Base registry file with optional transaction file(s) (Comma separated list)")
+        .required(true)
+        .takes_value(true))
+    .arg(Arg::with_name("comparison")
+        .short("c")
+        .long("comparison")
+        .value_name("FILES")
+        .help("Comparison registry file with optional transaction file(s) (Comma separated list)")
+        .required(true)
+        .takes_value(true))
+    .arg(Arg::with_name("output")
+        .short("o")
+        .long("output")
+        .value_name("FILE")
+        .help("Output file")
+        .required(true)
+        .takes_value(true))
+    .get_matches();
 
-    fn write_value(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode, value: &CellKeyValue, prefix: &str) {
-        writeln!(writer, "{}\t{} {}\t{:?}\t{}\t{:?}", prefix, cell_key_node.path, value.get_pretty_name(), value.data_type, value.hash.unwrap().to_hex(), value.get_content().0).unwrap();
+    let (base_primary, base_logs) =
+        parse_paths(matches.value_of("base").expect("Required value"));
+    let (comparison_primary, comparison_logs) =
+        parse_paths(matches.value_of("comparison").expect("Required value"));
+
+    let output = matches.value_of("output").expect("Required value");
+
+    let filter;
+    if let Some(f) = matches.value_of("filter") {
+        filter = Some(Filter::from_path(RegQuery::from_key(f, false, true)));
+    }
+    else {
+        filter = None;
     }
 
-    fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode, prefix: &str) {
-        writeln!(writer, "{}\t{}\t{}\t{:?}\t{:?}\t{}", prefix, cell_key_node.path, format_date_time(cell_key_node.last_key_written_date_and_time), cell_key_node.key_node_flags, cell_key_node.access_flags, cell_key_node.hash.unwrap().to_hex()).unwrap();
-    }
-
-    let write_file = File::create("compare_two_files_softwareKim.txt")?;
+    let write_file = File::create(output)?;
     let mut writer = BufWriter::new(write_file);
 
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
-    // add all items from file1 into original_map
-    let mut parser1 = Parser::from_path(file1, None, filter.clone(), false)?;
-    for key in parser1.iter_include_ancestors() {
-        original_map.insert((key.path.clone(), None), key.hash);
-        for value in &key.sub_values {
-            original_map.insert((key.path.clone(), Some(value.get_pretty_name())), value.hash);
+    // add all items from base into original_map
+    let mut parser1 = Parser::from_path(base_primary, base_logs, filter.clone(), false)?;
+    let (k_total, _) = parser1.count_all_keys_and_values();
+    let mut k_added = 0;
+
+    for key in parser1.iter() {
+        let path = key.path.clone();
+        original_map.insert((path.clone(), None), key.hash); // TODO: update this to support deleted/modified as well. Sequence numbers, deleted/modified - that should be enough to get us to the original item
+        for value in key.value_iter() {
+            original_map.insert((path.clone(), Some(value.get_pretty_name())), value.hash);
+        }
+        k_added += 1;
+        if k_added % 1000 == 0 {
+            println!("{}/{} keys parsed from base", k_added, k_total);
         }
     }
+    println!("{}/{} keys parsed from base", k_added, k_total);
 
-    // For each item in file2, see if it's in original_map
+    let mut keys_added = Vec::new();
+    let mut keys_modified = Vec::new();
+    let mut keys_deleted = Vec::new();
+    let mut values_added = Vec::new();
+    let mut values_modified = Vec::new();
+    let mut values_deleted = Vec::new();
+
+    // For each item in comparison, see if it's in original_map
     //   If missing, it's new
     //   If present, compare the hash
     //     If same, it's a match (ignore it)
     //     If different, it's an update
-    let mut parser2 = Parser::from_path(file2, None, filter, false).unwrap();
-    for key in parser2.iter_include_ancestors() {
+    let mut parser2 = Parser::from_path(comparison_primary, comparison_logs, filter, false)?;
+    let (k_total, _) = parser2.count_all_keys_and_values();
+    let mut k_added = 0;
+    for key in parser2.iter() {
         match original_map.remove(&(key.path.clone(), None)) {
             Some(val) => {
                 if val != key.hash {
-                    write_key(&mut writer, &key, "UpdatedKey:");
-
                     let original_key = parser1.get_key(&key.path, true);
-                    write_key(&mut writer, &original_key.unwrap().unwrap(), "\tOriginalKey:");
+                    keys_modified.push((original_key.unwrap().unwrap(), key.clone()));
                 }
             },
-            None => write_key(&mut writer, &key, "NewKey:")
+            None => keys_added.push(key.clone())
         }
-        for value in &key.sub_values {
-            match original_map.remove(&(key.path.clone(), Some(value.get_pretty_name()))) {
+
+        let path = key.path.clone();
+        for value in key.value_iter() {
+            match original_map.remove(&(path.clone(), Some(value.get_pretty_name()))) {
                 Some(val) => {
                     if val != value.hash {
-                        write_value(&mut writer, &key, &value, "UpdatedValue:");
 
                         let original_key = parser1.get_key(&key.path, true).unwrap().unwrap();
                         let original_value = original_key.get_value(&value.value_name).unwrap();
-                        write_value(&mut writer, &original_key,  &original_value, "\tOriginalValue:");
+                        values_modified.push((path.clone(), original_value, value));
                     }
                 },
-                None => write_value(&mut writer, &key, &value, "NewValue:")
+                None => values_added.push((path.clone(), value))
             }
         }
+        k_added += 1;
+        if k_added % 100 == 0 {
+            println!("{}/{} keys compared", k_added, k_total);
+        }
     }
+    println!("{}/{} keys compared", k_added, k_total);
 
     // Any items remaining in original_map were deleted (not present in file2)
     for remaining in original_map {
         match remaining.0.1 {
             None => {
                 let original_key = parser1.get_key(&remaining.0.0, true).unwrap().unwrap();
-                write_key(&mut writer, &original_key, "DeletedKey:");
+                keys_deleted.push(original_key)
             }
             Some(val) => {
                 let original_key = parser1.get_key(&remaining.0.0, true).unwrap().unwrap();
                 let original_value = original_key.get_value(&val).unwrap();
-                write_value(&mut writer, &original_key, &original_value, "DeletedValue:");
+                values_deleted.push((original_key.path, original_value))
             }
         };
     }
+    let total_changes = keys_deleted.len() + keys_added.len() + keys_modified.len() + values_deleted.len() + values_added.len() + values_modified.len();
+
+    if !keys_deleted.is_empty() {
+        writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
+        for k in keys_deleted {
+            write_key(&mut writer, &k);
+        }
+    }
+    if !keys_added.is_empty() {
+        writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
+        for k in keys_added {
+            write_key(&mut writer, &k);
+        }
+    }
+    if !keys_modified.is_empty() {
+        writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
+        for k in keys_modified {
+            write_key(&mut writer, &k.0);
+            write_key(&mut writer, &k.1);
+        }
+    }
+    if !values_deleted.is_empty() {
+        writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
+        for v in values_deleted {
+            write_value(&mut writer, &v.0, &v.1);
+        }
+    }
+    if !values_added.is_empty() {
+        writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
+        for v in values_added {
+            write_value(&mut writer, &v.0, &v.1);
+        }
+    }
+    if !values_modified.is_empty() {
+        writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
+        for v in values_modified {
+            write_value(&mut writer, &v.0, &v.1);
+            write_value(&mut writer, &v.0, &v.2);
+        }
+    }
+    writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
 
     Ok(())
+}
+
+fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {
+    let mut logs = Vec::new();
+    let mut primary = String::new();
+    for component in paths.split(',') {
+        let lower = component.trim().trim_matches('\'').to_ascii_lowercase();
+        if lower.ends_with(".log1") || lower.ends_with(".log2") {
+            logs.push(component.trim().trim_matches('\'').to_string());
+        }
+        else {
+            primary = component.trim().trim_matches('\'').to_string();
+        }
+    }
+    if logs.is_empty() {
+        (primary, None)
+    }
+    else {
+        (primary, Some(logs))
+    }
+}
+
+fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue) {
+    writeln!(writer, "{}\t{}\t{:?}", cell_key_node_path, value.get_pretty_name(), value.get_content().0).unwrap();
+}
+
+fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
+    writeln!(writer, "{}\t{}\t{:?}\t{:?}", cell_key_node.path, format_date_time(cell_key_node.last_key_written_date_and_time), cell_key_node.key_node_flags, cell_key_node.access_flags).unwrap();
 }

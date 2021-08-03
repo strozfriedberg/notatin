@@ -14,6 +14,7 @@ use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 use crate::cell_key_value::CellKeyValue;
+use crate::cell_value::CellState;
 use crate::parser::{Parser, RegItems};
 
 // Structures based off https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-transaction-log-files
@@ -212,7 +213,7 @@ impl TransactionLog {
     ) -> (u32, RegItems) {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
-            println!("log_entry sequence_number: {}", log_entry.sequence_number);
+            dbg!(log_entry.sequence_number);
             if log_entry.has_valid_hashes {
                 if log_entry.sequence_number < base_block_base.secondary_sequence_number {
                     parser.state.info.add(
@@ -396,7 +397,7 @@ impl TransactionAnalyzer<'_> {
         // This is a mitigation against ending up with a bunch of spurious deleted items from unparsable buffers.
         for item in &updated_reg_items {
             match &item.0.1 {
-                Some(value_name) => updated_parser.state.deleted_values.remove(&item.0.0, &value_name, &item.1.0),
+                Some(_) => updated_parser.state.deleted_values.remove(&item.0.0, &item.1.0),
                 None => updated_parser.state.deleted_keys.remove(&item.0.0, &item.1.0)
             }
         }
@@ -429,8 +430,14 @@ impl TransactionAnalyzer<'_> {
         if let Some(mut full_key) = full_key {
             full_key.updated_by_sequence_num = Some(self.new_sequence_number);
             match modified_list_type {
-                ModifiedListType::Updated => state.updated_keys.add(&path, full_key),
-                ModifiedListType::Deleted => state.deleted_keys.add(&parent_path, full_key)
+                ModifiedListType::Updated => {
+                    full_key.state = CellState::ModifiedTransactionLog;
+                    state.updated_keys.add(&path, full_key)
+                },
+                ModifiedListType::Deleted => {
+                    full_key.state = CellState::DeletedTransactionLog;
+                    state.deleted_keys.add(&parent_path, full_key)
+                }
             }
         }
         Ok(())
@@ -454,8 +461,14 @@ impl TransactionAnalyzer<'_> {
         full_value.updated_by_sequence_num = Some(self.new_sequence_number);
         let name = full_value.value_name.clone();
         match modified_list_type {
-            ModifiedListType::Updated => state.updated_values.add(&path, &name, full_value),
-            ModifiedListType::Deleted => state.deleted_values.add(&path, &name, full_value)
+            ModifiedListType::Updated => {
+                full_value.state = CellState::ModifiedTransactionLog;
+                state.updated_values.add(&path, &name, full_value)
+            },
+            ModifiedListType::Deleted => {
+                full_value.state = CellState::DeletedTransactionLog;
+                state.deleted_values.add(&path, full_value)
+            }
         }
         Ok(())
     }

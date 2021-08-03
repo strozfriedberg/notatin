@@ -148,12 +148,13 @@ impl PyRegKey {
     fn reg_values_iterator(&mut self) -> PyResult<Py<PyRegValuesIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        self.inner.init_value_iter();
 
         Py::new(
             py,
             PyRegValuesIterator {
-                inner: self.inner.clone()
+                inner: self.inner.clone(),
+                sub_values_iter_index: 0,
+                deleted_sub_values_iter_index: 0
             },
         )
     }
@@ -190,7 +191,9 @@ impl PyRegKey {
 
 #[pyclass]
 pub struct PyRegValuesIterator {
-    inner: CellKeyNode
+    inner: CellKeyNode,
+    sub_values_iter_index: usize,
+    deleted_sub_values_iter_index: usize,
 }
 
 impl PyRegValuesIterator {
@@ -218,8 +221,10 @@ impl PyRegValuesIterator {
     fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match self.inner.next_value() {
-            Some(value) => {
+        match self.inner.next_value(self.sub_values_iter_index, self.deleted_sub_values_iter_index) {
+            Some((value, sub_values_iter_index, deleted_sub_values_iter_index)) => {
+                self.sub_values_iter_index = sub_values_iter_index;
+                self.deleted_sub_values_iter_index = deleted_sub_values_iter_index;
                 Some(self.reg_value_to_pyobject(Ok(value), py))
             }
             None => None

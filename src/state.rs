@@ -27,16 +27,39 @@ impl ModifiedValueMap {
     pub(crate) fn get(&self, key_path: &str, value_name: &str) -> Option<&Vec<CellKeyValue>> {
         self.map.get(&(key_path.to_string(), value_name.to_string()))
     }
+}
 
-    pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
-        let key_value_name = &(key_path.to_string(), value_name.to_string());
-        if let Some(values) = self.map.get_mut(key_value_name) {
+#[derive(Clone, Debug)]
+pub(crate) struct DeletedValueMap {
+    pub map: HashMap<String, Vec<CellKeyValue>>
+}
+
+impl DeletedValueMap {
+    pub(crate) fn new() -> Self {
+        DeletedValueMap {
+            map: HashMap::new()
+        }
+    }
+
+    pub(crate) fn add(&mut self, key_path: &str, value: CellKeyValue) {
+        match self.map.get_mut(&key_path.to_string()) {
+            Some(vec) => { vec.push(value); },
+            None => { self.map.insert(key_path.to_string(), vec![value]); }
+        }
+    }
+
+    pub(crate) fn get(&self, key_path: &str) -> Option<&Vec<CellKeyValue>> {
+        self.map.get(&key_path.to_string())
+    }
+
+    pub(crate) fn remove(&mut self, key_path: &str, hash: &Hash) {
+        if let Some(values) = self.map.get_mut(key_path) {
             for (index, value) in values.iter().enumerate() {
                 if let Some(value_hash) = value.hash {
                     if hash == &value_hash {
                         values.remove(index);
                         if values.is_empty() {
-                            self.map.remove(key_value_name);
+                            self.map.remove(key_path);
                         }
                         break;
                     }
@@ -47,13 +70,13 @@ impl ModifiedValueMap {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ModifiedKeyMap {
+pub(crate) struct ModifiedDeletedKeyMap {
     pub map: HashMap<String, Vec<CellKeyNode>>
 }
 
-impl ModifiedKeyMap {
+impl ModifiedDeletedKeyMap {
     pub(crate) fn new() -> Self {
-        ModifiedKeyMap {
+        ModifiedDeletedKeyMap {
             map: HashMap::new()
         }
     }
@@ -104,9 +127,9 @@ pub(crate) struct State {
     pub hasher: Hasher,
 
     pub sequence_numbers: HashMap<(String, Option<String>), u32>,
-    pub deleted_keys: ModifiedKeyMap,
-    pub updated_keys: ModifiedKeyMap,
-    pub deleted_values: ModifiedValueMap,
+    pub deleted_keys: ModifiedDeletedKeyMap,
+    pub updated_keys: ModifiedDeletedKeyMap,
+    pub deleted_values: DeletedValueMap,
     pub updated_values: ModifiedValueMap,
 }
 
@@ -136,9 +159,9 @@ impl Default for State {
             info: Logs::default(),
             hasher: Hasher::new(),
             sequence_numbers: HashMap::new(),
-            deleted_keys: ModifiedKeyMap::new(),
-            updated_keys: ModifiedKeyMap::new(),
-            deleted_values: ModifiedValueMap::new(),
+            deleted_keys: ModifiedDeletedKeyMap::new(),
+            updated_keys: ModifiedDeletedKeyMap::new(),
+            deleted_values: DeletedValueMap::new(),
             updated_values: ModifiedValueMap::new()
         }
     }

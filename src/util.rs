@@ -15,6 +15,7 @@ use nom::{
 };
 use crate::err::Error;
 use crate::parser::Parser;
+use crate::cell_value::CellState;
 use crate::log::{Logs, LogCode};
 
 const SIZE_OF_UTF16_CHAR: usize = mem::size_of::<u16>();
@@ -225,14 +226,22 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     )?;
     for key in parser.iter() {
         keys += 1;
+        let alloc_char = match key.state {
+            CellState::DeletedPrimaryFile => "U",
+            CellState::DeletedTransactionLog => "D",
+            CellState::ModifiedTransactionLog => "M",
+            CellState::Allocated => "A",
+        };
         writeln!(
             &mut writer,
-            "key,A,{},{},,,,{}",
+            "key,{},{},{},,,,{}",
+            alloc_char,
             key.detail.file_offset_absolute,
             escape_string(&key.path[1..]), // drop the first slash to match EZ's formatting
             format_date_time(key.last_key_written_date_and_time)
         )?;
-        for value in key.sub_values {
+        let key_name = key.key_name.clone();
+        for value in key.value_iter() {
             let name;
             if value.value_name.is_empty() {
                 name = "(default)";
@@ -240,12 +249,19 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
             else {
                 name = &value.value_name;
             }
+            let alloc_char = match value.state {
+                CellState::DeletedPrimaryFile => "U",
+                CellState::DeletedTransactionLog => "D",
+                CellState::ModifiedTransactionLog => "M",
+                CellState::Allocated => "A",
+            };
             values += 1;
             writeln!(
                 &mut writer,
-                "value,A,{},{},{},{:?},{},",
+                "value,{},{},{},{},{:?},{},",
+                alloc_char,
                 value.detail.file_offset_absolute,
-                escape_string(&key.key_name),
+                escape_string(&key_name),
                 escape_string(name),
                 value.data_type as u32,
                 to_hex_string(&value.detail.value_bytes.unwrap_or_default()[..])
