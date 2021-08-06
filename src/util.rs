@@ -259,17 +259,19 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     Ok(())
 }
 
-fn calc_compression_bits() -> [u8; 4096] {
-    let mut result: [u8; 4096] = [0; 4096];
+const fn calc_compression_bits() -> [u8; 4096] {
+    let mut result = [0u8; 4096];
     let mut offset_bits = 0;
 
     let mut y = 0x10;
-    for x in 0..result.len() {
+    let mut x = 0;
+    while x < result.len() {
         result[x] = 4 + offset_bits;
         if x == y {
             y <<= 1;
             offset_bits += 1;
         }
+        x += 1
     }
     result
 }
@@ -289,7 +291,7 @@ pub(crate) fn decode_rot13(text: &str) -> String {
 pub(crate) fn decode_lznt1(source: &[u8], source_offset: usize, source_length: usize) -> Result<Vec<u8>, Error> {
     const SUB_BLOCK_IS_COMPRESSED_FLAG: u16 = 0x8000;
     const SUB_BLOCK_SIZE_MASK: u16 = 0x0fff;
-    let compression_bits = calc_compression_bits();
+    const COMPRESSION_BITS: [u8; 4096] = calc_compression_bits();
 
     let mut decompressed = vec![];//vec![0; source.len() * 10];
     let decompressed_offset: usize = 0;
@@ -330,7 +332,7 @@ pub(crate) fn decode_lznt1(source: &[u8], source_offset: usize, source_length: u
                         source_index += 1;
                     }
                     else {
-                        let length_bits: u16 = (16 - compression_bits[dest_index - dest_sub_block_start]) as u16;
+                        let length_bits: u16 = (16 - COMPRESSION_BITS[dest_index - dest_sub_block_start]) as u16;
                         let length_mask: u16 = ((1 << length_bits) - 1) as u16;
 
                         let phrase_token: u16 = u16::from_le_bytes(source[source_index + source_offset..source_index + source_offset + mem::size_of::<u16>()].try_into()?);
