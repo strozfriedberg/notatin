@@ -19,5 +19,4 @@ pub mod sub_key_list_li;
 pub mod sub_key_list_ri;
 pub mod transaction_log;
 pub(crate) mod macros;
-pub(crate) mod tests;
 pub mod util;
