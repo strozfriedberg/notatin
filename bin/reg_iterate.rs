@@ -43,8 +43,8 @@ fn versions(cell_key_node: &CellKeyNode, writer: &mut BufWriter<File>, prefix: &
 
 fn main() -> Result<(), Error> {
     let mut parser = Parser::from_path(
-        "/home/kstone/code/rust_parser_2/test_data/SYSTEM",
-        Some(vec!["/home/kstone/code/rust_parser_2/test_data/SYSTEM.LOG1", "/home/kstone/code/rust_parser_2/test_data/SYSTEM.LOG2"]),
+        "/mnt/d/evidence/RegFiles/aws/v5/system",
+        Some(vec!["/mnt/d/evidence/RegFiles/aws/v5/system.log1","/mnt/d/evidence/RegFiles/aws/v5/system.log2"]),
         None,
         true
     ).unwrap();
@@ -66,7 +66,7 @@ fn main() -> Result<(), Error> {
     let (k, v) = parser.count_all_keys_and_values();
     println!("{}, {}", k, v);
 
-    let write_file = File::create("system_skip_matching_seq_num.txt").unwrap();
+    let write_file = File::create("system_v5.txt").unwrap();
     let mut writer = BufWriter::new(write_file);
 
     for key in parser.iter_include_ancestors() {

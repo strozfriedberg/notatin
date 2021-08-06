@@ -171,20 +171,35 @@ impl TransactionLog {
         ))
     }
 
-    pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<Option<Vec<Self>>, Error> {
+    pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<(Option<Vec<Self>>, Option<Logs>), Error> {
         if let Some(log_files) = log_files {
+            let mut error_logs = Logs::default();
             let mut transaction_logs = Vec::new();
             for mut log_file in log_files {
                 let mut file_buffer_log = Vec::new();
                 log_file.read_to_end(&mut file_buffer_log)?;
-                let slice_log = &file_buffer_log[0..];
-                let (_, log) = Self::from_bytes(slice_log)?;
-                transaction_logs.push(log);
+                if file_buffer_log.is_empty() {
+                    error_logs.add(
+                        LogCode::WarningParse,
+                        &"Skipping log file; 0 bytes"
+                    );
+                }
+                else {
+                    match Self::from_bytes(&file_buffer_log[0..]) {
+                        Ok((_, log)) => transaction_logs.push(log),
+                        Err(e) => {
+                            error_logs.add(
+                                LogCode::WarningParse,
+                                &format!("Skipping log file; {}", Error::from(e).to_string())
+                            );
+                        }
+                    }
+                }
             }
-            Ok(Some(transaction_logs))
+            Ok((Some(transaction_logs), error_logs.get_option()))
         }
         else {
-            Ok(None)
+            Ok((None, None))
         }
     }
 
@@ -455,33 +470,33 @@ mod tests {
 
     #[test]
     fn test_parse_transaction_log() {
-        let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
+        let mut file_info = FileInfo::from_path("test_data/system.log1").unwrap();
         file_info.hbin_offset_absolute = 4096;
         let (_, log) = TransactionLog::from_bytes(&file_info.buffer[0..]).unwrap();
 
-        let mut unk2: Vec<u8> = [0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 0, 0, 0, 0, 1, 157, 174, 134, 126, 174, 227, 17, 128, 186, 0, 38, 185, 86, 201, 104, 114, 109, 116, 109, 249, 73, 219, 43, 26, 227, 208, 1].to_vec();
-        unk2.extend([0; 332].iter().copied());
+        let mut unk2: Vec<u8> = [248, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 248, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 1, 0, 0, 0, 249, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 114, 109, 116, 109, 234, 29, 73, 188, 218, 138, 215, 1, 79, 102, 82, 103, 1].to_vec();
+        unk2.extend([0; 327].iter().copied());
         let expected_header = BaseBlockBase {
-            primary_sequence_number: 178,
-            secondary_sequence_number: 178,
-            last_modification_date_and_time: util::get_date_time_from_filetime(130216567421081762),
+            primary_sequence_number: 4064,
+            secondary_sequence_number: 4064,
+            last_modification_date_and_time: util::get_date_time_from_filetime(0),
             major_version: 1,
             minor_version: 5,
             file_type: FileType::TransactionLogNewFormat,
             format: FileFormat::DirectMemoryLoad,
             root_cell_offset_relative: 32,
-            hive_bins_data_size: 7155712,
+            hive_bins_data_size: 16445440,
             clustering_factor: 1,
             filename: "SYSTEM".to_string(),
             unk2,
-            checksum: 3430861351,
+            checksum: 2429800415,
             logs: Logs::default()
         };
         assert_eq!(expected_header, log.base_block);
-        assert_eq!(8, log.log_entries.len());
-        assert_eq!(2306048, log.log_entries[7].file_offset_absolute);
-        assert_eq!(12288, log.log_entries[7].size);
-        assert_eq!(107, log.log_entries[7].dirty_pages[1].page_bytes[4037]);
+        assert_eq!(3, log.log_entries.len());
+        assert_eq!(32768, log.log_entries[2].file_offset_absolute);
+        assert_eq!(16384, log.log_entries[2].size);
+        assert_eq!(114, log.log_entries[2].dirty_pages[1].page_bytes[1000]);
     }
 
     #[test]

@@ -71,9 +71,10 @@ impl Parser {
     }
 
     fn from_file_info_with_logs<T: ReadSeek>(file_info: FileInfo, transaction_logs: Vec<T>, filter: Option<Filter>, recover_deleted: bool) -> Result<Self, Error> {
+        let (parsed_transaction_logs, warning_logs) = TransactionLog::parse(Some(transaction_logs))?;
         let mut parser = Parser {
             file_info,
-            state: State::from_transaction_logs(TransactionLog::parse(Some(transaction_logs))?, recover_deleted),
+            state: State::from_transaction_logs(parsed_transaction_logs, recover_deleted),
             filter: filter.unwrap_or_default(),
             base_block: None,
             hive_bin_header: None,
@@ -83,6 +84,9 @@ impl Parser {
             get_modified: false
         };
         parser.init(recover_deleted)?;
+        if let Some(warning_logs) = warning_logs {
+            parser.state.info.extend(warning_logs);
+        }
         Ok(parser)
     }
 
@@ -93,6 +97,8 @@ impl Parser {
              //   self.init_recover_deleted()?;
             }
             self.apply_transaction_logs(has_bad_checksum)?;
+
+
             self.init_root()?;
             self.init_key_iter();
         }
@@ -689,17 +695,18 @@ mod tests {
     }
 
     #[test]
-    fn test_reg_logs() {
+    // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
+    fn test_reg_logs_no_filter() {
         let mut parser = Parser::from_path(
-            "/home/kstone/code/rust_parser_2/test_data/SYSTEM",
-            Some(vec!["/home/kstone/code/rust_parser_2/test_data/SYSTEM.LOG1", "/home/kstone/code/rust_parser_2/test_data/SYSTEM.LOG2"]),
+            "test_data/system",
+            Some(vec!["test_data/system.log1", "test_data/system.log2"]),
             None,
             true
         ).unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (19908, 645, 4, 49616, 232, 1),
+            (45587, 276, 1, 108178, 139, 0),
             (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
         );
     }
@@ -707,28 +714,28 @@ mod tests {
     #[test]
     fn test_reg_logs_with_filter() {
         let mut parser = Parser::from_path(
-            "/home/kstone/code/rust_parser_2/test_data/SoftwareKim",
-            Some(vec!["/home/kstone/code/rust_parser_2/test_data/SoftwareKim.LOG1", "/home/kstone/code/rust_parser_2/test_data/SoftwareKim.LOG2"]),
-            Some(Filter::from_path(RegQuery::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
+            "test_data/system",
+            Some(vec!["test_data/system.log1", "test_data/system.log2"]),
+            Some(Filter::from_path(RegQuery::from_key(r"RegistryTest", false, true))),
             true
         ).unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (12, 6, 0, 18, 0, 0),
+            (2, 2, 1, 3, 1, 0),
             (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
         );
 
         let mut parser = Parser::from_path(
-            "/home/kstone/code/rust_parser_2/test_data/SoftwareKim",
-            None,
-            Some(Filter::from_path(RegQuery::from_key("WOW6432Node\\TortoiseOverlays", false, true))),
-            true
+            "test_data/system",
+            Some(vec!["test_data/system.log1", "test_data/system.log2"]),
+            Some(Filter::from_path(RegQuery::from_key(r"RegistryTest", false, true))),
+            false
         ).unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) = parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (12, 0, 0, 18, 0, 0),
+            (2, 0, 0, 3, 0, 0),
             (keys, keys_versions, keys_deleted, values, values_versions, values_deleted)
         );
     }
@@ -883,31 +890,5 @@ mod tests {
         assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\Navigating", key.path);
         let kv = parser.count_all_keys_and_values();
         assert_eq!((13, 4), kv);
-    }
-
-    #[test]
-    fn dump_registry() {
-        let filter = Filter::from_path(RegQuery::from_key("Software\\7-Zip\\FM", false, false));
-        let write_file = File::create("office_NTUSER.DAT.jsonl").unwrap();
-        let mut writer = BufWriter::new(&write_file);
-
-        let mut parser = Parser::from_path("test_data/asdf_test_data/office_NTUSER.DAT", None, Some(filter), true).unwrap();
-        for key in parser.iter() {
-            writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap()).expect("panic upon failure");
-        }
-    }
-
-    #[test]
-    fn common_export_format() {
-        //let mut parser = Parser::from_path_with_logs("test_data/SYSTEM", vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]).unwrap();
-        let paths = vec![
-            "test_data/SOFTWARE_lznt1"
-        ];
-        for path in paths {
-            let name = str::replace(path, "/", "__");
-            let mut parser = Parser::from_path(path, None, None, true).unwrap();
-            let write_file = File::create(format!("{}_common_export_format.txt", name)).unwrap();
-            util::write_common_export_format(&mut parser, write_file).unwrap();
-        }
     }
 }

@@ -259,8 +259,8 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     Ok(())
 }
 
-fn calc_compression_bits() -> Vec<u8> {
-    let mut result = vec![0; 4096];
+fn calc_compression_bits() -> [u8; 4096] {
+    let mut result: [u8; 4096] = [0; 4096];
     let mut offset_bits = 0;
 
     let mut y = 0x10;

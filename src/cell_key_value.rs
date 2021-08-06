@@ -279,7 +279,7 @@ impl CellKeyValue {
                 flags,
                 value_name,
                 data_offsets_absolute: Vec::new(),
-                logs: Logs::default(),
+                logs,
                 versions: Vec::new(),
                 hash: None,
                 sequence_num,
@@ -383,21 +383,11 @@ impl CellKeyValue {
                 },
                 DecodeFormat::Utf16 => {
                     let s = util::from_utf16_le_string(value_bytes, value_bytes.len(), &mut warnings, &"decode_content");
-                    if warnings.is_empty() {
-                        return (CellValue::ValueString(s), None);
-                    }
-                    else {
-                        return (CellValue::ValueString(s), Some(warnings));
-                    }
+                    return (CellValue::ValueString(s), warnings.get_option());
                 }
                 DecodeFormat::Utf16Multiple => {
                     let m = util::from_utf16_le_strings(value_bytes, value_bytes.len(), &mut warnings, &"decode_content");
-                    if warnings.is_empty() {
-                        return (CellValue::ValueMultiString(m), None);
-                    }
-                    else {
-                        return (CellValue::ValueMultiString(m), Some(warnings));
-                    }
+                    return (CellValue::ValueMultiString(m), warnings.get_option());
                 },
                 DecodeFormat::Rot13 => {
                     let (content, _) = self.get_content();
@@ -600,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_parse_big_data() {
-        let mut file_info = FileInfo::from_path("test_data/FuseHive").unwrap();
+        let mut file_info = FileInfo::from_path("test_data/system").unwrap();
         file_info.hbin_offset_absolute = 4096;
         let mut state = State::default();
         let key_node =
@@ -608,7 +598,7 @@ mod tests {
                 &file_info,
                 &mut state,
                 CellKeyNodeReadOptions {
-                    offset: 4416,
+                    offset: 16155688,
                     cur_path:  &String::new(),
                     filter: None,
                     self_is_filter_match_or_descendent: false,
@@ -617,7 +607,7 @@ mod tests {
                 }
             ).unwrap().unwrap();
         assert_eq!(
-            "v".to_string(),
+            "Binary_81725".to_string(),
             key_node.sub_values[1].value_name
         );
         let (cell_value, _) = key_node.sub_values[1].get_content();
