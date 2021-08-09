@@ -539,13 +539,8 @@ impl Iterator for ParserIterator<'_> {
 mod tests {
     use super::*;
     use md5;
-    use std::{
-        fs::File,
-        io::{BufWriter, Write},
-    };
     use regex::Regex;
     use crate::filter::{Filter, RegQueryComponent, RegQuery};
-    use crate::util;
 
     #[test]
     fn test_parser_iter_postorder() {
