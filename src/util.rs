@@ -3,7 +3,8 @@ use std::{
     char::REPLACEMENT_CHARACTER,
     io::{BufWriter, Write},
     fmt::Write as FmtWrite,
-    str
+    str,
+    convert::TryInto,
 };
 use serde::ser;
 use chrono::{DateTime, Utc};
@@ -256,6 +257,102 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     writeln!(&mut writer, "## total_deleted_keys")?;
     writeln!(&mut writer, "## total_deleted_values")?;
     Ok(())
+}
+
+const fn calc_compression_bits() -> [u8; 4096] {
+    let mut result = [0u8; 4096];
+    let mut offset_bits = 0;
+
+    let mut y = 0x10;
+    let mut x = 0;
+    while x < result.len() {
+        result[x] = 4 + offset_bits;
+        if x == y {
+            y <<= 1;
+            offset_bits += 1;
+        }
+        x += 1
+    }
+    result
+}
+
+// https://github.com/marekventur/rust-rot13
+pub(crate) fn decode_rot13(text: &str) -> String {
+    text.chars().map(|c| {
+        match c {
+            'A' ..= 'M' | 'a' ..= 'm' => ((c as u8) + 13) as char,
+            'N' ..= 'Z' | 'n' ..= 'z' => ((c as u8) - 13) as char,
+            _ => c
+        }
+    }).collect()
+}
+
+// lznt1 decode function adapted from Kenneth Bell's c# implementation https://searchcode.com/codesearch/view/2392831/
+pub(crate) fn decode_lznt1(source: &[u8], source_offset: usize, source_length: usize) -> Result<Vec<u8>, Error> {
+    const SUB_BLOCK_IS_COMPRESSED_FLAG: u16 = 0x8000;
+    const SUB_BLOCK_SIZE_MASK: u16 = 0x0fff;
+    const COMPRESSION_BITS: [u8; 4096] = calc_compression_bits();
+
+    let mut decompressed = vec![];//vec![0; source.len() * 10];
+    let decompressed_offset: usize = 0;
+    let mut source_index: usize = 0;
+    let mut dest_index: usize = 0;
+
+    while source_index + source_offset < source_length {
+        let header = u16::from_le_bytes(source[source_index + source_offset..source_index + source_offset + mem::size_of::<u16>()].try_into()?);//Utilities.ToUInt16LittleEndian(source, source_offset + source_index);
+        source_index += 2;
+
+        // Look for null-terminating sub-block header
+        if header == 0 {
+            break;
+        }
+
+        if (header & SUB_BLOCK_IS_COMPRESSED_FLAG) == 0 {
+            let block_size: usize = (header & SUB_BLOCK_SIZE_MASK) as usize + 1;
+            decompressed.extend(source[source_offset + source_index..source_offset + source_index + block_size as usize].to_vec());
+            source_index += block_size;
+            dest_index += block_size;
+        }
+        else {
+            // compressed
+            let dest_sub_block_start = dest_index;
+            let src_sub_block_end = source_index + (header & SUB_BLOCK_SIZE_MASK) as usize + 1;
+            while source_index < src_sub_block_end {
+                let mut tag: u8 = source[source_offset + source_index];
+                source_index += 1;
+
+                for _token in 0..8 {
+                    if source_index >= src_sub_block_end {
+                        break;
+                    }
+
+                    if (tag & 1) == 0 {
+                        decompressed.push(source[source_offset + source_index]);
+                        dest_index += 1;
+                        source_index += 1;
+                    }
+                    else {
+                        let length_bits: u16 = (16 - COMPRESSION_BITS[dest_index - dest_sub_block_start]) as u16;
+                        let length_mask: u16 = ((1 << length_bits) - 1) as u16;
+
+                        let phrase_token: u16 = u16::from_le_bytes(source[source_index + source_offset..source_index + source_offset + mem::size_of::<u16>()].try_into()?);
+                        source_index += 2;
+
+                        let mut dest_back_addr = dest_index - (phrase_token >> length_bits) as usize - 1;
+                        let length = (phrase_token & length_mask) + 3;
+
+                        for _i in 0..length {
+                            decompressed.push(decompressed[decompressed_offset + dest_back_addr]);
+                            dest_index += 1;
+                            dest_back_addr += 1;
+                        }
+                    }
+                    tag >>= 1;
+                }
+            }
+        }
+    }
+    Ok(decompressed)
 }
 
 #[cfg(test)]

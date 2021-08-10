@@ -28,6 +28,15 @@ impl Logs {
         self.logs.as_ref()
     }
 
+    pub(crate) fn get_option(self) -> Option<Self> {
+        if self.logs.is_none() {
+            None
+        }
+        else {
+            Some(self)
+        }
+    }
+
     pub(crate) fn prepend_all(&mut self, prefix: &str) {
         if let Some(logs) = &mut self.logs {
             for log in logs {

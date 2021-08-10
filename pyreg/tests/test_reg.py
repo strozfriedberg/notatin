@@ -90,7 +90,6 @@ def test_value_value(sample_parser):
         val = value.value
         assert val == b'8\x000\x00\x00\x00'
 
-
 def test_value_get_content2(sample_parser2):
     with open(sample_parser2, "rb") as m:
         parser = PyRegParser(m)
@@ -138,44 +137,3 @@ def test_value_pretty_name(sample_parser):
                 assert value.pretty_name == "(default)"
             else:
                 assert value.pretty_name == value.name
-
-def test_timestamp():
-    ticks = 131608517735659925
-    epoch = datetime.datetime(1601, 1, 1)
-    mode=decimal.ROUND_HALF_EVEN
-    resolution = int(1e7)
-    # python's datetime.datetime supports microsecond precision
-    datetime_resolution = int(1e6)
-
-    # convert ticks since epoch to microseconds since epoch
-    intermediate = decimal.Decimal(ticks * datetime_resolution) / decimal.Decimal(resolution)
-    us = int((decimal.Decimal(ticks * datetime_resolution) / decimal.Decimal(resolution)).quantize(1, mode))
-
-    # convert to datetime
-    date = epoch + datetime.timedelta(microseconds=us)
-
-    ticks2 = 131608517735659935
-    # convert ticks since epoch to microseconds since epoch
-    us2 = int((decimal.Decimal(ticks2 * datetime_resolution) / decimal.Decimal(resolution)).quantize(1, mode))
-
-    # convert to datetime
-    date2 = epoch + datetime.timedelta(microseconds=us2)
-
-    ticks3 = 131608517735659933
-    # convert ticks since epoch to microseconds since epoch
-    us3 = int((decimal.Decimal(ticks3 * datetime_resolution) / decimal.Decimal(resolution)).quantize(1, mode))
-    # convert to datetime
-    date3 = epoch + datetime.timedelta(microseconds=us3)
-
-    ticks4 = 131608517735659937
-    # convert ticks since epoch to microseconds since epoch
-    us4 = int((decimal.Decimal(ticks4 * datetime_resolution) / decimal.Decimal(resolution)).quantize(1, mode))
-    # convert to datetime
-    date4 = epoch + datetime.timedelta(microseconds=us4)
-
-    ticks5 = 130758241637640272
-    # convert ticks since epoch to microseconds since epoch
-    us5 = int((decimal.Decimal(ticks5 * datetime_resolution) / decimal.Decimal(resolution)).quantize(1, mode))
-    # convert to datetime
-    date5 = epoch + datetime.timedelta(microseconds=us5)
-    t = 3
