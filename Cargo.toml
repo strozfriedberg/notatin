@@ -36,4 +36,5 @@ path = "./bin/reg_dump.rs"
 
 [[bench]]
 name = "my_benchmark"
+path = "benches/my_benchmark.rs"
 harness = false

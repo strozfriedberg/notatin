@@ -12,14 +12,14 @@ fn test_read_small_reg_with_deleted() {
 }
 
 fn test_read_reg_without_logs() {
-    let mut parser = Parser::from_path("test_data/SYSTEM", None, None, false).unwrap();
+    let mut parser = Parser::from_path("test_data/system", None, None, false).unwrap();
     for _key in parser.iter() {}
 }
 
 fn test_read_reg_with_logs() {
     let mut parser = Parser::from_path(
-        "test_data/SYSTEM",
-        Some(vec!["test_data/SYSTEM.LOG1", "test_data/SYSTEM.LOG2"]),
+        "test_data/system",
+        Some(vec!["test_data/system.log1", "test_data/system.log2"]),
         None,
         true,
     )
