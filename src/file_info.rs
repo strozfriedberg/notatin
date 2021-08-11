@@ -1,6 +1,22 @@
+/*
+ * Copyright 2021 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+use crate::err::Error;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
-use crate::err::Error;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FileInfo {
@@ -11,7 +27,7 @@ pub(crate) struct FileInfo {
 impl FileInfo {
     pub(crate) fn from_path<T>(filename: T) -> Result<Self, Error>
     where
-        T: AsRef<Path>
+        T: AsRef<Path>,
     {
         Self::from_read_seek(std::fs::File::open(filename)?)
     }
@@ -22,7 +38,7 @@ impl FileInfo {
 
         Ok(Self {
             hbin_offset_absolute: 0,
-            buffer: file_buffer_primary
+            buffer: file_buffer_primary,
         })
     }
 
@@ -31,7 +47,7 @@ impl FileInfo {
     }
 
     pub(crate) fn get_file_offset_from_ptr(&self, ptr: usize) -> usize {
-        ptr - self.buffer.as_ptr() as usize//self.start_pos
+        ptr - self.buffer.as_ptr() as usize //self.start_pos
     }
 }
 

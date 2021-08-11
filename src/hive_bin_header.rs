@@ -1,12 +1,12 @@
-use nom::{
-    IResult,
-    bytes::complete::tag,
-    number::complete::{le_u32, le_u64}
-};
-use chrono::{DateTime, Utc};
-use serde::Serialize;
 use crate::file_info::FileInfo;
 use crate::util;
+use chrono::{DateTime, Utc};
+use nom::{
+    bytes::complete::tag,
+    number::complete::{le_u32, le_u64},
+    IResult,
+};
+use serde::Serialize;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct HiveBinHeader {
@@ -27,7 +27,7 @@ pub struct HiveBinHeader {
 }
 
 impl HiveBinHeader {
-    pub(crate) fn from_bytes<'a>(file_info: &FileInfo, input: &'a[u8]) -> IResult<&'a[u8], Self> {
+    pub(crate) fn from_bytes<'a>(file_info: &FileInfo, input: &'a [u8]) -> IResult<&'a [u8], Self> {
         let file_offset_absolute = file_info.get_file_offset(input);
         let (input, _signature) = tag("hbin")(input)?;
         let (input, offset_from_first_hbin) = le_u32(input)?;
@@ -44,13 +44,10 @@ impl HiveBinHeader {
             unknown1,
             unknown2,
             timestamp: util::get_date_time_from_filetime(timestamp),
-            spare
+            spare,
         };
 
-        Ok((
-            input,
-            hbh
-        ))
+        Ok((input, hbh))
     }
 }
 
@@ -60,13 +57,15 @@ mod tests {
 
     #[test]
     fn test_parse_hive_bin_header() {
-        let buffer = [0x68, 0x62, 0x69, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7C, 0x60, 0xD7, 0xC4,
-        0x26, 0x14, 0xCD, 0x01, 0x00, 0x00, 0x00, 0x00];
+        let buffer = [
+            0x68, 0x62, 0x69, 0x6E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7C, 0x60, 0xD7, 0xC4, 0x26, 0x14, 0xCD, 0x01,
+            0x00, 0x00, 0x00, 0x00,
+        ];
 
         let file_info = FileInfo {
             hbin_offset_absolute: 4096,
-            buffer: buffer.to_vec()
+            buffer: buffer.to_vec(),
         };
 
         let ret = HiveBinHeader::from_bytes(&file_info, &file_info.buffer[..]);
@@ -78,15 +77,12 @@ mod tests {
             unknown1: 0,
             unknown2: 0,
             timestamp: util::get_date_time_from_filetime(129782121007374460),
-            spare: 0
+            spare: 0,
         };
 
         let remaining: [u8; 0] = [0; 0];
         let expected = Ok((&remaining[..], expected_output));
 
-        assert_eq!(
-            expected,
-            ret
-        );
+        assert_eq!(expected, ret);
     }
 }

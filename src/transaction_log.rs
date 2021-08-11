@@ -1,30 +1,45 @@
-use std::collections::HashMap;
-use nom::{
-    IResult,
-    bytes::complete::tag,
-    number::complete::{le_u32, le_u64}
-};
-use serde::Serialize;
+/*
+ * Copyright 2021 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 use crate::base_block::BaseBlockBase;
-use crate::file_info::{FileInfo, ReadSeek};
-use crate::state::State;
-use crate::err::Error;
-use crate::util;
-use crate::log::{LogCode, Logs};
-use crate::marvin_hash;
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 use crate::cell_key_value::CellKeyValue;
 use crate::cell_value::CellState;
+use crate::err::Error;
+use crate::file_info::{FileInfo, ReadSeek};
+use crate::log::{LogCode, Logs};
+use crate::marvin_hash;
 use crate::parser::{Parser, RegItems};
+use crate::state::State;
+use crate::util;
+use nom::{
+    bytes::complete::tag,
+    number::complete::{le_u32, le_u64},
+    IResult,
+};
+use serde::Serialize;
+use std::collections::HashMap;
 
 // Structures based off https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-transaction-log-files
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct DirtyPageRef {
-    /// Offset of a page in a primary file (in bytes), relative from the start of the hive bins data
     pub offset: u32,
     //Size of a page in bytes
-    pub size: u32
+    pub size: u32,
 }
 
 impl DirtyPageRef {
@@ -32,12 +47,7 @@ impl DirtyPageRef {
         |input: &[u8]| {
             let (input, offset) = le_u32(input)?;
             let (input, size) = le_u32(input)?;
-            Ok((input,
-                Self {
-                    offset,
-                    size,
-                }
-            ))
+            Ok((input, Self { offset, size }))
         }
     }
 }
@@ -45,12 +55,12 @@ impl DirtyPageRef {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct DirtyPage {
     pub dirty_page_ref_offset: u32,
-    pub page_bytes: Vec<u8>
+    pub page_bytes: Vec<u8>,
 }
 
 enum ModifiedListType {
     Updated,
-    Deleted
+    Deleted,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -70,14 +80,12 @@ struct LogEntry {
     pub hash1: u64,
     pub hash2: u64,
     pub dirty_pages: Vec<DirtyPage>,
-    pub has_valid_hashes: bool
+    pub has_valid_hashes: bool,
 }
 
 impl LogEntry {
     fn from_bytes(start_pos: usize) -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
-        move |input: &[u8]| {
-            LogEntry::from_bytes_internal(start_pos, input)
-        }
+        move |input: &[u8]| LogEntry::from_bytes_internal(start_pos, input)
     }
 
     fn from_bytes_internal(start_pos: usize, input: &[u8]) -> IResult<&[u8], Self> {
@@ -91,21 +99,25 @@ impl LogEntry {
         let (input, dirty_pages_count) = le_u32(input)?;
         let (input, hash1) = le_u64(input)?;
         let (input, hash2) = le_u64(input)?;
-        let (mut input, dirty_page_refs) = nom::multi::count(DirtyPageRef::from_bytes(), dirty_pages_count as usize)(input)?;
+        let (mut input, dirty_page_refs) =
+            nom::multi::count(DirtyPageRef::from_bytes(), dirty_pages_count as usize)(input)?;
 
         let mut dirty_pages = Vec::new();
         for dirty_page_ref in dirty_page_refs {
             let (local_input, page_bytes) = nom::bytes::complete::take(dirty_page_ref.size)(input)?;
             input = local_input;
-            dirty_pages.push(
-                DirtyPage {
-                    dirty_page_ref_offset: dirty_page_ref.offset,
-                    page_bytes: page_bytes.to_vec()
-                }
-            );
+            dirty_pages.push(DirtyPage {
+                dirty_page_ref_offset: dirty_page_ref.offset,
+                page_bytes: page_bytes.to_vec(),
+            });
         }
-        let (input, _) = util::parser_eat_remaining(input, size, input.as_ptr() as usize - start_pos - file_offset_absolute)?;
-        let has_valid_hashes = hash1 == Self::calc_hash1(start, size as usize) && hash2 == Self::calc_hash2(start);
+        let (input, _) = util::parser_eat_remaining(
+            input,
+            size,
+            input.as_ptr() as usize - start_pos - file_offset_absolute,
+        )?;
+        let has_valid_hashes =
+            hash1 == Self::calc_hash1(start, size as usize) && hash2 == Self::calc_hash2(start);
 
         let hbh = Self {
             file_offset_absolute,
@@ -117,13 +129,10 @@ impl LogEntry {
             hash1,
             hash2,
             dirty_pages,
-            has_valid_hashes
+            has_valid_hashes,
         };
 
-        Ok((
-            input,
-            hbh
-        ))
+        Ok((input, hbh))
     }
 
     fn is_valid_hive_bin_data_size(&self) -> bool {
@@ -153,7 +162,7 @@ impl LogEntry {
 pub(crate) struct TransactionLog {
     pub(crate) base_block: BaseBlockBase,
     pub(crate) base_block_bytes: Vec<u8>,
-    log_entries: Vec<LogEntry>
+    log_entries: Vec<LogEntry>,
 }
 
 impl TransactionLog {
@@ -167,12 +176,14 @@ impl TransactionLog {
             Self {
                 base_block,
                 base_block_bytes: start[..512].to_vec(),
-                log_entries
-            }
+                log_entries,
+            },
         ))
     }
 
-    pub(crate) fn parse<T: ReadSeek>(log_files: Option<Vec<T>>) -> Result<(Option<Vec<Self>>, Option<Logs>), Error> {
+    pub(crate) fn parse<T: ReadSeek>(
+        log_files: Option<Vec<T>>,
+    ) -> Result<(Option<Vec<Self>>, Option<Logs>), Error> {
         if let Some(log_files) = log_files {
             let mut error_logs = Logs::default();
             let mut transaction_logs = Vec::new();
@@ -180,26 +191,21 @@ impl TransactionLog {
                 let mut file_buffer_log = Vec::new();
                 log_file.read_to_end(&mut file_buffer_log)?;
                 if file_buffer_log.is_empty() {
-                    error_logs.add(
-                        LogCode::WarningParse,
-                        &"Skipping log file; 0 bytes"
-                    );
-                }
-                else {
+                    error_logs.add(LogCode::WarningParse, &"Skipping log file; 0 bytes");
+                } else {
                     match Self::from_bytes(&file_buffer_log[0..]) {
                         Ok((_, log)) => transaction_logs.push(log),
                         Err(e) => {
                             error_logs.add(
                                 LogCode::WarningParse,
-                                &format!("Skipping log file; {}", Error::from(e).to_string())
+                                &format!("Skipping log file; {}", Error::from(e).to_string()),
                             );
                         }
                     }
                 }
             }
             Ok((Some(transaction_logs), error_logs.get_option()))
-        }
-        else {
+        } else {
             Ok((None, None))
         }
     }
@@ -209,7 +215,7 @@ impl TransactionLog {
         &self,
         parser: &mut Parser,
         base_block_base: &BaseBlockBase,
-        mut prior_items: RegItems
+        mut prior_items: RegItems,
     ) -> (u32, RegItems) {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
@@ -220,24 +226,29 @@ impl TransactionLog {
                         LogCode::WarningTransactionLog,
                         &format!("Skipping log entry; the log entry sequence number ({}) is less than to the primary file's secondary sequence number ({})", log_entry.sequence_number, base_block_base.secondary_sequence_number)
                     );
-                }
-                else if !log_entry.is_valid_hive_bin_data_size() {
+                } else if !log_entry.is_valid_hive_bin_data_size() {
                     parser.state.info.add(
                         LogCode::WarningTransactionLog,
                         &format!("Stopping log entry processing; the hive_bin_data_size ({}) is not a multiple of 4096)", log_entry.hive_bins_data_size)
                     );
                     break;
-                }
-                else if new_sequence_number != 0 && log_entry.sequence_number != new_sequence_number + 1 {
+                } else if new_sequence_number != 0
+                    && log_entry.sequence_number != new_sequence_number + 1
+                {
                     parser.state.info.add(
                         LogCode::WarningTransactionLog,
                         &format!("Stopping log entry processing; the sequence number ({}) does not follow the previous log entry's sequence number ({})", log_entry.sequence_number, new_sequence_number)
                     );
                     break;
-                }
-                else {
+                } else {
                     if base_block_base.hive_bins_data_size < log_entry.hive_bins_data_size {
-                        parser.file_info.buffer.resize(parser.file_info.buffer.len() + (log_entry.hive_bins_data_size - base_block_base.hive_bins_data_size) as usize, 0);
+                        parser.file_info.buffer.resize(
+                            parser.file_info.buffer.len()
+                                + (log_entry.hive_bins_data_size
+                                    - base_block_base.hive_bins_data_size)
+                                    as usize,
+                            0,
+                        );
                     }
                     new_sequence_number = log_entry.sequence_number;
 
@@ -245,37 +256,46 @@ impl TransactionLog {
                     let prior_file_info;
                     if parser.state.recover_deleted {
                         prior_file_info = Some(parser.file_info.clone());
-                    }
-                    else {
+                    } else {
                         prior_file_info = None;
                     }
 
                     // apply the updated bytes to the main file buffer for each dirty page
                     for dirty_page in &log_entry.dirty_pages {
-                        let dst_offset     = dirty_page.dirty_page_ref_offset as usize + parser.file_info.hbin_offset_absolute;
+                        let dst_offset = dirty_page.dirty_page_ref_offset as usize
+                            + parser.file_info.hbin_offset_absolute;
                         let dst_offset_end = dst_offset + dirty_page.page_bytes.len();
-                        let dst            = &mut parser.file_info.buffer[dst_offset..dst_offset_end];
-                        let src            = &dirty_page.page_bytes;
+                        let dst = &mut parser.file_info.buffer[dst_offset..dst_offset_end];
+                        let src = &dirty_page.page_bytes;
                         dst.copy_from_slice(src);
                     }
 
                     if parser.state.recover_deleted {
                         let mut logs = Logs::default();
-                        let transaction_analyzer = TransactionAnalyzer{ prior_file_info: &prior_file_info.unwrap(), new_sequence_number };
-                        match transaction_analyzer.update_cell_key_tree(parser, &mut prior_items, &mut logs) {
+                        let transaction_analyzer = TransactionAnalyzer {
+                            prior_file_info: &prior_file_info.unwrap(),
+                            new_sequence_number,
+                        };
+                        match transaction_analyzer.update_cell_key_tree(
+                            parser,
+                            &mut prior_items,
+                            &mut logs,
+                        ) {
                             Ok(updated_items_ret) => {
                                 prior_items = updated_items_ret;
-                            },
+                            }
                             Err(e) => parser.state.info.add(
                                 LogCode::WarningTransactionLog,
-                                &format!("Unable to read cell tree for new sequence number {}, {:?}", new_sequence_number, e)
-                            )
+                                &format!(
+                                    "Unable to read cell tree for new sequence number {}, {:?}",
+                                    new_sequence_number, e
+                                ),
+                            ),
                         }
                         parser.state.info.extend(logs);
                     }
                 }
-            }
-            else {
+            } else {
                 parser.state.info.add(
                     LogCode::WarningTransactionLog,
                     &format!("Stopping log entry processing; hash mismatch at log entry with sequence number {}", log_entry.sequence_number)
@@ -286,17 +306,28 @@ impl TransactionLog {
         (new_sequence_number, prior_items)
     }
 
-    pub(crate) fn get_reg_items(
-        parser: &mut Parser,
-        sequence_num: u32,
-    ) -> Result<RegItems, Error> {
+    pub(crate) fn get_reg_items(parser: &mut Parser, sequence_num: u32) -> Result<RegItems, Error> {
         let mut reg_items: RegItems = HashMap::new();
         if parser.state.recover_deleted {
             parser.init_root()?;
             for key in parser.iter_postorder_include_ancestors() {
-                reg_items.insert((key.path.clone(), None), (key.hash.expect("Must have a hash here"), key.detail.file_offset_absolute, sequence_num));
+                reg_items.insert(
+                    (key.path.clone(), None),
+                    (
+                        key.hash.expect("Must have a hash here"),
+                        key.detail.file_offset_absolute,
+                        sequence_num,
+                    ),
+                );
                 for value in key.sub_values {
-                    reg_items.insert((key.path.clone(), Some(value.value_name)), (value.hash.expect("Must have a hash here"), value.detail.file_offset_absolute, sequence_num));
+                    reg_items.insert(
+                        (key.path.clone(), Some(value.value_name)),
+                        (
+                            value.hash.expect("Must have a hash here"),
+                            value.detail.file_offset_absolute,
+                            sequence_num,
+                        ),
+                    );
                 }
             }
         }
@@ -315,7 +346,7 @@ impl TransactionAnalyzer<'_> {
         &self,
         updated_parser: &mut Parser,
         prior_reg_items: &mut RegItems,
-        logs: &mut Logs
+        logs: &mut Logs,
     ) -> Result<RegItems, Error> {
         let mut prior_key_needed = Vec::new();
         let mut prior_value_needed = Vec::new();
@@ -330,64 +361,139 @@ impl TransactionAnalyzer<'_> {
                 // Existing item; if the hash differs we have a modified item
                 if updated_key.hash == Some(prior_key.0) {
                     sequence_num = prior_key.2;
-                }
-                else {
+                } else {
                     sequence_num = self.new_sequence_number;
                     prior_key_needed.push((updated_key.path.clone(), prior_key.1, prior_key.2));
                 }
-            }
-            else {
+            } else {
                 sequence_num = self.new_sequence_number;
             }
-            updated_reg_items.insert((updated_key.path.clone(), None), (updated_key.hash.expect("Must have a hash here"), updated_key.detail.file_offset_absolute, sequence_num));
+            updated_reg_items.insert(
+                (updated_key.path.clone(), None),
+                (
+                    updated_key.hash.expect("Must have a hash here"),
+                    updated_key.detail.file_offset_absolute,
+                    sequence_num,
+                ),
+            );
 
-            updated_key.logs.prepend_all(&format!("Sequence number {} - ", self.new_sequence_number));
+            updated_key
+                .logs
+                .prepend_all(&format!("Sequence number {} - ", self.new_sequence_number));
             logs.extend(updated_key.logs);
 
             for updated_value in updated_key.sub_values {
                 // Is the value in our prior list?
                 let sequence_num;
-                if let Some(prior_value) = prior_reg_items.remove(&(updated_key.path.clone(), Some(updated_value.value_name.clone()))) {
+                if let Some(prior_value) = prior_reg_items.remove(&(
+                    updated_key.path.clone(),
+                    Some(updated_value.value_name.clone()),
+                )) {
                     // Existing item; if the hash differs we have a modified item
                     if updated_value.hash == Some(prior_value.0) {
                         sequence_num = prior_value.2;
-                    }
-                    else {
+                    } else {
                         sequence_num = self.new_sequence_number;
-                        prior_value_needed.push((updated_key.path.clone(), prior_value.1, prior_value.2));
+                        prior_value_needed.push((
+                            updated_key.path.clone(),
+                            prior_value.1,
+                            prior_value.2,
+                        ));
                     }
-                }
-                else {
+                } else {
                     sequence_num = self.new_sequence_number;
                 }
-                updated_reg_items.insert((updated_key.path.clone(), Some(updated_value.value_name)), (updated_value.hash.expect("Must have a hash here"), updated_value.detail.file_offset_absolute, sequence_num));
+                updated_reg_items.insert(
+                    (updated_key.path.clone(), Some(updated_value.value_name)),
+                    (
+                        updated_value.hash.expect("Must have a hash here"),
+                        updated_value.detail.file_offset_absolute,
+                        sequence_num,
+                    ),
+                );
             }
         }
 
         // go read the full keys for prior keys needed and add them to the list in state
         for key in prior_key_needed.iter() {
-            if let Err(e) = self.add_full_key_to_list(&mut updated_parser.state, &key.0, key.1, key.2, ModifiedListType::Updated) {
-                logs.add(LogCode::WarningTransactionLog, &format!("Error adding {} to updated list for sequence num: {} ({})", key.0, key.2, &e.to_string()));
+            if let Err(e) = self.add_full_key_to_list(
+                &mut updated_parser.state,
+                &key.0,
+                key.1,
+                key.2,
+                ModifiedListType::Updated,
+            ) {
+                logs.add(
+                    LogCode::WarningTransactionLog,
+                    &format!(
+                        "Error adding {} to updated list for sequence num: {} ({})",
+                        key.0,
+                        key.2,
+                        &e.to_string()
+                    ),
+                );
             }
         }
         // go read the full values for prior values needed and add them to the list in state
         for key in prior_value_needed.iter() {
-            if let Err(e) = self.add_full_value_to_list(&mut updated_parser.state, &key.0, key.1, key.2, ModifiedListType::Updated) {
-                logs.add(LogCode::WarningTransactionLog, &format!("Error adding {} to updated list for sequence num: {} ({})", key.0, key.2, &e.to_string()));
+            if let Err(e) = self.add_full_value_to_list(
+                &mut updated_parser.state,
+                &key.0,
+                key.1,
+                key.2,
+                ModifiedListType::Updated,
+            ) {
+                logs.add(
+                    LogCode::WarningTransactionLog,
+                    &format!(
+                        "Error adding {} to updated list for sequence num: {} ({})",
+                        key.0,
+                        key.2,
+                        &e.to_string()
+                    ),
+                );
             }
         }
 
         // if we have any items that are left in reg_items, then we didn't see them in the newly parsed buffer and therefore they're deleted
         for prior_item in prior_reg_items {
-            match &prior_item.0.1 {
+            match &prior_item.0 .1 {
                 Some(_) => {
-                    if let Err(e) = self.add_full_value_to_list(&mut updated_parser.state, &prior_item.0.0, prior_item.1.1, prior_item.1.2, ModifiedListType::Deleted) {
-                        logs.add(LogCode::WarningTransactionLog, &format!("Error adding {:?} to updated list for sequence num: {} ({})", prior_item.0, prior_item.1.2, &e.to_string()));
+                    if let Err(e) = self.add_full_value_to_list(
+                        &mut updated_parser.state,
+                        &prior_item.0 .0,
+                        prior_item.1 .1,
+                        prior_item.1 .2,
+                        ModifiedListType::Deleted,
+                    ) {
+                        logs.add(
+                            LogCode::WarningTransactionLog,
+                            &format!(
+                                "Error adding {:?} to updated list for sequence num: {} ({})",
+                                prior_item.0,
+                                prior_item.1 .2,
+                                &e.to_string()
+                            ),
+                        );
                     }
-                },
+                }
                 None => {
-                    if let Err(e) = self.add_full_key_to_list(&mut updated_parser.state, &prior_item.0.0, prior_item.1.1, prior_item.1.2, ModifiedListType::Deleted) {
-                        logs.add(LogCode::WarningTransactionLog, &format!("Error adding {} to deleted list for sequence num: {} ({})", prior_item.0.0, prior_item.1.2, &e.to_string()));
+                    if let Err(e) = self.add_full_key_to_list(
+                        &mut updated_parser.state,
+                        &prior_item.0 .0,
+                        prior_item.1 .1,
+                        prior_item.1 .2,
+                        ModifiedListType::Deleted,
+                    ) {
+                        logs.add(
+                            LogCode::WarningTransactionLog,
+                            &format!(
+                                "Error adding {} to deleted list for sequence num: {} ({})",
+                                prior_item.0 .0,
+                                prior_item.1 .2,
+                                &e.to_string()
+                            ),
+                        );
                     }
                 }
             }
@@ -396,9 +502,15 @@ impl TransactionAnalyzer<'_> {
         // Check all new items against the deleted list. If it's in the deleted list, remove it.
         // This is a mitigation against ending up with a bunch of spurious deleted items from unparsable buffers.
         for item in &updated_reg_items {
-            match &item.0.1 {
-                Some(_) => updated_parser.state.deleted_values.remove(&item.0.0, &item.1.0),
-                None => updated_parser.state.deleted_keys.remove(&item.0.0, &item.1.0)
+            match &item.0 .1 {
+                Some(_) => updated_parser
+                    .state
+                    .deleted_values
+                    .remove(&item.0 .0, &item.1 .0),
+                None => updated_parser
+                    .state
+                    .deleted_keys
+                    .remove(&item.0 .0, &item.1 .0),
             }
         }
 
@@ -411,29 +523,30 @@ impl TransactionAnalyzer<'_> {
         path: &str,
         file_offset_absolute: usize,
         old_sequence_number: u32,
-        modified_list_type: ModifiedListType
+        modified_list_type: ModifiedListType,
     ) -> Result<(), Error> {
         let parent_path = &path[0..path.rfind('\\').unwrap_or_default()];
-        let full_key =
-            CellKeyNode::read(
-                self.prior_file_info,
-                state,
-                CellKeyNodeReadOptions {
-                    offset: file_offset_absolute,
-                    cur_path: &parent_path,
-                    filter: None,
-                    self_is_filter_match_or_descendent: false,
-                    sequence_num: Some(old_sequence_number),
-                    update_modified_lists: false
-                }
-            )?;
+        let full_key = CellKeyNode::read(
+            self.prior_file_info,
+            state,
+            CellKeyNodeReadOptions {
+                offset: file_offset_absolute,
+                cur_path: &parent_path,
+                filter: None,
+                self_is_filter_match_or_descendent: false,
+                sequence_num: Some(old_sequence_number),
+                get_deleted_and_modified: false,
+            },
+        )?;
         if let Some(mut full_key) = full_key {
             full_key.updated_by_sequence_num = Some(self.new_sequence_number);
+            // remove values; they'll be captured elsewhere
+            full_key.sub_values = vec![];
             match modified_list_type {
                 ModifiedListType::Updated => {
                     full_key.state = CellState::ModifiedTransactionLog;
                     state.updated_keys.add(&path, full_key)
-                },
+                }
                 ModifiedListType::Deleted => {
                     full_key.state = CellState::DeletedTransactionLog;
                     state.deleted_keys.add(&parent_path, full_key)
@@ -449,14 +562,13 @@ impl TransactionAnalyzer<'_> {
         path: &str,
         file_offset_absolute: usize,
         old_sequence_number: u32,
-        modified_list_type: ModifiedListType
+        modified_list_type: ModifiedListType,
     ) -> Result<(), Error> {
-        let (_, mut full_value) =
-            CellKeyValue::from_bytes(
-                self.prior_file_info,
-                &self.prior_file_info.buffer[file_offset_absolute..],
-                Some(old_sequence_number)
-            )?;
+        let (_, mut full_value) = CellKeyValue::from_bytes(
+            self.prior_file_info,
+            &self.prior_file_info.buffer[file_offset_absolute..],
+            Some(old_sequence_number),
+        )?;
         full_value.read_value_bytes(self.prior_file_info, state);
         full_value.updated_by_sequence_num = Some(self.new_sequence_number);
         let name = full_value.value_name.clone();
@@ -464,7 +576,7 @@ impl TransactionAnalyzer<'_> {
             ModifiedListType::Updated => {
                 full_value.state = CellState::ModifiedTransactionLog;
                 state.updated_values.add(&path, &name, full_value)
-            },
+            }
             ModifiedListType::Deleted => {
                 full_value.state = CellState::DeletedTransactionLog;
                 state.deleted_values.add(&path, full_value)
@@ -477,8 +589,8 @@ impl TransactionAnalyzer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_info::FileInfo;
     use crate::base_block::{FileFormat, FileType};
+    use crate::file_info::FileInfo;
     use crate::log::Logs;
 
     #[test]
@@ -487,7 +599,13 @@ mod tests {
         file_info.hbin_offset_absolute = 4096;
         let (_, log) = TransactionLog::from_bytes(&file_info.buffer[0..]).unwrap();
 
-        let mut unk2: Vec<u8> = [248, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 248, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 1, 0, 0, 0, 249, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 114, 109, 116, 109, 234, 29, 73, 188, 218, 138, 215, 1, 79, 102, 82, 103, 1].to_vec();
+        let mut unk2: Vec<u8> = [
+            248, 63, 180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 248, 63,
+            180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 1, 0, 0, 0, 249, 63,
+            180, 93, 211, 13, 235, 17, 130, 154, 128, 110, 111, 110, 105, 99, 114, 109, 116, 109,
+            234, 29, 73, 188, 218, 138, 215, 1, 79, 102, 82, 103, 1,
+        ]
+        .to_vec();
         unk2.extend([0; 327].iter().copied());
         let expected_header = BaseBlockBase {
             primary_sequence_number: 4064,
@@ -503,7 +621,7 @@ mod tests {
             filename: "SYSTEM".to_string(),
             unk2,
             checksum: 2429800415,
-            logs: Logs::default()
+            logs: Logs::default(),
         };
         assert_eq!(expected_header, log.base_block);
         assert_eq!(3, log.log_entries.len());
@@ -514,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_parse_log_entry() {
-       /* let parser = Parser::from_path(primary_path: T, transaction_log_paths: Option<Vec<T>>, filter: Option<Filter>, recover_deleted: bool)
+        /* let parser = Parser::from_path(primary_path: T, transaction_log_paths: Option<Vec<T>>, filter: Option<Filter>, recover_deleted: bool)
         let mut log_entry = LogEntry::default();
         let mut state = State::default();
         log_entry.hive_bins_data_size = 8192;
@@ -559,8 +677,7 @@ mod tests {
         assert_eq!(7274014407108881154, log_entry.hash2);
         assert_eq!(69, log_entry.dirty_pages.len());*/
 
-
-       /* assert_eq!(DirtyPageRef {offset:0, size:4096}, log_entry.dirty_pages[0].dirty_page_ref);
+        /* assert_eq!(DirtyPageRef {offset:0, size:4096}, log_entry.dirty_pages[0].dirty_page_ref);
         assert_eq!(116, log_entry.dirty_pages[0].page_bytes[1880]);
         assert_eq!(DirtyPageRef {offset:1708032, size:24576}, log_entry.dirty_pages[32].dirty_page_ref);
         assert_eq!(2, log_entry.dirty_pages[32].page_bytes[3904]);

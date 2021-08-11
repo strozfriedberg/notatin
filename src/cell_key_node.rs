@@ -1,33 +1,48 @@
-use std::time::SystemTime;
-use nom::{
-    IResult,
-    bytes::complete::tag,
-    number::complete::{le_u16, le_u32, le_i32, le_u64},
-    branch::alt,
-    multi::count,
-    take
-};
-use winstructs::security::SecurityDescriptor;
-use bitflags::bitflags;
-use chrono::{DateTime, Utc};
-use serde::Serialize;
-use blake3::Hash;
-use crate::file_info::FileInfo;
-use crate::state::State;
-use crate::err::Error;
-use crate::log::{Logs, LogCode};
-use crate::util;
+/*
+ * Copyright 2021 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::cell_value::CellState;
-use crate::cell_key_security;
+use crate::err::Error;
+use crate::file_info::FileInfo;
+use crate::filter::{Filter, FilterFlags, RegQuery};
+use crate::impl_flags_from_bits;
+use crate::impl_serialize_for_bitflags;
+use crate::log::{LogCode, Logs};
+use crate::parser::Parser;
+use crate::state::State;
 use crate::sub_key_list_lf::SubKeyListLf;
 use crate::sub_key_list_lh::SubKeyListLh;
 use crate::sub_key_list_li::SubKeyListLi;
 use crate::sub_key_list_ri::SubKeyListRi;
-use crate::filter::{Filter, FilterFlags, RegQuery};
-use crate::impl_serialize_for_bitflags;
-use crate::impl_flags_from_bits;
-use crate::parser::Parser;
+use crate::util;
+use bitflags::bitflags;
+use blake3::Hash;
+use chrono::{DateTime, Utc};
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    multi::count,
+    number::complete::{le_i32, le_u16, le_u32, le_u64},
+    take, IResult,
+};
+use serde::Serialize;
+use std::time::SystemTime;
+use winstructs::security::SecurityDescriptor;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNodeDetail {
@@ -40,13 +55,13 @@ pub struct CellKeyNodeDetail {
     pub security_key_offset_relative: u32,
     pub class_name_offset_relative: i32,
     /*  Starting from Windows Vista, Windows Server 2003 SP2, and Windows XP SP3, the Largest subkey name length field has been split
-        into 4 bit fields (the offsets below are relative from the beginning of the old Largest subkey name length field,
-        i.e. the first bit field starts within the byte at the lowest address):
-        Offset (bits)	Length (bits)	Field	                     Description
-        0	            16	            Largest subkey name length
-        16	            4	            Virtualization control flags Bit mask, see below
-        20	            4	            User flags (Wow64 flags)     Bit mask, see below
-        24              8	            Debug                        See below */
+    into 4 bit fields (the offsets below are relative from the beginning of the old Largest subkey name length field,
+    i.e. the first bit field starts within the byte at the lowest address):
+    Offset (bits)	Length (bits)	Field	                     Description
+    0	            16	            Largest subkey name length
+    16	            4	            Virtualization control flags Bit mask, see below
+    20	            4	            User flags (Wow64 flags)     Bit mask, see below
+    24              8	            Debug                        See below */
     pub largest_sub_key_name_size: u32, // In bytes, a subkey name is treated as a UTF-16LE string (see below)
     pub largest_sub_key_class_name_size: u32,
     pub largest_value_name_size: u32, // In bytes, a value name is treated as a UTF-16LE string
@@ -54,14 +69,14 @@ pub struct CellKeyNodeDetail {
     pub work_var: u32, // Unused as of WinXP
     pub key_name_size: u16,
     pub class_name_size: u16,
-    pub slack: Vec<u8>
+    pub slack: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(crate) enum FilterMatchState {
     None,
     Descendent,
-    Exact
+    Exact,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -127,14 +142,14 @@ impl Default for CellKeyNode {
                 to_return: 0,
                 track_returned: 0,
                 filter_state: None,
-                sub_keys_iter_index: 0
+                sub_keys_iter_index: 0,
             },
             versions: Vec::new(),
             deleted_keys: Vec::new(),
             hash: None,
             sequence_num: None,
-            updated_by_sequence_num: None
-         }
+            updated_by_sequence_num: None,
+        }
     }
 }
 
@@ -144,16 +159,16 @@ pub(crate) struct CellKeyNodeReadOptions<'a> {
     pub filter: Option<&'a Filter>,
     pub self_is_filter_match_or_descendent: bool,
     pub sequence_num: Option<u32>,
-    pub update_modified_lists: bool
+    pub get_deleted_and_modified: bool,
 }
 
 impl CellKeyNode {
-    fn from_bytes<'a> (
+    fn from_bytes<'a>(
         file_info: &FileInfo,
         state: &mut State,
         input: &'a [u8],
         cur_path: &str,
-        sequence_num: Option<u32>
+        sequence_num: Option<u32>,
     ) -> IResult<&'a [u8], Self> {
         const MIN_CELL_KEY_SIZE: u32 = 72;
         const MAX_CELL_KEY_SIZE: u32 = 1100; // 256 char max name, may be UTF-16 (can require 2 code points for some characters) => max 1024 bytes + 76 for the rest of the struct = 1100
@@ -161,9 +176,12 @@ impl CellKeyNode {
         let file_offset_absolute = file_info.get_file_offset_from_ptr(start_pos);
 
         let (input, size) = le_i32(input)?;
-        let size_abs =  size.abs() as u32;
+        let size_abs = size.abs() as u32;
         if !(MIN_CELL_KEY_SIZE..=MAX_CELL_KEY_SIZE).contains(&size_abs) {
-            return Err(nom::Err::Error(nom::error::Error {input, code: nom::error::ErrorKind::Count}));
+            return Err(nom::Err::Error(nom::error::Error {
+                input,
+                code: nom::error::ErrorKind::Count,
+            }));
         }
 
         let (input, _signature) = tag("nk")(input)?;
@@ -196,12 +214,14 @@ impl CellKeyNode {
             key_name_bytes,
             key_name_size,
             &mut logs,
-            "key_name_bytes");
+            "key_name_bytes",
+        );
 
         let mut path = cur_path.to_owned();
         path.push('\\');
         path += &key_name;
-        let (input, slack) = util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
+        let (input, slack) =
+            util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
 
         let cell_key_node = Self {
             detail: CellKeyNodeDetail {
@@ -220,10 +240,12 @@ impl CellKeyNode {
                 work_var,
                 key_name_size,
                 class_name_size,
-                slack: slack.to_vec()
+                slack: slack.to_vec(),
             },
             key_node_flags,
-            last_key_written_date_and_time: util::get_date_time_from_filetime(last_key_written_date_and_time),
+            last_key_written_date_and_time: util::get_date_time_from_filetime(
+                last_key_written_date_and_time,
+            ),
             access_flags: AccessFlags::from_bits_checked(access_bits, &mut logs),
             parent_key_offset_relative,
             number_of_sub_keys,
@@ -238,26 +260,34 @@ impl CellKeyNode {
                 to_return: 0,
                 track_returned: 0,
                 filter_state: None,
-                sub_keys_iter_index: 0
+                sub_keys_iter_index: 0,
             },
             versions: Vec::new(),
             deleted_keys: Vec::new(),
-            hash: Some(Self::hash(state, flags, last_key_written_date_and_time, access_bits)),
+            hash: Some(Self::hash(
+                state,
+                flags,
+                last_key_written_date_and_time,
+                access_bits,
+            )),
             sequence_num,
-            updated_by_sequence_num: None
+            updated_by_sequence_num: None,
         };
 
-        Ok((
-            input,
-            cell_key_node
-        ))
+        Ok((input, cell_key_node))
     }
 
     pub fn is_deleted(&self) -> bool {
-        self.state == CellState::DeletedPrimaryFile || self.state == CellState::DeletedTransactionLog
+        self.state == CellState::DeletedPrimaryFile
+            || self.state == CellState::DeletedTransactionLog
     }
 
-    fn hash(state: &mut State, flags_raw: u16, last_key_written_raw: u64, access_bits_raw: u32) -> Hash {
+    fn hash(
+        state: &mut State,
+        flags_raw: u16,
+        last_key_written_raw: u64,
+        access_bits_raw: u32,
+    ) -> Hash {
         state.hasher.reset();
         state.hasher.update(&flags_raw.to_le_bytes());
         state.hasher.update(&last_key_written_raw.to_le_bytes());
@@ -271,13 +301,19 @@ impl CellKeyNode {
         }
         if let Some(deleted_keys) = state.deleted_keys.get(&self.path) {
             self.deleted_keys = deleted_keys.to_vec();
+            for dk in self.deleted_keys.iter_mut() {
+                dk.update_modified_lists(state);
+            }
         }
         if let Some(updated_keys) = state.updated_keys.get(&self.path) {
             self.versions = updated_keys.to_vec();
         }
 
         for val in &mut self.sub_values {
-            if let Some(sequence_num) = state.sequence_numbers.get(&(self.path.clone(), Some(val.value_name.clone()))) {
+            if let Some(sequence_num) = state
+                .sequence_numbers
+                .get(&(self.path.clone(), Some(val.value_name.clone())))
+            {
                 val.sequence_num = Some(*sequence_num);
             }
             if let Some(updated_values) = state.updated_values.get(&self.path, &val.value_name) {
@@ -291,15 +327,21 @@ impl CellKeyNode {
     }
 
     pub(crate) fn is_filter_match_or_descendent(&self) -> bool {
-        matches!(self.iteration_state.filter_state, Some(FilterMatchState::Exact) | Some(FilterMatchState::Descendent))
+        matches!(
+            self.iteration_state.filter_state,
+            Some(FilterMatchState::Exact) | Some(FilterMatchState::Descendent)
+        )
     }
 
     fn should_read_values(
         filter: Option<&Filter>,
         filter_flags: FilterFlags,
-        self_is_filter_match_or_descendent: bool
+        self_is_filter_match_or_descendent: bool,
     ) -> bool {
-        self_is_filter_match_or_descendent || filter.is_none() || !filter.unwrap().is_valid() || filter_flags.contains(FilterFlags::FILTER_KEY_MATCH)
+        self_is_filter_match_or_descendent
+            || filter.is_none()
+            || !filter.unwrap().is_valid()
+            || filter_flags.contains(FilterFlags::FILTER_KEY_MATCH)
     }
 
     /// Reads a key node from a file buffer.
@@ -307,19 +349,31 @@ impl CellKeyNode {
     pub(crate) fn read(
         file_info: &FileInfo,
         state: &mut State,
-        options: CellKeyNodeReadOptions
+        options: CellKeyNodeReadOptions,
     ) -> Result<Option<Self>, Error> {
-        let (_, mut cell_key_node) = Self::from_bytes(file_info, state, &file_info.buffer[options.offset..], options.cur_path, options.sequence_num)?;
+        let (_, mut cell_key_node) = Self::from_bytes(
+            file_info,
+            state,
+            &file_info.buffer[options.offset..],
+            options.cur_path,
+            options.sequence_num,
+        )?;
 
         let filter_flags = match options.filter {
             Some(filter) => filter.check_cell(state, &cell_key_node),
-            _ => FilterFlags::FILTER_ITERATE_KEYS
+            _ => FilterFlags::FILTER_ITERATE_KEYS,
         };
         if filter_flags.contains(FilterFlags::FILTER_NO_MATCH) {
             return Ok(None);
         }
 
-        if cell_key_node.number_of_key_values > 0 && Self::should_read_values(options.filter, filter_flags, options.self_is_filter_match_or_descendent) {
+        if cell_key_node.number_of_key_values > 0
+            && Self::should_read_values(
+                options.filter,
+                filter_flags,
+                options.self_is_filter_match_or_descendent,
+            )
+        {
             cell_key_node.read_values(file_info, state, options.sequence_num)?;
         }
 
@@ -327,25 +381,21 @@ impl CellKeyNode {
             cell_key_node.iteration_state.filter_state = Some(FilterMatchState::Exact);
         }
 
-        if options.update_modified_lists {
+        if options.get_deleted_and_modified {
             cell_key_node.update_modified_lists(state);
         }
 
         Ok(Some(cell_key_node))
     }
 
-    pub fn read_sub_keys(
-        &mut self,
-        parser: &mut Parser
-    ) -> Vec<Self> {
-        let (sub_keys, _) =
-            self.read_sub_keys_internal(
-                &parser.file_info,
-                &mut parser.state,
-                &Filter::new(),
-                None,
-                true
-            );
+    pub fn read_sub_keys(&mut self, parser: &mut Parser) -> Vec<Self> {
+        let (sub_keys, _) = self.read_sub_keys_internal(
+            &parser.file_info,
+            &mut parser.state,
+            &Filter::new(),
+            None,
+            true,
+        );
         sub_keys
     }
 
@@ -355,19 +405,22 @@ impl CellKeyNode {
         state: &mut State,
         filter: &Filter,
         sequence_num: Option<u32>,
-        update_deleted_version_lists: bool
+        get_deleted_and_modified: bool,
     ) -> (Vec<Self>, bool) {
         let mut children = Vec::with_capacity(self.number_of_sub_keys as usize);
         let mut found_key = false;
         if self.number_of_sub_keys > 0 {
-            match Self::parse_sub_key_list(file_info, state, self.detail.sub_keys_list_offset_relative) {
+            match Self::parse_sub_key_list(
+                file_info,
+                state,
+                self.detail.sub_keys_list_offset_relative,
+            ) {
                 Ok(cell_sub_key_offsets_absolute) => {
                     let self_is_filter_match_or_descendent = self.is_filter_match_or_descendent();
                     let sub_filter;
                     if self_is_filter_match_or_descendent && filter.return_sub_keys() {
                         sub_filter = None;
-                    }
-                    else {
+                    } else {
                         sub_filter = Some(filter);
                     }
                     for val in cell_sub_key_offsets_absolute.iter() {
@@ -376,31 +429,34 @@ impl CellKeyNode {
                             state,
                             CellKeyNodeReadOptions {
                                 offset: *val as usize,
-                                cur_path:  &self.path,
+                                cur_path: &self.path,
                                 filter: sub_filter,
                                 self_is_filter_match_or_descendent,
                                 sequence_num,
-                                update_modified_lists: update_deleted_version_lists
-                            }
+                                get_deleted_and_modified,
+                            },
                         );
                         match ret {
-                            Err(_) => {
-                                self.logs.add(
-                                    LogCode::WarningParse,
-                                    &format!("{}: Unable to parse sub_key at offset {}", self.path, val)
-                                )
-                            },
+                            Err(_) => self.logs.add(
+                                LogCode::WarningParse,
+                                &format!(
+                                    "{}: Unable to parse sub_key at offset {}",
+                                    self.path, val
+                                ),
+                            ),
                             Ok(kn) => {
                                 if let Some(mut kn) = kn {
                                     if kn.iteration_state.filter_state == None {
                                         if self_is_filter_match_or_descendent {
-                                            kn.iteration_state.filter_state = Some(FilterMatchState::Descendent);
+                                            kn.iteration_state.filter_state =
+                                                Some(FilterMatchState::Descendent);
+                                        } else if filter.is_valid() {
+                                            kn.iteration_state.filter_state =
+                                                Some(FilterMatchState::None);
                                         }
-                                        else if filter.is_valid() {
-                                            kn.iteration_state.filter_state = Some(FilterMatchState::None);
-                                        }
-                                    }
-                                    else if kn.iteration_state.filter_state == Some(FilterMatchState::Exact) {
+                                    } else if kn.iteration_state.filter_state
+                                        == Some(FilterMatchState::Exact)
+                                    {
                                         found_key = true
                                     }
                                     children.push(kn);
@@ -409,13 +465,16 @@ impl CellKeyNode {
                         }
                     }
                     self.cell_sub_key_offsets_absolute = cell_sub_key_offsets_absolute;
-                },
-                Err(_) => {
-                    self.logs.add(
-                        LogCode::WarningParse,
-                        &format!("{}: Unable to parse sub_key_list at offset {}", self.path, (self.detail.sub_keys_list_offset_relative as usize + file_info.hbin_offset_absolute))
-                    )
                 }
+                Err(_) => self.logs.add(
+                    LogCode::WarningParse,
+                    &format!(
+                        "{}: Unable to parse sub_key_list at offset {}",
+                        self.path,
+                        (self.detail.sub_keys_list_offset_relative as usize
+                            + file_info.hbin_offset_absolute)
+                    ),
+                ),
             }
         }
         (children, found_key)
@@ -428,11 +487,12 @@ impl CellKeyNode {
         filter: &Filter,
         sequence_num: Option<u32>,
     ) -> Option<Self> {
-        let (children, found_key) = self.read_sub_keys_internal(file_info, state, filter, sequence_num, false);
+        let (children, found_key) =
+            self.read_sub_keys_internal(file_info, state, filter, sequence_num, false);
         if found_key {
             match children.get(0) {
                 Some(child) => return Some(child.clone()),
-                None => return None
+                None => return None,
             }
         }
         for mut child in children {
@@ -443,27 +503,26 @@ impl CellKeyNode {
         None
     }
 
-    pub fn get_sub_key_by_path(
-        &mut self,
-        parser: &mut Parser,
-        sub_path: &str
-    ) -> Option<Self> {
+    pub fn get_sub_key_by_path(&mut self, parser: &mut Parser, sub_path: &str) -> Option<Self> {
         if sub_path.is_empty() {
             Some(self.clone())
-        }
-        else {
-            let filter = Filter::from_path(RegQuery::from_key(&format!("{}\\{}", self.path, sub_path), true, false));
+        } else {
+            let filter = Filter::from_path(RegQuery::from_key(
+                &format!("{}\\{}", self.path, sub_path),
+                true,
+                false,
+            ));
             self.get_sub_key_internal(&parser.file_info, &mut parser.state, &filter, None)
         }
     }
 
-    pub fn get_sub_key_by_index(
-        &mut self,
-        parser: &mut Parser,
-        index: usize
-    ) -> Option<Self> {
+    pub fn get_sub_key_by_index(&mut self, parser: &mut Parser, index: usize) -> Option<Self> {
         if self.number_of_sub_keys > 0 {
-            match Self::parse_sub_key_list(&parser.file_info, &mut parser.state, self.detail.sub_keys_list_offset_relative) {
+            match Self::parse_sub_key_list(
+                &parser.file_info,
+                &mut parser.state,
+                self.detail.sub_keys_list_offset_relative,
+            ) {
                 Ok(cell_sub_key_offsets_absolute) => {
                     if let Some(offset) = cell_sub_key_offsets_absolute.get(index) {
                         let ret = Self::read(
@@ -471,20 +530,22 @@ impl CellKeyNode {
                             &mut parser.state,
                             CellKeyNodeReadOptions {
                                 offset: *offset as usize,
-                                cur_path:  &self.path,
+                                cur_path: &self.path,
                                 filter: None,
-                                self_is_filter_match_or_descendent: self.is_filter_match_or_descendent(),
+                                self_is_filter_match_or_descendent: self
+                                    .is_filter_match_or_descendent(),
                                 sequence_num: None,
-                                update_modified_lists: true
-                            }
+                                get_deleted_and_modified: true,
+                            },
                         );
                         match ret {
-                            Err(_) => {
-                                self.logs.add(
-                                    LogCode::WarningParse,
-                                    &format!("{}: Unable to parse sub_key at offset {}", self.path, offset)
-                                )
-                            },
+                            Err(_) => self.logs.add(
+                                LogCode::WarningParse,
+                                &format!(
+                                    "{}: Unable to parse sub_key at offset {}",
+                                    self.path, offset
+                                ),
+                            ),
                             Ok(sub_key) => {
                                 if let Some(sub_key) = sub_key {
                                     return Some(sub_key);
@@ -492,13 +553,16 @@ impl CellKeyNode {
                             }
                         }
                     }
-                },
-                Err(_) => {
-                    self.logs.add(
-                        LogCode::WarningParse,
-                        &format!("{}: Unable to parse sub_key_list at offset {}", self.path, (self.detail.sub_keys_list_offset_relative as usize + parser.file_info.hbin_offset_absolute))
-                    )
                 }
+                Err(_) => self.logs.add(
+                    LogCode::WarningParse,
+                    &format!(
+                        "{}: Unable to parse sub_key_list at offset {}",
+                        self.path,
+                        (self.detail.sub_keys_list_offset_relative as usize
+                            + parser.file_info.hbin_offset_absolute)
+                    ),
+                ),
             }
         }
         None
@@ -508,17 +572,33 @@ impl CellKeyNode {
         &mut self,
         file_info: &FileInfo,
         state: &mut State,
-        sequence_num: Option<u32>
+        sequence_num: Option<u32>,
     ) -> Result<(), Error> {
         self.sub_values = Vec::with_capacity(self.number_of_key_values as usize);
-        let (_, key_values) = Self::parse_key_values(file_info, self.number_of_key_values, self.detail.key_values_list_offset_relative as usize)?;
+        let (_, key_values) = Self::parse_key_values(
+            file_info,
+            self.number_of_key_values,
+            self.detail.key_values_list_offset_relative as usize,
+        )?;
         for val in key_values.iter() {
-            let input = file_info.buffer.get(*val as usize + file_info.hbin_offset_absolute);
+            let input = file_info
+                .buffer
+                .get(*val as usize + file_info.hbin_offset_absolute);
             if input.is_none() {
-                self.logs.add(LogCode::WarningParse, &format!("read_values error: offset {} out of range", (*val as usize + file_info.hbin_offset_absolute)));
+                self.logs.add(
+                    LogCode::WarningParse,
+                    &format!(
+                        "read_values error: offset {} out of range",
+                        (*val as usize + file_info.hbin_offset_absolute)
+                    ),
+                );
                 return Ok(());
             }
-            let (_, mut cell_key_value) = CellKeyValue::from_bytes(file_info, &file_info.buffer[(*val as usize + file_info.hbin_offset_absolute)..], sequence_num)?;
+            let (_, mut cell_key_value) = CellKeyValue::from_bytes(
+                file_info,
+                &file_info.buffer[(*val as usize + file_info.hbin_offset_absolute)..],
+                sequence_num,
+            )?;
 
             cell_key_value.read_value_bytes(file_info, state);
             self.sub_values.push(cell_key_value);
@@ -529,44 +609,49 @@ impl CellKeyNode {
     /// Returns a vector of Security Descriptors for the key
     pub fn get_security_descriptors(
         &mut self,
-        parser: &mut Parser
+        parser: &mut Parser,
     ) -> Result<Vec<SecurityDescriptor>, Error> {
         let file_info = parser.get_file_info();
-        cell_key_security::read_cell_key_security(&file_info.buffer[..], self.detail.security_key_offset_relative, file_info.hbin_offset_absolute)
+        cell_key_security::read_cell_key_security(
+            &file_info.buffer[..],
+            self.detail.security_key_offset_relative,
+            file_info.hbin_offset_absolute,
+        )
     }
 
     pub fn get_value(&self, find_value_name: &str) -> Option<CellKeyValue> {
         let find_value_name = find_value_name.to_ascii_lowercase();
-        let val = self.sub_values.iter().find(|v| v.value_name.to_ascii_lowercase() == find_value_name);
+        let val = self
+            .sub_values
+            .iter()
+            .find(|v| v.value_name.to_ascii_lowercase() == find_value_name);
         val.cloned()
     }
 
     pub fn value_iter(&self) -> CellKeyNodeValueIterator<'_> {
         CellKeyNodeValueIterator {
             inner: self,
-            sub_values_iter_index: 0
+            sub_values_iter_index: 0,
         }
     }
 
     pub(crate) fn parse_key_values(
         file_info: &FileInfo,
         key_values_count: u32,
-        list_offset_relative: usize
+        list_offset_relative: usize,
     ) -> IResult<&[u8], Vec<u32>> {
-        let slice: &[u8] = &file_info.buffer[list_offset_relative + file_info.hbin_offset_absolute..];
+        let slice: &[u8] =
+            &file_info.buffer[list_offset_relative + file_info.hbin_offset_absolute..];
         let (slice, _size) = le_u32(slice)?;
         let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
-        Ok((
-            slice,
-            list
-        ))
+        Ok((slice, list))
     }
 
     /// Returns a vector of the absolute sub key offsets
     pub(crate) fn parse_sub_key_list(
         file_info: &FileInfo,
         state: &mut State,
-        list_offset_relative: u32
+        list_offset_relative: u32,
     ) -> Result<Vec<u32>, Error> {
         let file_offset_absolute = list_offset_relative as usize + file_info.hbin_offset_absolute;
         let slice = &file_info.buffer[file_offset_absolute..];
@@ -574,15 +659,13 @@ impl CellKeyNode {
         // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
         // Look for the ri list first and follow the pointers
         match SubKeyListRi::from_bytes(slice) {
-            Ok((_, sub_key_list_ri)) => {
-                sub_key_list_ri.parse_offsets(file_info, state)
-            },
+            Ok((_, sub_key_list_ri)) => sub_key_list_ri.parse_offsets(file_info, state),
             Err(_) => {
-                let (_, cell_sub_key_list) =
-                    alt((SubKeyListLf::from_bytes(),
-                        SubKeyListLh::from_bytes(),
-                        SubKeyListLi::from_bytes(),
-                        ))(slice)?;
+                let (_, cell_sub_key_list) = alt((
+                    SubKeyListLf::from_bytes(),
+                    SubKeyListLh::from_bytes(),
+                    SubKeyListLi::from_bytes(),
+                ))(slice)?;
                 let list = cell_sub_key_list.get_offset_list(file_info.hbin_offset_absolute as u32);
                 Ok(list)
             }
@@ -598,8 +681,8 @@ impl CellKeyNode {
             Some(value) => {
                 sub_values_iter_index += 1;
                 Some((value.clone(), sub_values_iter_index))
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 
@@ -608,8 +691,8 @@ impl CellKeyNode {
             Some(sub_key) => {
                 self.iteration_state.sub_keys_iter_index += 1;
                 Some(sub_key)
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 
@@ -617,14 +700,14 @@ impl CellKeyNode {
         self.path.to_ascii_lowercase()
     }
 
-    pub (crate) fn is_key_root(&self) -> bool {
+    pub(crate) fn is_key_root(&self) -> bool {
         self.key_node_flags.contains(KeyNodeFlags::KEY_HIVE_ENTRY)
     }
 }
 
 pub struct CellKeyNodeValueIterator<'a> {
     inner: &'a CellKeyNode,
-    sub_values_iter_index: usize
+    sub_values_iter_index: usize,
 }
 
 impl Iterator for CellKeyNodeValueIterator<'_> {
@@ -637,8 +720,8 @@ impl Iterator for CellKeyNodeValueIterator<'_> {
             Some((val, sub_values_iter_index)) => {
                 self.sub_values_iter_index = sub_values_iter_index;
                 Some(val)
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 }
@@ -690,15 +773,20 @@ impl_flags_from_bits! { KeyNodeFlags, u16 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::TryInto;
-    use nom::error::ErrorKind;
+    use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
     use crate::filter::RegQuery;
-    use crate::cell_key_value::{CellKeyValueDetail, CellKeyValueDataTypes, CellKeyValueFlags};
+    use nom::error::ErrorKind;
+    use std::convert::TryInto;
 
     #[test]
     fn test_iterator() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, true));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(RegQuery::from_key(
+            "Control Panel\\Accessibility\\Keyboard Response",
+            false,
+            true,
+        ));
+        let mut parser =
+            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         for key in parser.iter_include_ancestors() {
             for val in key.value_iter() {
                 println!("{}", val.value_name);
@@ -709,14 +797,25 @@ mod tests {
     #[test]
     fn test_get_sub_key_by_path() {
         let filter = Filter::from_path(RegQuery::from_key("Control Panel", false, false));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let mut parser =
+            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.next_key_postorder(true).unwrap();
 
-        let sub_key = key.get_sub_key_by_path(&mut parser, &"Accessibility").unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility", sub_key.path);
+        let sub_key = key
+            .get_sub_key_by_path(&mut parser, &"Accessibility")
+            .unwrap();
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility",
+            sub_key.path
+        );
 
-        let sub_key = key.get_sub_key_by_path(&mut parser, &"Accessibility\\AudioDescription").unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription", sub_key.path);
+        let sub_key = key
+            .get_sub_key_by_path(&mut parser, &"Accessibility\\AudioDescription")
+            .unwrap();
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
+            sub_key.path
+        );
 
         let invalid_sub_key = key.get_sub_key_by_path(&mut parser, &"Accessibility\\Nope");
         assert_eq!(None, invalid_sub_key);
@@ -724,18 +823,32 @@ mod tests {
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
         let mut key = parser.get_root_key().unwrap().unwrap();
         let sub_key = key.get_sub_key_by_path(&mut parser, &"").unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}", sub_key.path);
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}",
+            sub_key.path
+        );
     }
 
     #[test]
     fn test_get_sub_key_by_index() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(RegQuery::from_key(
+            "Control Panel\\Accessibility",
+            false,
+            false,
+        ));
+        let mut parser =
+            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.next_key_postorder(true).unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription", sub_key.path);
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
+            sub_key.path
+        );
         let sub_key = key.get_sub_key_by_index(&mut parser, 11).unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\TimeOut", sub_key.path);
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\TimeOut",
+            sub_key.path
+        );
 
         let invalid_sub_key = key.get_sub_key_by_index(&mut parser, 20);
         assert_eq!(None, invalid_sub_key);
@@ -743,22 +856,44 @@ mod tests {
 
     #[test]
     fn test_next_sub_key() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility", false, false));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(RegQuery::from_key(
+            "Control Panel\\Accessibility",
+            false,
+            false,
+        ));
+        let mut parser =
+            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
         let mut key = parser.next_key_postorder(true).unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription", sub_key.path);
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
+            sub_key.path
+        );
         let sub_key = key.next_sub_key(&mut parser).unwrap();
-        assert_eq!(r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\Blind Access", sub_key.path);
+        assert_eq!(
+            r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\Blind Access",
+            sub_key.path
+        );
     }
 
     #[test]
     fn test_get_value() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel\\Accessibility\\Keyboard Response", false, false));
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        for key in parser.iter_postorder_include_ancestors()  {
+        let filter = Filter::from_path(RegQuery::from_key(
+            "Control Panel\\Accessibility\\Keyboard Response",
+            false,
+            false,
+        ));
+        let mut parser =
+            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        for key in parser.iter_postorder_include_ancestors() {
             let val = key.get_value("delayBeforeAcceptance");
-            let hash_array: [u8; blake3::OUT_LEN] = [0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3, 0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0, 0xb5, 0xa3, 0xb2, 0xef].try_into().unwrap();
+            let hash_array: [u8; blake3::OUT_LEN] = [
+                0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
+                0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
+                0xb5, 0xa3, 0xb2, 0xef,
+            ]
+            .try_into()
+            .unwrap();
 
             let expected = CellKeyValue {
                 detail: CellKeyValueDetail {
@@ -766,7 +901,7 @@ mod tests {
                     size: 48,
                     value_name_size: 21,
                     data_size_raw: 10,
-                    data_offset_relative:113608,
+                    data_offset_relative: 113608,
                     data_type_raw: 1,
                     flags_raw: 1,
                     padding: 0,
@@ -782,7 +917,7 @@ mod tests {
                 state: CellState::Allocated,
                 hash: Some(hash_array.into()),
                 sequence_num: None,
-                updated_by_sequence_num: None
+                updated_by_sequence_num: None,
             };
             assert_eq!(Some(expected), val);
             break;
@@ -792,26 +927,38 @@ mod tests {
     #[test]
     fn test_parse_cell_key_node() {
         let buffer = [
-            0x70, 0xFF, 0xFF, 0xFF, 0x6E, 0x6B, 0x2C, 0x00, 0x99, 0x66, 0xDF, 0x7A,
-            0x32, 0x4A, 0xD0, 0x01, 0x02, 0x00, 0x00, 0x00, 0x20, 0x08, 0x00, 0x00,
-            0x0A, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x80, 0x07, 0x00, 0x00,
-            0x68, 0x02, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
-            0x50, 0x22, 0x02, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x28, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x44, 0x00, 0x43, 0x00, 0x39, 0x00, 0x00, 0x00, 0x43, 0x73, 0x69, 0x54,
-            0x6F, 0x6F, 0x6C, 0x2D, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x48, 0x69,
-            0x76, 0x65, 0x2D, 0x7B, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
-            0x2D, 0x30, 0x30, 0x30, 0x30, 0x2D, 0x30, 0x30, 0x30, 0x30, 0x2D, 0x30,
-            0x30, 0x30, 0x30, 0x2D, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
-            0x30, 0x30, 0x30, 0x30, 0x7D, 0x00, 0x63, 0x00, 0x6F, 0x00, 0x6D, 0x00
+            0x70, 0xFF, 0xFF, 0xFF, 0x6E, 0x6B, 0x2C, 0x00, 0x99, 0x66, 0xDF, 0x7A, 0x32, 0x4A,
+            0xD0, 0x01, 0x02, 0x00, 0x00, 0x00, 0x20, 0x08, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x00, 0x80, 0x07, 0x00, 0x00, 0x68, 0x02, 0x00, 0x80, 0x00, 0x00,
+            0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x50, 0x22, 0x02, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x44, 0x00, 0x43, 0x00, 0x39, 0x00, 0x00, 0x00, 0x43, 0x73, 0x69, 0x54,
+            0x6F, 0x6F, 0x6C, 0x2D, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x48, 0x69, 0x76, 0x65,
+            0x2D, 0x7B, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x2D, 0x30, 0x30, 0x30,
+            0x30, 0x2D, 0x30, 0x30, 0x30, 0x30, 0x2D, 0x30, 0x30, 0x30, 0x30, 0x2D, 0x30, 0x30,
+            0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x7D, 0x00, 0x63, 0x00,
+            0x6F, 0x00, 0x6D, 0x00,
         ];
-       let file_info = FileInfo {
+        let file_info = FileInfo {
             hbin_offset_absolute: 4096,
-            buffer: buffer.to_vec()
+            buffer: buffer.to_vec(),
         };
         let mut state = State::default();
-        let (_, key_node) = CellKeyNode::from_bytes(&file_info, &mut state, &file_info.buffer[0..], &String::new(), None).unwrap();
-        let hash_array: [u8; blake3::OUT_LEN] = [0xfa, 0x8e, 0x6e, 0xc3, 0xf0, 0xa9, 0xbf, 0xf5, 0xbb, 0x82, 0x82, 0x0a, 0x44, 0xcb, 0x07, 0x75, 0x01, 0x6f, 0x64, 0x8b, 0x07, 0x00, 0xe4, 0x62, 0xab, 0x3e, 0x0a, 0xcb, 0x18, 0x12, 0x85, 0xf7].try_into().unwrap();
+        let (_, key_node) = CellKeyNode::from_bytes(
+            &file_info,
+            &mut state,
+            &file_info.buffer[0..],
+            &String::new(),
+            None,
+        )
+        .unwrap();
+        let hash_array: [u8; blake3::OUT_LEN] = [
+            0xfa, 0x8e, 0x6e, 0xc3, 0xf0, 0xa9, 0xbf, 0xf5, 0xbb, 0x82, 0x82, 0x0a, 0x44, 0xcb,
+            0x07, 0x75, 0x01, 0x6f, 0x64, 0x8b, 0x07, 0x00, 0xe4, 0x62, 0xab, 0x3e, 0x0a, 0xcb,
+            0x18, 0x12, 0x85, 0xf7,
+        ]
+        .try_into()
+        .unwrap();
 
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {
@@ -830,9 +977,11 @@ mod tests {
                 work_var: 4390980,
                 key_name_size: 57,
                 class_name_size: 0,
-                slack: vec![0, 99, 0, 111, 0, 109, 0]
+                slack: vec![0, 99, 0, 111, 0, 109, 0],
             },
-            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY | KeyNodeFlags::KEY_NO_DELETE | KeyNodeFlags::KEY_COMP_NAME,
+            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY
+                | KeyNodeFlags::KEY_NO_DELETE
+                | KeyNodeFlags::KEY_COMP_NAME,
             last_key_written_date_and_time: util::get_date_time_from_filetime(130685969864025753),
             access_flags: AccessFlags::ACCESSED_AFTER_INIT,
             parent_key_offset_relative: 2080,
@@ -848,26 +997,23 @@ mod tests {
                 to_return: 0,
                 track_returned: 0,
                 filter_state: None,
-                sub_keys_iter_index: 0
+                sub_keys_iter_index: 0,
             },
             versions: Vec::new(),
             deleted_keys: Vec::new(),
             hash: Some(hash_array.into()),
             sequence_num: None,
-            updated_by_sequence_num: None
+            updated_by_sequence_num: None,
         };
-        assert_eq!(
-            expected_output,
-            key_node
-        );
+        assert_eq!(expected_output, key_node);
 
         let slice = &file_info.buffer[0..10];
         let ret = CellKeyNode::from_bytes(&file_info, &mut state, slice, &String::new(), None);
         let remaining = &file_info.buffer[8..10];
-        let expected_error = Err(nom::Err::Error(nom::error::Error {input: remaining, code: ErrorKind::Eof}));
-        assert_eq!(
-            expected_error,
-            ret
-        );
+        let expected_error = Err(nom::Err::Error(nom::error::Error {
+            input: remaining,
+            code: ErrorKind::Eof,
+        }));
+        assert_eq!(expected_error, ret);
     }
 }
