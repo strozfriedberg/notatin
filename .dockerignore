@@ -1,0 +1,18 @@
+# .dockerignore file for deployment docker container
+# .dockerignore goes in the root of the build context, not next to the Dockerfile
+
+# Ignore all files top-level files and directories
+*/
+
+# Except these
+!src/
+!pyreg/
+!**/*Cargo*
+
+# Other files that should just always be ignored
+.git
+**/.idea
+**/.venv
+**/*.pdf
+**/*.md
+**/*.env
