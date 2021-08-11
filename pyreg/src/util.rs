@@ -15,8 +15,8 @@
  *
  */
 
-use std::cmp::Ordering;
 use log::{Level, Log, Metadata, Record, SetLoggerError};
+use std::cmp::Ordering;
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use pyo3::types::{PyDateTime, PyString};
@@ -32,7 +32,7 @@ pub enum FileOrFileLike {
 
 #[derive(Debug)]
 pub enum Output {
-    Python
+    Python,
 }
 
 impl FileOrFileLike {
@@ -115,7 +115,7 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     match nanos_e7.cmp(&5) {
         Ordering::Greater => micros += nanos_e6 + 1,
         Ordering::Less => micros += nanos_e6,
-        Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2)
+        Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2),
     }
     micros
 }
@@ -132,7 +132,7 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
         date.minute() as u8,
         date.second() as u8,
         nanos_to_micros_round_half_even(date.timestamp_subsec_nanos()),
-        None
+        None,
     )
     .map(|dt| dt.to_object(py))
 }

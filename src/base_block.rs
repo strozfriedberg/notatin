@@ -127,7 +127,7 @@ impl BaseBlockBase {
                 root_cell_offset_relative,
                 hive_bins_data_size,
                 clustering_factor,
-                filename: util::from_utf16_le_string(filename_bytes, 64, &mut logs, &"Filename"),
+                filename: util::from_utf16_le_string(filename_bytes, 64, &mut logs, "Filename"),
                 unk2: unk2.to_vec(),
                 checksum,
                 logs,

@@ -111,7 +111,7 @@ impl CellKeyValueDataTypes {
                     CellKeyValueDataTypes::REG_SZ
                     | CellKeyValueDataTypes::REG_EXPAND_SZ
                     | CellKeyValueDataTypes::REG_LINK => CellValue::ValueString(
-                        util::from_utf16_le_string(input, input.len(), logs, &"Get value content"),
+                        util::from_utf16_le_string(input, input.len(), logs, "Get value content"),
                     ),
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT8
                     | CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN => CellValue::ValueU32(
@@ -143,7 +143,7 @@ impl CellKeyValueDataTypes {
                     ),
                     CellKeyValueDataTypes::REG_BIN => CellValue::ValueBinary(input.to_vec()),
                     CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::ValueMultiString(
-                        util::from_utf16_le_strings(input, input.len(), logs, &"Get value content"),
+                        util::from_utf16_le_strings(input, input.len(), logs, "Get value content"),
                     ),
                     _ => CellValue::ValueBinary(input.to_vec()),
                 };
@@ -388,7 +388,7 @@ impl CellKeyValue {
         state.hasher.reset();
         state.hasher.update(&data_type_raw.to_le_bytes());
         state.hasher.update(&flags_raw.to_le_bytes());
-        state.hasher.update(&value_bytes);
+        state.hasher.update(value_bytes);
         state.hasher.finalize()
     }
 
@@ -411,11 +411,11 @@ impl DecodableValue for CellKeyValue {
         if let Some(value_bytes) = &self.detail.value_bytes {
             match format {
                 DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
-                    return DecodableValue::decode_bytes(value_bytes, format, offset);
+                    return <dyn DecodableValue>::decode_bytes(value_bytes, format, offset);
                 }
                 DecodeFormat::Rot13 => {
                     let (content, _) = self.get_content();
-                    return DecodableValue::decode_string(&content);
+                    return <dyn DecodableValue>::decode_string(&content);
                 }
             }
         }

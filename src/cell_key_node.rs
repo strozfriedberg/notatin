@@ -776,7 +776,6 @@ mod tests {
     use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
     use crate::filter::RegQuery;
     use nom::error::ErrorKind;
-    use std::convert::TryInto;
 
     #[test]
     fn test_iterator() {
@@ -802,7 +801,7 @@ mod tests {
         let mut key = parser.next_key_postorder(true).unwrap();
 
         let sub_key = key
-            .get_sub_key_by_path(&mut parser, &"Accessibility")
+            .get_sub_key_by_path(&mut parser, "Accessibility")
             .unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility",
@@ -810,19 +809,19 @@ mod tests {
         );
 
         let sub_key = key
-            .get_sub_key_by_path(&mut parser, &"Accessibility\\AudioDescription")
+            .get_sub_key_by_path(&mut parser, "Accessibility\\AudioDescription")
             .unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
             sub_key.path
         );
 
-        let invalid_sub_key = key.get_sub_key_by_path(&mut parser, &"Accessibility\\Nope");
+        let invalid_sub_key = key.get_sub_key_by_path(&mut parser, "Accessibility\\Nope");
         assert_eq!(None, invalid_sub_key);
 
         let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
         let mut key = parser.get_root_key().unwrap().unwrap();
-        let sub_key = key.get_sub_key_by_path(&mut parser, &"").unwrap();
+        let sub_key = key.get_sub_key_by_path(&mut parser, "").unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}",
             sub_key.path
@@ -885,43 +884,39 @@ mod tests {
         ));
         let mut parser =
             Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
-        for key in parser.iter_postorder_include_ancestors() {
-            let val = key.get_value("delayBeforeAcceptance");
-            let hash_array: [u8; blake3::OUT_LEN] = [
-                0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
-                0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
-                0xb5, 0xa3, 0xb2, 0xef,
-            ]
-            .try_into()
-            .unwrap();
+        let key = parser.iter_postorder_include_ancestors().next().unwrap();
+        let val = key.get_value("delayBeforeAcceptance");
+        let hash_array: [u8; blake3::OUT_LEN] = [
+            0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
+            0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
+            0xb5, 0xa3, 0xb2, 0xef,
+        ];
 
-            let expected = CellKeyValue {
-                detail: CellKeyValueDetail {
-                    file_offset_absolute: 117656,
-                    size: 48,
-                    value_name_size: 21,
-                    data_size_raw: 10,
-                    data_offset_relative: 113608,
-                    data_type_raw: 1,
-                    flags_raw: 1,
-                    padding: 0,
-                    value_bytes: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
-                    slack: vec![0, 0, 0],
-                },
-                data_type: CellKeyValueDataTypes::REG_SZ,
-                flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-                data_offsets_absolute: vec![117708],
-                value_name: "DelayBeforeAcceptance".to_string(),
-                logs: Logs::default(),
-                versions: Vec::new(),
-                state: CellState::Allocated,
-                hash: Some(hash_array.into()),
-                sequence_num: None,
-                updated_by_sequence_num: None,
-            };
-            assert_eq!(Some(expected), val);
-            break;
-        }
+        let expected = CellKeyValue {
+            detail: CellKeyValueDetail {
+                file_offset_absolute: 117656,
+                size: 48,
+                value_name_size: 21,
+                data_size_raw: 10,
+                data_offset_relative: 113608,
+                data_type_raw: 1,
+                flags_raw: 1,
+                padding: 0,
+                value_bytes: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                slack: vec![0, 0, 0],
+            },
+            data_type: CellKeyValueDataTypes::REG_SZ,
+            flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
+            data_offsets_absolute: vec![117708],
+            value_name: "DelayBeforeAcceptance".to_string(),
+            logs: Logs::default(),
+            versions: Vec::new(),
+            state: CellState::Allocated,
+            hash: Some(hash_array.into()),
+            sequence_num: None,
+            updated_by_sequence_num: None,
+        };
+        assert_eq!(Some(expected), val);
     }
 
     #[test]
@@ -956,9 +951,7 @@ mod tests {
             0xfa, 0x8e, 0x6e, 0xc3, 0xf0, 0xa9, 0xbf, 0xf5, 0xbb, 0x82, 0x82, 0x0a, 0x44, 0xcb,
             0x07, 0x75, 0x01, 0x6f, 0x64, 0x8b, 0x07, 0x00, 0xe4, 0x62, 0xab, 0x3e, 0x0a, 0xcb,
             0x18, 0x12, 0x85, 0xf7,
-        ]
-        .try_into()
-        .unwrap();
+        ];
 
         let expected_output = CellKeyNode {
             detail: CellKeyNodeDetail {

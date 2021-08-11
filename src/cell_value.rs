@@ -52,7 +52,7 @@ impl DecodableValue for CellValue {
         match format {
             DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
                 if let CellValue::ValueBinary(b) = self {
-                    DecodableValue::decode_bytes(b, format, offset)
+                    <dyn DecodableValue>::decode_bytes(b, format, offset)
                 } else {
                     let mut warnings = Logs::default();
                     warnings.add(
@@ -62,7 +62,7 @@ impl DecodableValue for CellValue {
                     (CellValue::ValueError, Some(warnings))
                 }
             }
-            DecodeFormat::Rot13 => DecodableValue::decode_string(self),
+            DecodeFormat::Rot13 => <dyn DecodableValue>::decode_string(self),
         }
     }
 }
@@ -74,11 +74,11 @@ pub trait DecodableValue {
 impl dyn DecodableValue {
     pub(crate) fn decode_string(cell_value: &CellValue) -> (CellValue, Option<Logs>) {
         match cell_value {
-            CellValue::ValueString(s) => (CellValue::ValueString(util::decode_rot13(&s)), None),
+            CellValue::ValueString(s) => (CellValue::ValueString(util::decode_rot13(s)), None),
             CellValue::ValueMultiString(m) => {
                 let mut decoded = vec![];
                 for s in m {
-                    decoded.push(util::decode_rot13(&s));
+                    decoded.push(util::decode_rot13(s));
                 }
                 (CellValue::ValueMultiString(decoded), None)
             }
@@ -114,7 +114,7 @@ impl dyn DecodableValue {
                     &value_bytes[offset..],
                     value_bytes.len(),
                     &mut warnings,
-                    &"decode_content",
+                    "decode_content",
                 );
                 (CellValue::ValueString(s), warnings.get_option())
             }
@@ -123,7 +123,7 @@ impl dyn DecodableValue {
                     &value_bytes[offset..],
                     value_bytes.len(),
                     &mut warnings,
-                    &"decode_content",
+                    "decode_content",
                 );
                 (CellValue::ValueMultiString(m), warnings.get_option())
             }

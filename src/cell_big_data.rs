@@ -114,11 +114,8 @@ mod tests {
 
     #[test]
     fn test_is_big_data_block() {
-        assert_eq!(
-            true,
-            CellBigData::is_big_data_block(&[0, 0, 0, 0, 0x64, 0x62])
-        );
-        assert_eq!(false, CellBigData::is_big_data_block(&[0, 0, 0, 0, 0, 0]));
+        assert!(CellBigData::is_big_data_block(&[0, 0, 0, 0, 0x64, 0x62]));
+        assert!(!CellBigData::is_big_data_block(&[0, 0, 0, 0, 0, 0]));
     }
 
     #[test]

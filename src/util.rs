@@ -131,7 +131,7 @@ pub(crate) fn string_from_bytes(
     err_detail: &str,
 ) -> String {
     if is_ascii {
-        from_ascii(&slice, logs, err_detail)
+        from_ascii(slice, logs, err_detail)
     } else {
         from_utf16_le_string(slice, count.into(), logs, err_detail)
     }

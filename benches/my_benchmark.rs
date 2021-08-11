@@ -27,6 +27,7 @@ fn test_read_reg_with_logs() {
     for _key in parser.iter() {}
 }
 
+#[allow(clippy::redundant_closure)] // The documented way of calling Criterion benchmarks uses a redundant closure
 pub fn bench(c: &mut Criterion) {
     let mut group1 = c.benchmark_group("read small reg");
     group1

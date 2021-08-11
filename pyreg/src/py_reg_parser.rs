@@ -15,19 +15,16 @@
  *
  */
 
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
-use std::fs::File;
-use notatin::{
-    parser::Parser,
-    cell_key_node::CellKeyNode
-};
-use pyo3::prelude::*;
-use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
-use pyo3::{PyIterProtocol};
-use crate::util::{FileOrFileLike, init_logging};
 use crate::err::PyRegError;
 use crate::py_reg_key::PyRegKey;
 use crate::py_reg_value::PyRegValue;
+use crate::util::{init_logging, FileOrFileLike};
+use notatin::{cell_key_node::CellKeyNode, parser::Parser};
+use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
+use pyo3::prelude::*;
+use pyo3::PyIterProtocol;
+use std::fs::File;
+use std::io::{self, BufReader, Read, Seek, SeekFrom};
 
 pub trait ReadSeek: Read + Seek {
     fn tell(&mut self) -> io::Result<u64> {
@@ -44,7 +41,7 @@ impl<T: Read + Seek> ReadSeek for T {}
 /// Returns an instance of the parser.
 /// Works on both a path (string), or a file-like object.
 pub struct PyRegParser {
-    pub inner: Option<Parser>
+    pub inner: Option<Parser>,
 }
 
 #[pymethods]
@@ -63,7 +60,8 @@ impl PyRegParser {
             FileOrFileLike::FileLike(f) => Box::new(f) as Box<dyn ReadSeek + Send>,
         };
 
-        let parser = Parser::from_read_seek(boxed_read_seek, None, None, false).map_err(PyRegError)?;
+        let parser =
+            Parser::from_read_seek(boxed_read_seek, None, None, false).map_err(PyRegError)?;
         Ok(PyRegParser {
             inner: Some(parser),
         })
@@ -77,29 +75,22 @@ impl PyRegParser {
         self.reg_keys_iterator()
     }
 
-    fn open(
-        &mut self,
-        path: &str
-    ) -> PyResult<Option<Py<PyRegKey>>> {
+    fn open(&mut self, path: &str) -> PyResult<Option<Py<PyRegKey>>> {
         match &mut self.inner {
-            Some(parser) => {
-                match parser.get_key(path, false) {
-                    Ok(key) => {
-                        if let Some(key) = key {
-                            let gil = Python::acquire_gil();
-                            let py = gil.python();
-                            let ret = PyRegKey::from_cell_key_node(py, key);
-                            if let Ok(py_reg_key) = ret {
-                                return Ok(Some(py_reg_key));
-                            }
+            Some(parser) => match parser.get_key(path, false) {
+                Ok(key) => {
+                    if let Some(key) = key {
+                        let gil = Python::acquire_gil();
+                        let py = gil.python();
+                        let ret = PyRegKey::from_cell_key_node(py, key);
+                        if let Ok(py_reg_key) = ret {
+                            return Ok(Some(py_reg_key));
                         }
-                    },
-                    Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(
-                        e.to_string(),
-                    ))
+                    }
                 }
+                Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
             },
-            _ => return Ok(None)
+            _ => return Ok(None),
         }
         Ok(None)
     }
@@ -110,24 +101,20 @@ impl PyRegParser {
     /// Returns the root PyRegKey
     fn root(&mut self) -> PyResult<Option<Py<PyRegKey>>> {
         match &mut self.inner {
-            Some(parser) => {
-                match parser.get_root_key() {
-                    Ok(key) => {
-                        if let Some(key) = key {
-                            let gil = Python::acquire_gil();
-                            let py = gil.python();
-                            let ret = PyRegKey::from_cell_key_node(py, key);
-                            if let Ok(py_reg_key) = ret {
-                                return Ok(Some(py_reg_key));
-                            }
+            Some(parser) => match parser.get_root_key() {
+                Ok(key) => {
+                    if let Some(key) = key {
+                        let gil = Python::acquire_gil();
+                        let py = gil.python();
+                        let ret = PyRegKey::from_cell_key_node(py, key);
+                        if let Ok(py_reg_key) = ret {
+                            return Ok(Some(py_reg_key));
                         }
-                    },
-                    Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(
-                        e.to_string(),
-                    ))
+                    }
                 }
+                Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
             },
-            _ => return Ok(None)
+            _ => return Ok(None),
         }
         Ok(None)
     }
@@ -136,29 +123,22 @@ impl PyRegParser {
     /// --
     ///
     /// Returns the parent PyRegKey for the `key` parameter
-    fn get_parent(
-        &mut self,
-        key: &mut PyRegKey
-    ) -> PyResult<Option<Py<PyRegKey>>> {
+    fn get_parent(&mut self, key: &mut PyRegKey) -> PyResult<Option<Py<PyRegKey>>> {
         match &mut self.inner {
-            Some(parser) => {
-                match parser.get_parent_key(&mut key.inner) {
-                    Ok(key) => {
-                        if let Some(key) = key {
-                            let gil = Python::acquire_gil();
-                            let py = gil.python();
-                            let ret = PyRegKey::from_cell_key_node(py, key);
-                            if let Ok(py_reg_key) = ret {
-                                return Ok(Some(py_reg_key));
-                            }
+            Some(parser) => match parser.get_parent_key(&mut key.inner) {
+                Ok(key) => {
+                    if let Some(key) = key {
+                        let gil = Python::acquire_gil();
+                        let py = gil.python();
+                        let ret = PyRegKey::from_cell_key_node(py, key);
+                        if let Ok(py_reg_key) = ret {
+                            return Ok(Some(py_reg_key));
                         }
-                    },
-                    Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(
-                        e.to_string(),
-                    ))
+                    }
                 }
+                Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
             },
-            _ => return Ok(None)
+            _ => return Ok(None),
         }
         Ok(None)
     }
@@ -178,18 +158,13 @@ impl PyRegParser {
         };
         inner.init_key_iter();
 
-        Py::new(
-            py,
-            PyRegKeysIterator {
-                inner
-            },
-        )
+        Py::new(py, PyRegKeysIterator { inner })
     }
 }
 
 #[pyclass]
 pub struct PyRegKeysIterator {
-    inner: Parser
+    inner: Parser,
 }
 
 impl PyRegKeysIterator {
@@ -199,9 +174,7 @@ impl PyRegKeysIterator {
     ) -> PyObject {
         match reg_key_result {
             Ok(reg_key) => {
-                match PyRegKey::from_cell_key_node(py, reg_key)
-                    .map(|entry| entry.to_object(py))
-                {
+                match PyRegKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py)) {
                     Ok(py_reg_key) => py_reg_key,
                     Err(e) => e.to_object(py),
                 }
@@ -216,12 +189,9 @@ impl PyRegKeysIterator {
     fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match self.inner.next_key_preorder(false) {
-            Some(key) => {
-                Some(Self::reg_key_to_pyobject(Ok(key), py))
-            }
-            None => None
-        }
+        self.inner
+            .next_key_preorder(false)
+            .map(|key| Self::reg_key_to_pyobject(Ok(key), py))
     }
 }
 

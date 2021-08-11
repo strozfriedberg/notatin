@@ -89,11 +89,7 @@ impl SubKeyListLfItem {
                 input,
                 SubKeyListLfItem {
                     named_key_offset_relative,
-                    name_hint: util::from_ascii(
-                        &name_hint,
-                        &mut logs,
-                        "SubKeyListLfItem::key_name",
-                    ),
+                    name_hint: util::from_ascii(name_hint, &mut logs, "SubKeyListLfItem::key_name"),
                     logs,
                 },
             ))

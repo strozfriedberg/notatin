@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-notatin = { path = "..", no-default-features = true }
+notatin = { path = ".." }
 pyo3 = { version = "0.12.1", features = ["extension-module"] }
 pyo3-file = "0.3.2"
 num-traits = "0.2"
