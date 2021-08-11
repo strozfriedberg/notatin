@@ -5,9 +5,10 @@
 */
 
 # Except these
-!src/
-!pyreg/
+!bin/
 !build/
+!pyreg/
+!src/
 !**/*Cargo*
 
 # Other files that should just always be ignored
