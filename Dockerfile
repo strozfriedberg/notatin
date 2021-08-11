@@ -6,7 +6,7 @@ ENV PATH="${PATH}:/root/.cargo/bin"
 RUN rustc --version
 
 RUN pip3 install toml maturin
-RUN rustup component add clippy
+RUN rustup component add clippy --toolchain 1.47.0-x86_64-unknown-linux-gnu
 
 COPY pyreg /app
 COPY . /app/notatin/
