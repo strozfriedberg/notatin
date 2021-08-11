@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 notatin = { path = ".." }
-pyo3 = { version = "0.12.1", features = ["extension-module"] }
+pyo3 = { version = "0.12.1" }
 pyo3-file = "0.3.2"
 num-traits = "0.2"
 log = "0.4"
