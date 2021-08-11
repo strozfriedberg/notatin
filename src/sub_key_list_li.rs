@@ -111,14 +111,4 @@ mod tests {
         assert_eq!(li.size, li.size());
         assert_eq!(vec![16441, 58417], li.get_offset_list(4096));
     }
-
-    #[test]
-    fn test_parse_sub_key_list_li() {
-        let f = std::fs::read("test_data/ManySubkeysHive").unwrap();
-        let slice = &f[53280..58960];
-        let (_, key_list) = SubKeyListLi::from_bytes_internal(slice).unwrap();
-        assert_eq!(5680, key_list.size);
-        assert_eq!(506, key_list.count);
-        assert_eq!(506, key_list.items.len());
-    }
 }

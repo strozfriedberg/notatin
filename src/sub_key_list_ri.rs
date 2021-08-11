@@ -133,9 +133,8 @@ mod tests {
 
     #[test]
     fn test_parse_sub_key_list_ri() {
-        let f = std::fs::read("test_data/ManySubkeysHive").unwrap();
-        let slice = &f[5920..5968];
-        let ret = SubKeyListRi::from_bytes(slice);
+        let slice = [208, 255, 255, 255, 114, 105, 9, 0, 32, 192, 0, 0, 32, 176, 2, 0, 32, 112, 3, 0, 32, 48, 4, 0, 32, 240, 4, 0, 32, 176, 5, 0, 32, 112, 6, 0, 32, 48, 7, 0, 32, 128, 1, 0, 56, 0, 0, 0];
+        let ret = SubKeyListRi::from_bytes(&slice);
         let expected_output = SubKeyListRi {
             size: 48,
             count: 9,
