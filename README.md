@@ -1,6 +1,6 @@
 # Notatin
 
-This is a Rust parser for offline Windows Registry files.
+Notatin is a Rust parser for offline Windows Registry files.
 
 Python bindings are included in the project (pyreg).
 
@@ -9,10 +9,10 @@ Python bindings are included in the project (pyreg).
  - Supports applying transaction logs and recovering deleted and modified keys and values.
  - Supports exporting to JSONL, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry)
 
-# `notatin` (crate):
+### `notatin` (crate)
  `notatin` is a library that parses Windows Registry files.
 
-# `reg_dump` (Binary utility):
+### `reg_dump` (Binary utility)
 `reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, TSV, or common format.
 An optional key path filter may also be supplied. Optional analysis to recover deleted and prior versions of keys and values from the transaction log is also supported.
 
@@ -34,7 +34,7 @@ OPTIONS:
     -t <TYPE>                output type [default: jsonl]  [possible values: Jsonl, Common, Tsv]
 ```
 
-# `reg_compare` (Binary utility):
+### `reg_compare` (Binary utility)
 `reg_compare` is a binary utility provided with this crate. It will compare two registry files (with optional transaction logs) and produce a report of the differences
 in a format similar to that of Regshot.
 
@@ -51,7 +51,7 @@ OPTIONS:
     -o, --output <FILE>         Output file
 ```
 
-# Library usage:
+## Library usage
 ```rust,no_run
 use notatin::{
     err::Error,
@@ -102,7 +102,7 @@ let filter = Filter {
 };
 ```
 
-## Upcoming improvements:
+## Upcoming improvements
  - Recover deleted keys and values from the primary registry file
  - Support for optional Hachoir-light style struct information
  - Improve regular expression filter creation
