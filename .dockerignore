@@ -10,6 +10,7 @@
 !pyreg/
 !src/
 !test_data/
+!benches/
 !**/*Cargo*
 
 # Other files that should just always be ignored
