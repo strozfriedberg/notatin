@@ -22,7 +22,7 @@ import pytest
 
 from pathlib import Path
 
-from asdf_notatin import PyRegParser, PyRegKey
+from notatin import PyRegParser, PyRegKey
 
 @pytest.fixture
 def sample_parser():# -> str:

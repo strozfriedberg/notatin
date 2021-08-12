@@ -1,10 +1,14 @@
 [package]
-name = "asdf_notatin"
+name = "pyreg"
 version = "0.1.0"
 authors = ["Kimberly Stone <kimberly.stone@aon.com>"]
 edition = "2018"
 
+[package.metadata.maturin]
+name = "notatin"
+
 [lib]
+name = "notatin"
 crate-type = ["cdylib"]
 
 [dependencies]

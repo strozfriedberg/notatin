@@ -9,11 +9,11 @@ RUN pip3 install toml maturin
 RUN rustup component add clippy
 
 COPY pyreg /app
-COPY . /app/notatin/
+COPY . /app/notatin_build/
 
 WORKDIR /app
 
-RUN sed -i 's/"\.\."/"notatin"/' Cargo.toml
+RUN sed -i 's/"\.\."/"notatin_build"/' Cargo.toml
 #RUN cat cargo_sdist_extras.txt >> pyproject.toml
 
 ENTRYPOINT [ "maturin", "build", "--release", "-o", "/out" ]
