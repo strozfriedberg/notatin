@@ -32,8 +32,8 @@ use std::{
 
 fn main() -> Result<(), Error> {
     let matches = App::new("Notatin Registry Compare")
-    .version("1.0")
-    .arg(Arg::from_usage("-f --filter=[STRING] 'Key path to filter on (ex: \'ControlSet001\\Services\')'"))
+    .version("0.1")
+    .arg(Arg::from_usage("-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'"))
     .arg(Arg::with_name("base")
         .short("b")
         .long("base")

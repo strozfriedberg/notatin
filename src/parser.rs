@@ -993,19 +993,18 @@ mod tests {
 
     #[test]
     fn test_reg_query() {
-        let reg_query = RegQuery {
-            key_path: vec![
-                RegQueryComponent::ComponentString(
-                    "control Panel".to_string().to_ascii_lowercase(),
-                ),
-                RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
-                RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap()),
-            ],
-            key_path_has_root: false,
-            children: false,
-        };
         let filter = Filter {
-            reg_query: Some(reg_query),
+            reg_query: Some(RegQuery {
+                key_path: vec![
+                    RegQueryComponent::ComponentString(
+                        "control Panel".to_string().to_ascii_lowercase(),
+                    ),
+                    RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
+                    RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap()),
+                ],
+                key_path_has_root: false,
+                children: false,
+            }),
         };
         let mut parser =
             Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();

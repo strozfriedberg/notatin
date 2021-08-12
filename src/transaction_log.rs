@@ -219,7 +219,6 @@ impl TransactionLog {
     ) -> (u32, RegItems) {
         let mut new_sequence_number = 0;
         for log_entry in &self.log_entries {
-            dbg!(log_entry.sequence_number);
             if log_entry.has_valid_hashes {
                 if log_entry.sequence_number < base_block_base.secondary_sequence_number {
                     parser.state.info.add(

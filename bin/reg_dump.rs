@@ -31,7 +31,7 @@ use std::{
 
 fn main() -> Result<(), Error> {
     let matches = App::new("Notatin Registry Dump")
-        .version("1.0")
+        .version("0.1")
         .arg(Arg::from_usage(
             "-r --recover 'Recover deleted and versioned keys and values'",
         ))
@@ -57,7 +57,7 @@ fn main() -> Result<(), Error> {
                 .takes_value(true),
         )
         .arg(
-            Arg::from_usage("<type> 'output type'")
+            Arg::from_usage("<TYPE> 'output type'")
                 .short("t")
                 .possible_values(&OutputType::variants())
                 .case_insensitive(true)
@@ -76,7 +76,7 @@ fn main() -> Result<(), Error> {
         filter = None;
     }
 
-    let output_type = value_t!(matches, "type", OutputType).unwrap_or_else(|e| e.exit());
+    let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
     let mut parser = Parser::from_path(input, logs, filter, recover)?;
 
