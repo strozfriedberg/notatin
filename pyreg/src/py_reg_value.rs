@@ -88,7 +88,7 @@ impl PyRegValue {
     }
 }
 
-/*#[cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
     use notatin::{
@@ -133,4 +133,4 @@ mod tests {
             py_reg_value.content(py).unwrap().extract(py);
         assert_eq!(content.unwrap(), "5.0".to_string());
     }
-}*/
+}
