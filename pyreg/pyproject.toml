@@ -1,3 +1,16 @@
+[tool.poetry]
+name = "notatin"
+version = "0.1.0"
+authors = ["kimberly.stone <kimberly.stone@aon.com>"]
+description = "Python bindings for notatin"
+
 [build-system]
 requires = ["maturin"]
 build-backend = "maturin"
+
+[tool.poetry.dependencies]
+python = "^3.6"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.4"
+maturin = "^0.11.2"

@@ -1,15 +1,29 @@
+/*
+ * Copyright 2021 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 use pyo3::prelude::*;
 
 use crate::err::PyRegError;
-use crate::util::date_to_pyobject;
-use crate::py_reg_value::PyRegValue;
 use crate::py_reg_parser::{PyRegKeysIterator, PyRegParser};
-use notatin::{
-    cell_key_node::CellKeyNode,
-    cell_key_value::CellKeyValue,
-};
-use pyo3::{Py, PyIterProtocol, PyResult, Python};
+use crate::py_reg_value::PyRegValue;
+use crate::util::date_to_pyobject;
+use notatin::{cell_key_node::CellKeyNode, cell_key_value::CellKeyValue};
 use pyo3::exceptions::PyNotImplementedError;
+use pyo3::{Py, PyIterProtocol, PyResult, Python};
 
 #[pyclass(subclass)]
 pub struct PyRegKey {
@@ -41,8 +55,8 @@ impl PyRegKey {
                 if let Ok(py_reg_value) = ret {
                     return Some(py_reg_value);
                 }
-            },
-            _ => return None
+            }
+            _ => return None,
         }
         None
     }
@@ -51,33 +65,24 @@ impl PyRegKey {
     /// --
     ///
     /// Returns an iterator that yields sub keys as python objects.
-    fn subkeys(
-        &mut self,
-        parser: &mut PyRegParser
-    ) -> PyResult<Py<PyRegSubKeysIterator>> {
+    fn subkeys(&mut self, parser: &mut PyRegParser) -> PyResult<Py<PyRegSubKeysIterator>> {
         self.sub_keys_iterator(parser)
     }
 
-    fn find_key(
-        &mut self,
-        parser: &mut PyRegParser,
-        path: &str
-    ) -> Option<Py<PyRegKey>> {
+    fn find_key(&mut self, parser: &mut PyRegParser, path: &str) -> Option<Py<PyRegKey>> {
         match &mut parser.inner {
-            Some(parser) => {
-                match self.inner.get_sub_key_by_path(parser, &path) {
-                    Some(key) => {
-                        let gil = Python::acquire_gil();
-                        let py = gil.python();
-                        let ret = PyRegKey::from_cell_key_node(py, key);
-                        if let Ok(py_reg_key) = ret {
-                            return Some(py_reg_key);
-                        }
-                    },
-                    _ => return None
+            Some(parser) => match self.inner.get_sub_key_by_path(parser, path) {
+                Some(key) => {
+                    let gil = Python::acquire_gil();
+                    let py = gil.python();
+                    let ret = PyRegKey::from_cell_key_node(py, key);
+                    if let Ok(py_reg_key) = ret {
+                        return Some(py_reg_key);
+                    }
                 }
+                _ => return None,
             },
-            _ => return None
+            _ => return None,
         }
         None
     }
@@ -87,10 +92,7 @@ impl PyRegKey {
     ///
     /// Returns the name of the key
     #[getter]
-    pub fn name(
-        &self,
-        py: Python
-    ) -> PyObject {
+    pub fn name(&self, py: Python) -> PyObject {
         self.inner.key_name.to_object(py)
     }
 
@@ -99,10 +101,7 @@ impl PyRegKey {
     ///
     /// Returns the path of the key
     #[getter]
-    pub fn path(
-        &self,
-        py: Python
-    ) -> PyObject {
+    pub fn path(&self, py: Python) -> PyObject {
         self.inner.path.to_object(py)
     }
 
@@ -111,10 +110,7 @@ impl PyRegKey {
     ///
     /// Returns the number of sub keys
     #[getter]
-    pub fn number_of_sub_keys(
-        &self,
-        py: Python
-    ) -> PyObject {
+    pub fn number_of_sub_keys(&self, py: Python) -> PyObject {
         self.inner.number_of_sub_keys.to_object(py)
     }
 
@@ -123,23 +119,19 @@ impl PyRegKey {
     ///
     /// Returns the number of key values
     #[getter]
-    pub fn number_of_key_values(
-        &self,
-        py: Python
-    ) -> PyObject {
+    pub fn number_of_key_values(&self, py: Python) -> PyObject {
         self.inner.number_of_key_values.to_object(py)
     }
 }
 
 impl PyRegKey {
-    pub fn from_cell_key_node(
-        py: Python,
-        cell_key_node: CellKeyNode
-    ) -> PyResult<Py<PyRegKey>> {
+    pub fn from_cell_key_node(py: Python, cell_key_node: CellKeyNode) -> PyResult<Py<PyRegKey>> {
         Py::new(
             py,
             PyRegKey {
-                last_key_written_date_and_time: date_to_pyobject(&cell_key_node.last_key_written_date_and_time)?,
+                last_key_written_date_and_time: date_to_pyobject(
+                    &cell_key_node.last_key_written_date_and_time,
+                )?,
                 inner: cell_key_node,
             },
         )
@@ -148,19 +140,19 @@ impl PyRegKey {
     fn reg_values_iterator(&mut self) -> PyResult<Py<PyRegValuesIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        self.inner.init_value_iter();
 
         Py::new(
             py,
             PyRegValuesIterator {
-                inner: self.inner.clone()
+                inner: self.inner.clone(),
+                sub_values_iter_index: 0,
             },
         )
     }
 
     fn sub_keys_iterator(
         &mut self,
-        parser: &mut PyRegParser
+        parser: &mut PyRegParser,
     ) -> PyResult<Py<PyRegSubKeysIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
@@ -169,28 +161,23 @@ impl PyRegKey {
             Some(parser) => {
                 let sub_keys = self.inner.read_sub_keys(parser);
 
-                Py::new(
-                    py,
-                    PyRegSubKeysIterator {
-                        index: 0,
-                        sub_keys
-                    },
-                )
-            },
+                Py::new(py, PyRegSubKeysIterator { index: 0, sub_keys })
+            }
             _ => Py::new(
-                    py,
-                    PyRegSubKeysIterator {
-                        index: 0,
-                        sub_keys: Vec::new()
-                    }
-                )
+                py,
+                PyRegSubKeysIterator {
+                    index: 0,
+                    sub_keys: Vec::new(),
+                },
+            ),
         }
     }
 }
 
 #[pyclass]
 pub struct PyRegValuesIterator {
-    inner: CellKeyNode
+    inner: CellKeyNode,
+    sub_values_iter_index: usize,
 }
 
 impl PyRegValuesIterator {
@@ -218,11 +205,12 @@ impl PyRegValuesIterator {
     fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        match self.inner.next_value() {
-            Some(value) => {
+        match self.inner.next_value(self.sub_values_iter_index) {
+            Some((value, sub_values_iter_index)) => {
+                self.sub_values_iter_index = sub_values_iter_index;
                 Some(self.reg_value_to_pyobject(Ok(value), py))
             }
-            None => None
+            None => None,
         }
     }
 }
@@ -230,7 +218,7 @@ impl PyRegValuesIterator {
 #[pyclass]
 pub struct PyRegSubKeysIterator {
     index: usize,
-    sub_keys: Vec<CellKeyNode>
+    sub_keys: Vec<CellKeyNode>,
 }
 
 impl PyRegSubKeysIterator {
@@ -242,7 +230,7 @@ impl PyRegSubKeysIterator {
                 self.index += 1;
                 Some(PyRegKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py))
             }
-            None => None
+            None => None,
         }
     }
 }

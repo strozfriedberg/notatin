@@ -1,5 +1,22 @@
-use std::cmp::Ordering;
+/*
+ * Copyright 2021 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 use log::{Level, Log, Metadata, Record, SetLoggerError};
+use std::cmp::Ordering;
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use pyo3::types::{PyDateTime, PyString};
@@ -15,7 +32,7 @@ pub enum FileOrFileLike {
 
 #[derive(Debug)]
 pub enum Output {
-    Python
+    Python,
 }
 
 impl FileOrFileLike {
@@ -98,7 +115,7 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     match nanos_e7.cmp(&5) {
         Ordering::Greater => micros += nanos_e6 + 1,
         Ordering::Less => micros += nanos_e6,
-        Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2)
+        Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2),
     }
     micros
 }
@@ -115,7 +132,7 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
         date.minute() as u8,
         date.second() as u8,
         nanos_to_micros_round_half_even(date.timestamp_subsec_nanos()),
-        None
+        None,
     )
     .map(|dt| dt.to_object(py))
 }

@@ -1,3 +1,20 @@
+#
+# Copyright 2021 Aon Cyber Solutions
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
+
 import datetime
 import decimal
 
@@ -5,7 +22,7 @@ import pytest
 
 from pathlib import Path
 
-from asdf_notatin import PyRegParser, PyRegKey
+from notatin import PyRegParser, PyRegKey
 
 @pytest.fixture
 def sample_parser():# -> str:
@@ -15,7 +32,7 @@ def sample_parser():# -> str:
 
 @pytest.fixture
 def sample_parser2():# -> str:
-    p = Path(__file__).parent.parent.parent / "test_data" / "asdf_test_data" / "SYSTEM"
+    p = Path(__file__).parent.parent.parent / "test_data" / "system"
     assert p.exists()
     return p
 
@@ -93,11 +110,11 @@ def test_value_value(sample_parser):
 def test_value_get_content2(sample_parser2):
     with open(sample_parser2, "rb") as m:
         parser = PyRegParser(m)
-        key = parser.open("ControlSet001\\Enum\\SWD\\PRINTENUM\\{D943D8D8-F7EB-4400-8EEE-A8CFF8C894B5}\\Properties\\{a8b865dd-2e3d-4094-ad97-e593a70c75d6}\\0002")
+        key = parser.open("ControlSet001\\Enum\\SWD\\PRINTENUM\\PrintQueues\\Properties\\{83da6326-97a6-4088-9453-a1923f573b29}\\0066")
         value = key.value('')
         assert value.raw_data_type & 0x0fff == 16
         val = value.content
-        assert val == 127953216000000000
+        assert val == 132727489235433111
 
 def test_value_get_content(sample_parser):
     with open(sample_parser, "rb") as m:

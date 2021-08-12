@@ -12,16 +12,22 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::PyErr;
-
-pub struct PyRegError(pub notatin::err::Error);
-
-impl From<PyRegError> for PyErr {
-    fn from(err: PyRegError) -> Self {
-        PyErr::new::<PyRuntimeError, _>(format!("{}", err.0))
+pub fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {
+    let mut logs = vec![];
+    let mut primary = String::new();
+    for component in paths.split(',') {
+        let lower = component.trim().trim_matches('\'').to_ascii_lowercase();
+        if lower.ends_with(".log1") || lower.ends_with(".log2") {
+            logs.push(component.trim().trim_matches('\'').to_string());
+        } else {
+            primary = component.trim().trim_matches('\'').to_string();
+        }
+    }
+    if logs.is_empty() {
+        (primary, None)
+    } else {
+        (primary, Some(logs))
     }
 }
