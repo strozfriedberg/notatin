@@ -37,7 +37,6 @@ use std::{convert::TryInto, mem};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive, Serialize)]
 #[repr(u32)]
 #[allow(non_camel_case_types)]
-#[allow(clippy::upper_case_acronyms)]
 pub enum CellKeyValueDataTypes {
     REG_NONE = 0x0000,
     REG_SZ = 0x0001,
