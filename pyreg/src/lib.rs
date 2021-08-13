@@ -16,7 +16,7 @@
  */
 
 pub mod err;
-pub mod py_reg_key;
-pub mod py_reg_parser;
-pub mod py_reg_value;
+pub mod py_notatin_key;
+pub mod py_notatin_parser;
+pub mod py_notatin_value;
 pub mod util;

@@ -17,28 +17,28 @@
 
 use pyo3::prelude::*;
 
-use crate::err::PyRegError;
-use crate::py_reg_parser::{PyRegKeysIterator, PyRegParser};
-use crate::py_reg_value::PyRegValue;
+use crate::err::PyNotatinError;
+use crate::py_notatin_parser::{PyNotatinKeysIterator, PyNotatinParser};
+use crate::py_notatin_value::PyNotatinValue;
 use crate::util::date_to_pyobject;
 use notatin::{cell_key_node::CellKeyNode, cell_key_value::CellKeyValue};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::{Py, PyIterProtocol, PyResult, Python};
 
 #[pyclass(subclass)]
-pub struct PyRegKey {
+pub struct PyNotatinKey {
     pub(crate) inner: CellKeyNode,
     #[pyo3(get)]
     pub last_key_written_date_and_time: PyObject,
 }
 
 #[pymethods]
-impl PyRegKey {
+impl PyNotatinKey {
     /// values(self, /)
     /// --
     ///
     /// Returns an iterator that yields registry values as python objects.
-    fn values(&mut self) -> PyResult<Py<PyRegValuesIterator>> {
+    fn values(&mut self) -> PyResult<Py<PyNotatinValuesIterator>> {
         self.reg_values_iterator()
     }
 
@@ -46,12 +46,12 @@ impl PyRegKey {
     /// --
     ///
     /// Returns an option with the requested value, or None.
-    fn value(&mut self, name: &str) -> Option<Py<PyRegValue>> {
+    fn value(&mut self, name: &str) -> Option<Py<PyNotatinValue>> {
         match self.inner.get_value(name) {
             Some(value) => {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
-                let ret = PyRegValue::from_cell_key_value(py, value);
+                let ret = PyNotatinValue::from_cell_key_value(py, value);
                 if let Ok(py_reg_value) = ret {
                     return Some(py_reg_value);
                 }
@@ -65,17 +65,17 @@ impl PyRegKey {
     /// --
     ///
     /// Returns an iterator that yields sub keys as python objects.
-    fn subkeys(&mut self, parser: &mut PyRegParser) -> PyResult<Py<PyRegSubKeysIterator>> {
+    fn subkeys(&mut self, parser: &mut PyNotatinParser) -> PyResult<Py<PyNotatinSubKeysIterator>> {
         self.sub_keys_iterator(parser)
     }
 
-    fn find_key(&mut self, parser: &mut PyRegParser, path: &str) -> Option<Py<PyRegKey>> {
+    fn find_key(&mut self, parser: &mut PyNotatinParser, path: &str) -> Option<Py<PyNotatinKey>> {
         match &mut parser.inner {
             Some(parser) => match self.inner.get_sub_key_by_path(parser, path) {
                 Some(key) => {
                     let gil = Python::acquire_gil();
                     let py = gil.python();
-                    let ret = PyRegKey::from_cell_key_node(py, key);
+                    let ret = PyNotatinKey::from_cell_key_node(py, key);
                     if let Ok(py_reg_key) = ret {
                         return Some(py_reg_key);
                     }
@@ -124,11 +124,11 @@ impl PyRegKey {
     }
 }
 
-impl PyRegKey {
-    pub fn from_cell_key_node(py: Python, cell_key_node: CellKeyNode) -> PyResult<Py<PyRegKey>> {
+impl PyNotatinKey {
+    pub fn from_cell_key_node(py: Python, cell_key_node: CellKeyNode) -> PyResult<Py<PyNotatinKey>> {
         Py::new(
             py,
-            PyRegKey {
+            PyNotatinKey {
                 last_key_written_date_and_time: date_to_pyobject(
                     &cell_key_node.last_key_written_date_and_time,
                 )?,
@@ -137,13 +137,13 @@ impl PyRegKey {
         )
     }
 
-    fn reg_values_iterator(&mut self) -> PyResult<Py<PyRegValuesIterator>> {
+    fn reg_values_iterator(&mut self) -> PyResult<Py<PyNotatinValuesIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
 
         Py::new(
             py,
-            PyRegValuesIterator {
+            PyNotatinValuesIterator {
                 inner: self.inner.clone(),
                 sub_values_iter_index: 0,
             },
@@ -152,8 +152,8 @@ impl PyRegKey {
 
     fn sub_keys_iterator(
         &mut self,
-        parser: &mut PyRegParser,
-    ) -> PyResult<Py<PyRegSubKeysIterator>> {
+        parser: &mut PyNotatinParser,
+    ) -> PyResult<Py<PyNotatinSubKeysIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         self.inner.init_sub_key_iter();
@@ -161,11 +161,11 @@ impl PyRegKey {
             Some(parser) => {
                 let sub_keys = self.inner.read_sub_keys(parser);
 
-                Py::new(py, PyRegSubKeysIterator { index: 0, sub_keys })
+                Py::new(py, PyNotatinSubKeysIterator { index: 0, sub_keys })
             }
             _ => Py::new(
                 py,
-                PyRegSubKeysIterator {
+                PyNotatinSubKeysIterator {
                     index: 0,
                     sub_keys: Vec::new(),
                 },
@@ -175,20 +175,20 @@ impl PyRegKey {
 }
 
 #[pyclass]
-pub struct PyRegValuesIterator {
+pub struct PyNotatinValuesIterator {
     inner: CellKeyNode,
     sub_values_iter_index: usize,
 }
 
-impl PyRegValuesIterator {
+impl PyNotatinValuesIterator {
     fn reg_value_to_pyobject(
         &mut self,
-        reg_value_result: Result<CellKeyValue, PyRegError>,
+        reg_value_result: Result<CellKeyValue, PyNotatinError>,
         py: Python,
     ) -> PyObject {
         match reg_value_result {
             Ok(reg_value) => {
-                match PyRegValue::from_cell_key_value(py, reg_value)
+                match PyNotatinValue::from_cell_key_value(py, reg_value)
                     .map(|entry| entry.to_object(py))
                 {
                     Ok(py_reg_value) => py_reg_value,
@@ -216,19 +216,19 @@ impl PyRegValuesIterator {
 }
 
 #[pyclass]
-pub struct PyRegSubKeysIterator {
+pub struct PyNotatinSubKeysIterator {
     index: usize,
     sub_keys: Vec<CellKeyNode>,
 }
 
-impl PyRegSubKeysIterator {
+impl PyNotatinSubKeysIterator {
     fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         match self.sub_keys.get(self.index) {
             Some(key) => {
                 self.index += 1;
-                Some(PyRegKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py))
+                Some(PyNotatinKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py))
             }
             None => None,
         }
@@ -236,18 +236,18 @@ impl PyRegSubKeysIterator {
 }
 
 #[pyproto]
-impl PyIterProtocol for PyRegKey {
-    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyRegValuesIterator>> {
+impl PyIterProtocol for PyNotatinKey {
+    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValuesIterator>> {
         slf.values()
     }
     fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyRegKey` is not supported. Try iterating over `PyRegKey(...).values() or PyRegKey(...).sub_keys()`"))
+        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyNotatinKey` is not supported. Try iterating over `PyNotatinKey(...).values() or PyNotatinKey(...).sub_keys()`"))
     }
 }
 
 #[pyproto]
-impl PyIterProtocol for PyRegValuesIterator {
-    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyRegValuesIterator>> {
+impl PyIterProtocol for PyNotatinValuesIterator {
+    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValuesIterator>> {
         Ok(slf.into())
     }
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
@@ -256,8 +256,8 @@ impl PyIterProtocol for PyRegValuesIterator {
 }
 
 #[pyproto]
-impl PyIterProtocol for PyRegSubKeysIterator {
-    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyRegSubKeysIterator>> {
+impl PyIterProtocol for PyNotatinSubKeysIterator {
+    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinSubKeysIterator>> {
         Ok(slf.into())
     }
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {

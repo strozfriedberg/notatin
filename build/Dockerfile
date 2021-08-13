@@ -10,7 +10,7 @@ RUN rustc --version
 RUN rustup component add clippy
 
 COPY . /app
-WORKDIR /app/pyreg
+WORKDIR /app/pynotatin
 RUN poetry install
 
 WORKDIR /app

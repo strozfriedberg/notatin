@@ -3,7 +3,7 @@
 cargo test
 cargo clippy --all-features --all-targets
 
-cd pyreg
+cd pynotatin
 cargo test --no-default-features
 cargo clippy --all-features --all-targets
 poetry run maturin develop

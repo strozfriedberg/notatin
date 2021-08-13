@@ -22,23 +22,23 @@ import pytest
 
 from pathlib import Path
 
-from notatin import PyRegParser, PyRegKey
+from notatin import PyNotatinParser
 
 @pytest.fixture
-def sample_parser():# -> str:
+def sample_parser():
     p = Path(__file__).parent.parent.parent / "test_data" / "NTUSER.DAT"
     assert p.exists()
     return p
 
 @pytest.fixture
-def sample_parser2():# -> str:
+def sample_parser2():
     p = Path(__file__).parent.parent.parent / "test_data" / "system"
     assert p.exists()
     return p
 
 def test_it_works(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         keys = 0
         values = 0
 
@@ -47,13 +47,13 @@ def test_it_works(sample_parser):
             keys += 1
             for value in key.values():
                 values += 1
-                print("\t"+value.name + "\t" + str(value.raw_data_type))
+                print("\t"+ value.name + "\t" + str(value.raw_data_type))
         assert keys == 2853
         assert values == 5523
 
 def test_get_key(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         sub = key.find_key(parser, "Keyboard Response")
@@ -61,7 +61,7 @@ def test_get_key(sample_parser):
 
 def test_sub_keys(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel"
         keys = 0
@@ -71,7 +71,7 @@ def test_sub_keys(sample_parser):
 
 def test_values(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         values = 0
@@ -81,7 +81,7 @@ def test_values(sample_parser):
 
 def test_key_get_value(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         value = key.value('MinimumHitRadius')
@@ -89,7 +89,7 @@ def test_key_get_value(sample_parser):
 
 def test_value_raw_data_type(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         value = key.value('MinimumHitRadius')
@@ -98,7 +98,7 @@ def test_value_raw_data_type(sample_parser):
 
 def test_value_value(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Accessibility\\MouseKeys")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\MouseKeys"
         value = key.value('MaximumSpeed')
@@ -109,7 +109,7 @@ def test_value_value(sample_parser):
 
 def test_value_get_content2(sample_parser2):
     with open(sample_parser2, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("ControlSet001\\Enum\\SWD\\PRINTENUM\\PrintQueues\\Properties\\{83da6326-97a6-4088-9453-a1923f573b29}\\0066")
         value = key.value('')
         assert value.raw_data_type & 0x0fff == 16
@@ -118,7 +118,7 @@ def test_value_get_content2(sample_parser2):
 
 def test_value_get_content(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Accessibility\\MouseKeys")
         value = key.value('MaximumSpeed')
         assert value.name == "MaximumSpeed"
@@ -146,7 +146,7 @@ def test_value_get_content(sample_parser):
 
 def test_value_pretty_name(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyRegParser(m)
+        parser = PyNotatinParser(m)
         key = parser.open("Control Panel\\Cursors")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Cursors"
         for value in key.values():

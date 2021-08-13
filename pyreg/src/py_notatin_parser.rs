@@ -15,9 +15,9 @@
  *
  */
 
-use crate::err::PyRegError;
-use crate::py_reg_key::PyRegKey;
-use crate::py_reg_value::PyRegValue;
+use crate::err::PyNotatinError;
+use crate::py_notatin_key::PyNotatinKey;
+use crate::py_notatin_value::PyNotatinValue;
 use crate::util::{init_logging, FileOrFileLike};
 use notatin::{cell_key_node::CellKeyNode, parser::Parser};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
@@ -35,17 +35,17 @@ pub trait ReadSeek: Read + Seek {
 impl<T: Read + Seek> ReadSeek for T {}
 
 #[pyclass(subclass)]
-/// PyRegParser(self, path_or_file_like, /)
+/// PyNotatinParser(self, path_or_file_like, /)
 /// --
 ///
 /// Returns an instance of the parser.
 /// Works on both a path (string), or a file-like object.
-pub struct PyRegParser {
+pub struct PyNotatinParser {
     pub inner: Option<Parser>,
 }
 
 #[pymethods]
-impl PyRegParser {
+impl PyNotatinParser {
     #[new]
     fn new(path_or_file_like: PyObject) -> PyResult<Self> {
         let file_or_file_like = FileOrFileLike::from_pyobject(path_or_file_like)?;
@@ -61,8 +61,8 @@ impl PyRegParser {
         };
 
         let parser =
-            Parser::from_read_seek(boxed_read_seek, None, None, false).map_err(PyRegError)?;
-        Ok(PyRegParser {
+            Parser::from_read_seek(boxed_read_seek, None, None, false).map_err(PyNotatinError)?;
+        Ok(PyNotatinParser {
             inner: Some(parser),
         })
     }
@@ -71,18 +71,18 @@ impl PyRegParser {
     /// --
     ///
     /// Returns an iterator that yields reg keys as python objects.
-    fn reg_keys(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
+    fn reg_keys(&mut self) -> PyResult<Py<PyNotatinKeysIterator>> {
         self.reg_keys_iterator()
     }
 
-    fn open(&mut self, path: &str) -> PyResult<Option<Py<PyRegKey>>> {
+    fn open(&mut self, path: &str) -> PyResult<Option<Py<PyNotatinKey>>> {
         match &mut self.inner {
             Some(parser) => match parser.get_key(path, false) {
                 Ok(key) => {
                     if let Some(key) = key {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
-                        let ret = PyRegKey::from_cell_key_node(py, key);
+                        let ret = PyNotatinKey::from_cell_key_node(py, key);
                         if let Ok(py_reg_key) = ret {
                             return Ok(Some(py_reg_key));
                         }
@@ -98,15 +98,15 @@ impl PyRegParser {
     /// root(self, /)
     /// --
     ///
-    /// Returns the root PyRegKey
-    fn root(&mut self) -> PyResult<Option<Py<PyRegKey>>> {
+    /// Returns the root PyNotatinKey
+    fn root(&mut self) -> PyResult<Option<Py<PyNotatinKey>>> {
         match &mut self.inner {
             Some(parser) => match parser.get_root_key() {
                 Ok(key) => {
                     if let Some(key) = key {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
-                        let ret = PyRegKey::from_cell_key_node(py, key);
+                        let ret = PyNotatinKey::from_cell_key_node(py, key);
                         if let Ok(py_reg_key) = ret {
                             return Ok(Some(py_reg_key));
                         }
@@ -122,15 +122,15 @@ impl PyRegParser {
     /// parent(self, /)
     /// --
     ///
-    /// Returns the parent PyRegKey for the `key` parameter
-    fn get_parent(&mut self, key: &mut PyRegKey) -> PyResult<Option<Py<PyRegKey>>> {
+    /// Returns the parent PyNotatinKey for the `key` parameter
+    fn get_parent(&mut self, key: &mut PyNotatinKey) -> PyResult<Option<Py<PyNotatinKey>>> {
         match &mut self.inner {
             Some(parser) => match parser.get_parent_key(&mut key.inner) {
                 Ok(key) => {
                     if let Some(key) = key {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
-                        let ret = PyRegKey::from_cell_key_node(py, key);
+                        let ret = PyNotatinKey::from_cell_key_node(py, key);
                         if let Ok(py_reg_key) = ret {
                             return Ok(Some(py_reg_key));
                         }
@@ -144,37 +144,37 @@ impl PyRegParser {
     }
 }
 
-impl PyRegParser {
-    fn reg_keys_iterator(&mut self) -> PyResult<Py<PyRegKeysIterator>> {
+impl PyNotatinParser {
+    fn reg_keys_iterator(&mut self) -> PyResult<Py<PyNotatinKeysIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let mut inner = match self.inner.take() {
             Some(inner) => inner,
             None => {
                 return Err(PyErr::new::<PyRuntimeError, _>(
-                    "PyRegParser can only be used once",
+                    "PyNotatinParser can only be used once",
                 ));
             }
         };
         inner.init_key_iter();
 
-        Py::new(py, PyRegKeysIterator { inner })
+        Py::new(py, PyNotatinKeysIterator { inner })
     }
 }
 
 #[pyclass]
-pub struct PyRegKeysIterator {
+pub struct PyNotatinKeysIterator {
     inner: Parser,
 }
 
-impl PyRegKeysIterator {
+impl PyNotatinKeysIterator {
     pub(crate) fn reg_key_to_pyobject(
-        reg_key_result: Result<CellKeyNode, PyRegError>,
+        reg_key_result: Result<CellKeyNode, PyNotatinError>,
         py: Python,
     ) -> PyObject {
         match reg_key_result {
             Ok(reg_key) => {
-                match PyRegKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py)) {
+                match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py)) {
                     Ok(py_reg_key) => py_reg_key,
                     Err(e) => e.to_object(py),
                 }
@@ -196,18 +196,18 @@ impl PyRegKeysIterator {
 }
 
 #[pyproto]
-impl PyIterProtocol for PyRegParser {
-    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyRegKeysIterator>> {
+impl PyIterProtocol for PyNotatinParser {
+    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
         slf.reg_keys()
     }
     fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyRegParser` is not supported. Try iterating over `PyRegParser(...).reg_keys()`"))
+        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyNotatinParser` is not supported. Try iterating over `PyNotatinParser(...).reg_keys()`"))
     }
 }
 
 #[pyproto]
-impl PyIterProtocol for PyRegKeysIterator {
-    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyRegKeysIterator>> {
+impl PyIterProtocol for PyNotatinKeysIterator {
+    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
         Ok(slf.into())
     }
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
@@ -217,12 +217,12 @@ impl PyIterProtocol for PyRegKeysIterator {
 
 /// Parses a windows registry file.
 #[pymodule]
-fn notatin(py: Python, m: &PyModule) -> PyResult<()> {
+fn pynotatin(py: Python, m: &PyModule) -> PyResult<()> {
     init_logging(py).ok();
 
-    m.add_class::<PyRegParser>()?;
-    m.add_class::<PyRegKey>()?;
-    m.add_class::<PyRegValue>()?;
+    m.add_class::<PyNotatinParser>()?;
+    m.add_class::<PyNotatinKey>()?;
+    m.add_class::<PyNotatinValue>()?;
 
     Ok(())
 }
