@@ -217,7 +217,7 @@ impl PyIterProtocol for PyNotatinKeysIterator {
 
 /// Parses a windows registry file.
 #[pymodule]
-fn pynotatin(py: Python, m: &PyModule) -> PyResult<()> {
+fn notatin(py: Python, m: &PyModule) -> PyResult<()> {
     init_logging(py).ok();
 
     m.add_class::<PyNotatinParser>()?;
