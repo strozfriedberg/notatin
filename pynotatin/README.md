@@ -7,6 +7,11 @@ Python bindings for the Notatin crate. This project is currently pre-release and
 pip install . --use-feature=in-tree-build
 ```
 
+## Install (without cloning the repo)
+```
+pip install git+https://github.com/strozfriedberg/notatin.git#subdirectory=pynotatin
+```
+
 ## Library usage
 ```python,no_run
 from notatin import PyNotatinParser
