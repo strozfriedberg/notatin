@@ -714,7 +714,7 @@ impl Iterator for CellKeyNodeValueIterator<'_> {
     type Item = CellKeyValue;
 
     // Why isn't this just implemented entirely here, rather than in 'CellKeyValue::next_value(...)'?
-    // Because pyo3 doesn't allow exposure of objects with lifetimes, so we need to be able to call CellKeyValue::next_value directly in pyreg
+    // Because pyo3 doesn't allow exposure of objects with lifetimes, so we need to be able to call CellKeyValue::next_value directly in pynotatin
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next_value(self.sub_values_iter_index) {
             Some((val, sub_values_iter_index)) => {

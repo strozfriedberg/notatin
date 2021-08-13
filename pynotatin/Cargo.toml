@@ -1,11 +1,8 @@
 [package]
-name = "pyreg"
+name = "pynotatin"
 version = "0.1.0"
 authors = ["Kimberly Stone <kimberly.stone@aon.com>"]
 edition = "2018"
-
-[package.metadata.maturin]
-name = "notatin"
 
 [lib]
 name = "notatin"
@@ -24,3 +21,9 @@ serde = { version = "1.0", features = ["derive"] }
 
 [features]
 default = ["pyo3/extension-module"]
+
+[package.metadata.maturin]
+name = "notatin"
+
+[tool.maturin]
+sdist-include = ["Cargo.lock"]

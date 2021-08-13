@@ -15,8 +15,13 @@
  *
  */
 
-pub mod err;
-pub mod py_reg_key;
-pub mod py_reg_parser;
-pub mod py_reg_value;
-pub mod util;
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::PyErr;
+
+pub struct PyNotatinError(pub notatin::err::Error);
+
+impl From<PyNotatinError> for PyErr {
+    fn from(err: PyNotatinError) -> Self {
+        PyErr::new::<PyRuntimeError, _>(format!("{}", err.0))
+    }
+}

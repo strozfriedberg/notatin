@@ -21,12 +21,12 @@ use notatin::{cell_key_value::CellKeyValue, cell_value::CellValue};
 use pyo3::{Py, PyResult, Python};
 
 #[pyclass(subclass)]
-pub struct PyRegValue {
+pub struct PyNotatinValue {
     inner: CellKeyValue,
 }
 
 #[pymethods]
-impl PyRegValue {
+impl PyNotatinValue {
     #[getter]
     pub fn value(&self, py: Python) -> PyObject {
         pyo3::types::PyBytes::new(
@@ -74,14 +74,14 @@ impl PyRegValue {
     }
 }
 
-impl PyRegValue {
+impl PyNotatinValue {
     pub fn from_cell_key_value(
         py: Python,
         cell_key_value: CellKeyValue,
-    ) -> PyResult<Py<PyRegValue>> {
+    ) -> PyResult<Py<PyNotatinValue>> {
         Py::new(
             py,
-            PyRegValue {
+            PyNotatinValue {
                 inner: cell_key_value,
             },
         )
@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_get_content() {
-        let mut py_reg_value = PyRegValue {
+        let mut py_reg_value = PyNotatinValue {
             inner: CellKeyValue {
                 detail: CellKeyValueDetail {
                     file_offset_absolute: 0,

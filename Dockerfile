@@ -8,7 +8,7 @@ RUN rustc --version
 RUN pip3 install toml maturin
 RUN rustup component add clippy
 
-COPY pyreg /app
+COPY pynotatin /app
 COPY . /app/notatin_build/
 
 WORKDIR /app
