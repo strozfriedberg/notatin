@@ -1,13 +1,14 @@
 # PyNotatin
 Python bindings for the Notatin crate. This project is currently pre-release and should not be used for active investigations.
 
-## Build
+## Install
+### From source:
 
 ```
 pip install . --use-feature=in-tree-build
 ```
 
-## Install (without cloning the repo)
+### From Github:
 ```
 pip install git+https://github.com/strozfriedberg/notatin.git#subdirectory=pynotatin
 ```
