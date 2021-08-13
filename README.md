@@ -104,7 +104,7 @@ let filter = Filter {
  - Recover deleted keys and values from the primary registry file
  - Support for optional Hachoir-light style struct information
  - Improve regular expression filter creation
- - Improve performance of transaction log analysis.
+ - Improve performance of transaction log analysis
 
  ## What is Notatin?
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
