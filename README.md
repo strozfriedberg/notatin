@@ -81,10 +81,14 @@ fn main() -> Result<(), Error> {
 ```
 Opening files and iterating the results is intended to be straightforward. By default, iteration is prefix order;
 postorder traversal (children before parents) is available as well.
-
-Result filters are optional, but they can speed up processing as Notatin will skip reading what doesn't match.
-Filters may include regular expressions or literal paths but setting up a regular expression filter needs to be streamlined (see [Upcoming Improvements](#Upcoming-improvements))
+```rust,no_run
+for key in parser.iter_postorder() {
+    //...
+}
 ```
+Result filters are optional, but they can speed up processing as Notatin will skip parsing what doesn't match.
+Filters may include regular expressions or literal paths but setting up a regular expression filter needs to be streamlined (see [Upcoming Improvements](#Upcoming-improvements))
+```rust,no_run
 let filter = Filter {
     reg_query: Some(RegQuery {
         key_path: vec![
