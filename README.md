@@ -1,18 +1,17 @@
 # Notatin
 
-Notatin is a Rust parser for offline Windows Registry files.
-
-Python bindings are included in the project (pyreg).
+Notatin is a Rust parser for offline Windows Registry files. The project is currently pre-release and should not be used for active investigations.
 
 ## Features
  - Implemented using 100% safe Rust and works on all platforms supported by Rust (that have stdlib). Tested in Windows and Ubuntu.
  - Supports applying transaction logs and recovering deleted and modified keys and values.
- - Supports exporting to JSONL, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry)
+ - Supports exporting to JSONL, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry).
+ - Python bindings are included in the project (pyreg).
 
-### `notatin` (crate)
+### notatin (crate)
  `notatin` is a library that parses Windows Registry files.
 
-### `reg_dump` (Binary utility)
+### reg_dump (utility)
 `reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, TSV, or common format.
 An optional key path filter may also be supplied. Optional analysis to recover deleted and prior versions of keys and values from the transaction log is also supported.
 
@@ -34,7 +33,7 @@ OPTIONS:
     -t <TYPE>                output type [default: jsonl]  [possible values: Jsonl, Common, Tsv]
 ```
 
-### `reg_compare` (Binary utility)
+### reg_compare (utility)
 `reg_compare` is a binary utility provided with this crate. It will compare two registry files (with optional transaction logs) and produce a report of the differences
 in a format similar to that of Regshot.
 
@@ -80,13 +79,16 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 ```
-Opening files and iterating the results is intended to be pretty straightforward. By default, iteration is prefix order;
+Opening files and iterating the results is intended to be straightforward. By default, iteration is prefix order;
 postorder traversal (children before parents) is available as well.
-
-Result filters are optional, but they can speed up processing as Notatin will skip what it doesn't need.
-Regular expression filters are supported
-as well as literal paths, but setting up a regular expression filter needs to be streamlined.
+```rust,no_run
+for key in parser.iter_postorder() {
+    //...
+}
 ```
+Result filters are optional, but they can speed up processing as Notatin will skip parsing what doesn't match.
+Filters may include regular expressions or literal paths but setting up a regular expression filter needs to be streamlined (see [Upcoming Improvements](#Upcoming-improvements))
+```rust,no_run
 let filter = Filter {
     reg_query: Some(RegQuery {
         key_path: vec![
@@ -112,4 +114,7 @@ let filter = Filter {
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
  It is present in honey because honeybees synthesize the enzyme and deposit it into the honey, where it acts as a natural preservative.
  So, Notatin preserves honey. https://en.wikipedia.org/wiki/Glucose_oxidase
+
+ ## Copyright
+ Copyright 2021 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.
 
