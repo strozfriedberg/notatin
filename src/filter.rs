@@ -83,18 +83,61 @@ pub enum RegQueryComponent {
     ComponentRegex(Regex),
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct RegQueryBuilder {
+    key_path: Vec<RegQueryComponent>,
+    key_path_has_root: bool,
+    children: bool,
+}
+
+impl RegQueryBuilder {
+    pub fn from_key(key_path: &str) -> Self {
+        let mut query_components = Vec::new();
+        for segment in key_path
+            .trim_end_matches('\\')
+            .to_ascii_lowercase()
+            .split('\\')
+        {
+            query_components.push(RegQueryComponent::ComponentString(segment.to_string()));
+        }
+        RegQueryBuilder {
+            key_path: query_components,
+            key_path_has_root: false,
+            children: false,
+        }
+    }
+
+    pub fn key_path_has_root(mut self, key_path_has_root: bool) -> Self {
+        self.key_path_has_root = key_path_has_root;
+        self
+    }
+
+    pub fn return_child_keys(mut self, children: bool) -> Self {
+        self.children = children;
+        self
+    }
+
+    pub fn build(self) -> RegQuery {
+        RegQuery {
+            key_path: self.key_path,
+            key_path_has_root: self.key_path_has_root,
+            children: self.children,
+        }
+    }
+}
+
 /// ReqQuery is a structured filter which allows for regular expressions
 #[derive(Clone, Debug, Default)]
 pub struct RegQuery {
     pub(crate) key_path: Vec<RegQueryComponent>,
-    /// True if `key_path` contains the root key name. Usually will be false, but useful if you are searching using a path from an existing key.
+    /// True if `key_path` contains the root key name. Usually will be false, but useful if you are searching using a path from an existing key
     pub(crate) key_path_has_root: bool,
     /// Determines if subkeys are returned during iteration
     pub(crate) children: bool,
 }
 
 impl RegQuery {
-    pub fn from_key(key_path: &str, key_path_has_root: bool, children: bool) -> RegQuery {
+    /*pub fn from_key(key_path: &str, key_path_has_root: bool, children: bool) -> RegQuery {
         let mut query_components = Vec::new();
         for segment in key_path
             .trim_end_matches('\\')
@@ -108,7 +151,7 @@ impl RegQuery {
             key_path_has_root,
             children,
         }
-    }
+    }*/
 
     fn check_key_match(&self, key_name: &str, mut root_key_name_offset: usize) -> FilterFlags {
         if self.key_path_has_root {
@@ -165,7 +208,11 @@ mod tests {
     #[test]
     fn test_check_cell_match_key() {
         let mut state = State::default();
-        let filter = Filter::from_path(RegQuery::from_key("HighContrast", false, true));
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key("HighContrast")
+                .return_child_keys(true)
+                .build(),
+        );
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
             ..Default::default()

@@ -1,29 +1,18 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use notatin::parser::Parser;
+use notatin::parser_builder::{ParserBuilder, ParserBuilderTrait};
 
 fn test_read_small_reg() {
-    let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
+    let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+        .build()
+        .unwrap();
     for _key in parser.iter() {}
 }
 
 fn test_read_small_reg_with_deleted() {
-    let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
-    for _key in parser.iter() {}
-}
-
-fn test_read_reg_without_logs() {
-    let mut parser = Parser::from_path("test_data/system", None, None, false).unwrap();
-    for _key in parser.iter() {}
-}
-
-fn test_read_reg_with_logs() {
-    let mut parser = Parser::from_path(
-        "test_data/system",
-        Some(vec!["test_data/system.log1", "test_data/system.log2"]),
-        None,
-        true,
-    )
-    .unwrap();
+    let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+        .recover_deleted(true)
+        .build()
+        .unwrap();
     for _key in parser.iter() {}
 }
 
@@ -38,18 +27,6 @@ pub fn bench(c: &mut Criterion) {
             b.iter(|| test_read_small_reg_with_deleted())
         });
     group1.finish();
-
-    let mut group2 = c.benchmark_group("read reg");
-    group2
-        .sample_size(500)
-        .measurement_time(std::time::Duration::from_secs(25))
-        .bench_function("read reg without logs", |b| {
-            b.iter(|| test_read_reg_without_logs())
-        })
-        .bench_function("read reg with logs", |b| {
-            b.iter(|| test_read_reg_with_logs())
-        });
-    group2.finish();
 }
 
 criterion_group!(benches, bench);
