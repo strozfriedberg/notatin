@@ -32,12 +32,15 @@ use std::collections::HashMap;
 
 /// `Parser` should be constructed using `ParserBuilder`
 /// ```
+/// use notatin::filter::{Filter, RegQueryBuilder};
+/// use notatin::parser_builder::{ParserBuilder, ParserBuilderTrait};
+///
 /// ParserBuilder::from_path("system")
-///     .with_filter(filter) // optional
+///     .with_filter(Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build())) // optional
 ///     .with_transaction_log("system.log1") // optional
 ///     .with_transaction_log("system.log2") // optional
 ///     .recover_deleted(true) // optional
-///     .build()
+///     .build();
 /// ```
 #[derive(Debug)]
 pub struct Parser {
