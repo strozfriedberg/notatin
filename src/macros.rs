@@ -72,43 +72,6 @@ macro_rules! impl_enum_from_value {
     };
 }
 
-/// Macro to implement a builder method for an attribute.
-#[macro_export]
-macro_rules! impl_builder_method {
-    ($attribute:ident: $attribute_type:ty) => {
-        #[allow(dead_code)]
-        pub fn $attribute(mut self, value: $attribute_type) -> Self {
-            self.inner.$attribute = value;
-            self
-        }
-    };
-}
-
-/// Macro to implement a builder struct with methods for each attribute.
-/// To finish building and return the underlying type, call `builder.finish()`.
-#[macro_export]
-macro_rules! impl_builder {
-    ($struct_name:ident: $inner_type:ty {
-        $($attribute:ident: $attribute_type:ty)*
-    }) => {
-        #[allow(dead_code)]
-        pub struct $struct_name {
-            inner: $inner_type,
-        }
-        impl $struct_name {
-            pub fn new() -> Self {
-                Self { inner: <$inner_type>::default(), }
-            }
-
-            $(impl_builder_method!($attribute: $attribute_type);)*
-
-            pub fn finish(self) -> $inner_type {
-                self.inner
-            }
-        }
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use crate::log::{Log, LogCode, Logs};

@@ -59,10 +59,10 @@ impl ParserBuilderFromPath {
     pub fn build(self) -> Result<Parser, Error> {
         let mut transaction_logs = vec![];
         for transaction_log in self.transaction_logs {
-            transaction_logs.push(Box::new(std::fs::File::open(&*transaction_log)?))
+            transaction_logs.push(Box::new(std::fs::File::open(transaction_log.as_ref())?))
         }
         ParserBuilder::build(
-            FileInfo::from_path(&*self.primary)?,
+            FileInfo::from_path(self.primary.as_ref())?,
             self.base,
             transaction_logs,
         )

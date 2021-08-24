@@ -213,10 +213,8 @@ fn get_parser(
             RegQueryBuilder::from_key(f).return_child_keys(true).build(),
         ));
     }
-    if let Some(logs) = logs {
-        for log in logs {
-            parser_builder = parser_builder.with_transaction_log(log);
-        }
+    for log in logs.unwrap_or_default() {
+        parser_builder = parser_builder.with_transaction_log(log);
     }
     parser_builder.build()
 }
