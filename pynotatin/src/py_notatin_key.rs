@@ -125,7 +125,10 @@ impl PyNotatinKey {
 }
 
 impl PyNotatinKey {
-    pub fn from_cell_key_node(py: Python, cell_key_node: CellKeyNode) -> PyResult<Py<PyNotatinKey>> {
+    pub fn from_cell_key_node(
+        py: Python,
+        cell_key_node: CellKeyNode,
+    ) -> PyResult<Py<PyNotatinKey>> {
         Py::new(
             py,
             PyNotatinKey {
@@ -228,7 +231,10 @@ impl PyNotatinSubKeysIterator {
         match self.sub_keys.get(self.index) {
             Some(key) => {
                 self.index += 1;
-                Some(PyNotatinKeysIterator::reg_key_to_pyobject(Ok(key.clone()), py))
+                Some(PyNotatinKeysIterator::reg_key_to_pyobject(
+                    Ok(key.clone()),
+                    py,
+                ))
             }
             None => None,
         }

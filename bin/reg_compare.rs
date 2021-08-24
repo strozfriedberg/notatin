@@ -20,8 +20,9 @@ use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
     err::Error,
-    filter::{Filter, RegQuery},
+    filter::{Filter, RegQueryBuilder},
     parser::Parser,
+    parser_builder::{ParserBuilder, ParserBuilderTrait},
     util::format_date_time,
 };
 use std::{
@@ -63,20 +64,13 @@ fn main() -> Result<(), Error> {
 
     let output = matches.value_of("output").expect("Required value");
 
-    let filter;
-    if let Some(f) = matches.value_of("filter") {
-        filter = Some(Filter::from_path(RegQuery::from_key(f, false, true)));
-    } else {
-        filter = None;
-    }
-
     let write_file = File::create(output)?;
     let mut writer = BufWriter::new(write_file);
 
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
-    // add all items from base into original_map
-    let mut parser1 = Parser::from_path(base_primary, base_logs, filter.clone(), false)?;
+    let mut parser1 = get_parser(base_primary, base_logs, matches.value_of("filter"))?;
+
     let (k_total, _) = parser1.count_all_keys_and_values();
     let mut k_added = 0;
 
@@ -105,7 +99,12 @@ fn main() -> Result<(), Error> {
     //   If present, compare the hash
     //     If same, it's a match (ignore it)
     //     If different, it's an update
-    let mut parser2 = Parser::from_path(comparison_primary, comparison_logs, filter, false)?;
+
+    let mut parser2 = get_parser(
+        comparison_primary,
+        comparison_logs,
+        matches.value_of("filter"),
+    )?;
     let (k_total, _) = parser2.count_all_keys_and_values();
     let mut k_added = 0;
     for key in parser2.iter() {
@@ -201,6 +200,23 @@ fn main() -> Result<(), Error> {
     writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
 
     Ok(())
+}
+
+fn get_parser(
+    primary: String,
+    logs: Option<Vec<String>>,
+    filter: Option<&str>,
+) -> Result<Parser, Error> {
+    let mut parser_builder = ParserBuilder::from_path(primary);
+    if let Some(f) = filter {
+        parser_builder = parser_builder.with_filter(Filter::from_path(
+            RegQueryBuilder::from_key(f).return_child_keys(true).build(),
+        ));
+    }
+    for log in logs.unwrap_or_default() {
+        parser_builder = parser_builder.with_transaction_log(log);
+    }
+    parser_builder.build()
 }
 
 fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {

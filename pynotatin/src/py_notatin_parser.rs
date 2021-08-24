@@ -19,7 +19,7 @@ use crate::err::PyNotatinError;
 use crate::py_notatin_key::PyNotatinKey;
 use crate::py_notatin_value::PyNotatinValue;
 use crate::util::{init_logging, FileOrFileLike};
-use notatin::{cell_key_node::CellKeyNode, parser::Parser};
+use notatin::{cell_key_node::CellKeyNode, parser::Parser, parser_builder::{ParserBuilder, ParserBuilderTrait}};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::PyIterProtocol;
@@ -52,16 +52,15 @@ impl PyNotatinParser {
         let boxed_read_seek = match file_or_file_like {
             FileOrFileLike::File(s) => {
                 let file = File::open(s)?;
-
                 let reader = BufReader::with_capacity(4096, file);
-
                 Box::new(reader) as Box<dyn ReadSeek + Send>
             }
             FileOrFileLike::FileLike(f) => Box::new(f) as Box<dyn ReadSeek + Send>,
         };
 
-        let parser =
-            Parser::from_read_seek(boxed_read_seek, None, None, false).map_err(PyNotatinError)?;
+        let parser = ParserBuilder::from_file(boxed_read_seek)
+            .build()
+            .map_err(PyNotatinError)?;
         Ok(PyNotatinParser {
             inner: Some(parser),
         })
@@ -174,7 +173,8 @@ impl PyNotatinKeysIterator {
     ) -> PyObject {
         match reg_key_result {
             Ok(reg_key) => {
-                match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py)) {
+                match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py))
+                {
                     Ok(py_reg_key) => py_reg_key,
                     Err(e) => e.to_object(py),
                 }
@@ -226,3 +226,4 @@ fn notatin(py: Python, m: &PyModule) -> PyResult<()> {
 
     Ok(())
 }
+

@@ -19,7 +19,7 @@ use crate::cell_key_value::CellKeyValue;
 use crate::cell_value::CellState;
 use crate::err::Error;
 use crate::file_info::FileInfo;
-use crate::filter::{Filter, FilterFlags, RegQuery};
+use crate::filter::{Filter, FilterFlags, RegQueryBuilder};
 use crate::impl_flags_from_bits;
 use crate::impl_serialize_for_bitflags;
 use crate::log::{LogCode, Logs};
@@ -507,11 +507,11 @@ impl CellKeyNode {
         if sub_path.is_empty() {
             Some(self.clone())
         } else {
-            let filter = Filter::from_path(RegQuery::from_key(
-                &format!("{}\\{}", self.path, sub_path),
-                true,
-                false,
-            ));
+            let filter = Filter::from_path(
+                RegQueryBuilder::from_key(&format!("{}\\{}", self.path, sub_path))
+                    .key_path_has_root(true)
+                    .build(),
+            );
             self.get_sub_key_internal(&parser.file_info, &mut parser.state, &filter, None)
         }
     }
@@ -774,18 +774,21 @@ impl_flags_from_bits! { KeyNodeFlags, u16 }
 mod tests {
     use super::*;
     use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
-    use crate::filter::RegQuery;
+    use crate::filter::RegQueryBuilder;
+    use crate::parser_builder::{ParserBuilder, ParserBuilderTrait};
     use nom::error::ErrorKind;
 
     #[test]
     fn test_iterator() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            "Control Panel\\Accessibility\\Keyboard Response",
-            false,
-            true,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key("Control Panel\\Accessibility\\Keyboard Response")
+                .return_child_keys(true)
+                .build(),
+        );
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         for key in parser.iter_include_ancestors() {
             for val in key.value_iter() {
                 println!("{}", val.value_name);
@@ -795,9 +798,11 @@ mod tests {
 
     #[test]
     fn test_get_sub_key_by_path() {
-        let filter = Filter::from_path(RegQuery::from_key("Control Panel", false, false));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(RegQueryBuilder::from_key("Control Panel").build());
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut key = parser.next_key_postorder(true).unwrap();
 
         let sub_key = key
@@ -819,7 +824,9 @@ mod tests {
         let invalid_sub_key = key.get_sub_key_by_path(&mut parser, "Accessibility\\Nope");
         assert_eq!(None, invalid_sub_key);
 
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let mut key = parser.get_root_key().unwrap().unwrap();
         let sub_key = key.get_sub_key_by_path(&mut parser, "").unwrap();
         assert_eq!(
@@ -830,13 +837,12 @@ mod tests {
 
     #[test]
     fn test_get_sub_key_by_index() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            "Control Panel\\Accessibility",
-            false,
-            false,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter =
+            Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut key = parser.next_key_postorder(true).unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
         assert_eq!(
@@ -855,13 +861,12 @@ mod tests {
 
     #[test]
     fn test_next_sub_key() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            "Control Panel\\Accessibility",
-            false,
-            false,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter =
+            Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut key = parser.next_key_postorder(true).unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
         assert_eq!(
@@ -877,13 +882,13 @@ mod tests {
 
     #[test]
     fn test_get_value() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            "Control Panel\\Accessibility\\Keyboard Response",
-            false,
-            false,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key("Control Panel\\Accessibility\\Keyboard Response").build(),
+        );
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let key = parser.iter_postorder_include_ancestors().next().unwrap();
         let val = key.get_value("delayBeforeAcceptance");
         let hash_array: [u8; blake3::OUT_LEN] = [

@@ -17,134 +17,47 @@
 use crate::base_block::{BaseBlock, BaseBlockBase, FileType};
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions, FilterMatchState};
 use crate::err::Error;
-use crate::file_info::{FileInfo, ReadSeek};
-use crate::filter::{Filter, RegQuery};
+use crate::file_info::FileInfo;
+use crate::filter::{Filter, RegQueryBuilder};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::{LogCode, Logs};
 use crate::state::State;
 use crate::transaction_log::TransactionLog;
 use std::collections::HashMap;
-use std::path::Path;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
     https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-primary-files
 */
+
+/// `Parser` should be constructed using `ParserBuilder`
+/// ```
+/// use notatin::filter::{Filter, RegQueryBuilder};
+/// use notatin::parser_builder::{ParserBuilder, ParserBuilderTrait};
+///
+/// ParserBuilder::from_path("system")
+///     .with_filter(Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build())) // optional
+///     .with_transaction_log("system.log1") // optional
+///     .with_transaction_log("system.log2") // optional
+///     .recover_deleted(true) // optional
+///     .build();
+/// ```
 #[derive(Debug)]
 pub struct Parser {
     pub(crate) file_info: FileInfo,
     pub(crate) state: State,
-    filter: Filter,
-    base_block: Option<BaseBlock>,
-    hive_bin_header: Option<HiveBinHeader>,
-    cell_key_node_root: Option<CellKeyNode>,
+    pub(crate) filter: Filter,
+    pub(crate) base_block: Option<BaseBlock>,
+    pub(crate) hive_bin_header: Option<HiveBinHeader>,
+    pub(crate) cell_key_node_root: Option<CellKeyNode>,
 
     // members to support iteration. TODO: move into ParserIterator, along with state. Then Parser can be used immutably
-    stack_to_traverse: Vec<CellKeyNode>,
-    stack_to_return: Vec<CellKeyNode>,
-    get_modified: bool,
+    pub(crate) stack_to_traverse: Vec<CellKeyNode>,
+    pub(crate) stack_to_return: Vec<CellKeyNode>,
+    pub(crate) get_modified: bool,
 }
 
 impl Parser {
-    pub fn from_path<T: AsRef<Path>>(
-        primary_path: T,
-        transaction_log_paths: Option<Vec<T>>,
-        filter: Option<Filter>,
-        recover_deleted: bool,
-    ) -> Result<Self, Error> {
-        match transaction_log_paths {
-            Some(log_paths) => {
-                let mut fh_logs = Vec::new();
-                for log_path in log_paths {
-                    fh_logs.push(std::fs::File::open(log_path)?);
-                }
-                Self::from_file_info_with_logs(
-                    FileInfo::from_path(primary_path)?,
-                    fh_logs,
-                    filter,
-                    recover_deleted,
-                )
-            }
-            None => {
-                Self::from_file_info(FileInfo::from_path(primary_path)?, filter, recover_deleted)
-            }
-        }
-    }
-
-    pub fn from_read_seek<T: ReadSeek>(
-        primary_file: T,
-        transaction_logs: Option<Vec<T>>,
-        filter: Option<Filter>,
-        recover_deleted: bool,
-    ) -> Result<Self, Error> {
-        match transaction_logs {
-            Some(transaction_logs) => Self::from_file_info_with_logs(
-                FileInfo::from_read_seek(primary_file)?,
-                transaction_logs,
-                filter,
-                recover_deleted,
-            ),
-            None => Self::from_file_info(
-                FileInfo::from_read_seek(primary_file)?,
-                filter,
-                recover_deleted,
-            ),
-        }
-    }
-
-    pub fn from_read_seek_with_filter<T: ReadSeek>(
-        primary_file: T,
-        filter: Filter,
-    ) -> Result<Self, Error> {
-        Self::from_file_info(FileInfo::from_read_seek(primary_file)?, Some(filter), false)
-    }
-
-    fn from_file_info(
-        file_info: FileInfo,
-        filter: Option<Filter>,
-        recover_deleted: bool,
-    ) -> Result<Self, Error> {
-        let mut parser = Parser {
-            file_info,
-            state: State::from_transaction_logs(None, recover_deleted),
-            filter: filter.unwrap_or_default(),
-            base_block: None,
-            hive_bin_header: None,
-            cell_key_node_root: None,
-            stack_to_traverse: Vec::new(),
-            stack_to_return: Vec::new(),
-            get_modified: false,
-        };
-        parser.init(recover_deleted)?;
-        Ok(parser)
-    }
-
-    fn from_file_info_with_logs<T: ReadSeek>(
-        file_info: FileInfo,
-        transaction_logs: Vec<T>,
-        filter: Option<Filter>,
-        recover_deleted: bool,
-    ) -> Result<Self, Error> {
-        let (parsed_transaction_logs, warning_logs) =
-            TransactionLog::parse(Some(transaction_logs))?;
-        let mut parser = Parser {
-            file_info,
-            state: State::from_transaction_logs(parsed_transaction_logs, recover_deleted),
-            filter: filter.unwrap_or_default(),
-            base_block: None,
-            hive_bin_header: None,
-            cell_key_node_root: None,
-            stack_to_traverse: Vec::new(),
-            stack_to_return: Vec::new(),
-            get_modified: false,
-        };
-        parser.init(recover_deleted)?;
-        if let Some(warning_logs) = warning_logs {
-            parser.state.info.extend(warning_logs);
-        }
-        Ok(parser)
-    }
-
     pub fn init(&mut self, recover_deleted: bool) -> Result<(), Error> {
         let (is_supported_format, has_bad_checksum) = self.init_base_block()?;
         if is_supported_format {
@@ -448,11 +361,9 @@ impl Parser {
     ) -> Result<Option<CellKeyNode>, Error> {
         let key_path_sans_root =
             &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
-        let filter = Filter::from_path(RegQuery::from_key(
-            &(key_path_sans_root.to_string() + "\\" + name),
-            false,
-            false,
-        ));
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key(&(key_path_sans_root.to_string() + "\\" + name)).build(),
+        );
         cell_key_node
             .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, None, false)
             .0
@@ -695,14 +606,16 @@ impl Iterator for ParserIterator<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::filter::{Filter, RegQuery, RegQueryComponent};
+    use crate::filter::{Filter, RegQuery, RegQueryBuilder, RegQueryComponent};
+    use crate::parser_builder::{ParserBuilder, ParserBuilderTrait};
     use md5;
     use regex::Regex;
 
     #[test]
     fn test_parser_iter_postorder() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let (keys, values) = parser.count_all_keys_and_values();
         assert_eq!((2853, 5523), (keys, values));
 
@@ -719,7 +632,9 @@ mod tests {
 
     #[test]
     fn test_parser_next_key_postorder() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let mut keys = 0;
         let mut values = 0;
         parser.init_key_iter();
@@ -741,7 +656,9 @@ mod tests {
 
     #[test]
     fn test_parser_iterator_preorder_next() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let mut keys = 0;
         let mut values = 0;
         parser.init_key_iter();
@@ -754,7 +671,9 @@ mod tests {
 
     #[test]
     fn test_parser_iterator_postorder_next() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, true).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let mut keys = 0;
         let mut values = 0;
         parser.init_key_iter();
@@ -777,13 +696,12 @@ mod tests {
     #[test]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
-        /*let mut parser = Parser::from_path(
-            "test_data/system",
-            Some(vec!["test_data/system.log1", "test_data/system.log2"]),
-            None,
-            true,
-        )
-        .unwrap();
+        /*let mut parser = ParserBuilder::from_path("test_data/system")
+            .with_transaction_log("test_data/system.log1")
+            .with_transaction_log("test_data/system.log2")
+            .recover_deleted(true)
+            .build()
+            .unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified();
@@ -802,17 +720,19 @@ mod tests {
 
     #[test]
     fn test_reg_logs_with_filter() {
-        let mut parser = Parser::from_path(
-            "test_data/system",
-            Some(vec!["test_data/system.log1", "test_data/system.log2"]),
-            Some(Filter::from_path(RegQuery::from_key(
-                r"RegistryTest",
-                false,
-                true,
-            ))),
-            true,
-        )
-        .unwrap();
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key(r"RegistryTest")
+                .return_child_keys(true)
+                .build(),
+        );
+
+        let mut parser = ParserBuilder::from_path("test_data/system")
+            .with_filter(filter)
+            .with_transaction_log("test_data/system.log1")
+            .with_transaction_log("test_data/system.log2")
+            .recover_deleted(true)
+            .build()
+            .unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified();
@@ -828,17 +748,17 @@ mod tests {
             )
         );
 
-        let mut parser = Parser::from_path(
-            "test_data/system",
-            Some(vec!["test_data/system.log1", "test_data/system.log2"]),
-            Some(Filter::from_path(RegQuery::from_key(
-                r"RegistryTest",
-                false,
-                true,
-            ))),
-            false,
-        )
-        .unwrap();
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key(r"RegistryTest")
+                .return_child_keys(true)
+                .build(),
+        );
+        let mut parser = ParserBuilder::from_path("test_data/system")
+            .with_filter(filter)
+            .with_transaction_log("test_data/system.log1")
+            .with_transaction_log("test_data/system.log2")
+            .build()
+            .unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified();
@@ -857,13 +777,15 @@ mod tests {
 
     #[test]
     fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            &r"Software\Microsoft".to_string(),
-            false,
-            true,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key(r"Software\Microsoft")
+                .return_child_keys(true)
+                .build(),
+        );
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let (keys, values) = parser.count_all_keys_and_values();
         assert_eq!(
             (2392, 4791),
@@ -896,7 +818,9 @@ mod tests {
 
     #[test]
     fn test_parser_get_key() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let sub_key = parser
             .get_key("Control Panel\\Accessibility\\Keyboard Response", false)
             .unwrap()
@@ -932,13 +856,12 @@ mod tests {
 
     #[test]
     fn test_parser_get_sub_key() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            "Control Panel\\Accessibility",
-            false,
-            false,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter =
+            Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
         let sub_key = parser
             .get_sub_key(&mut key, "Keyboard Response")
@@ -950,9 +873,12 @@ mod tests {
         let sub_key = parser.get_sub_key(&mut key, "Nope").unwrap();
         assert_eq!(None, sub_key);
 
-        let filter = Filter::from_path(RegQuery::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", true, false));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(RegQueryBuilder::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility").key_path_has_root(true).build());
+
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
         let sub_key = parser
             .get_sub_key(&mut key, "Keyboard Response")
@@ -967,13 +893,13 @@ mod tests {
 
     #[test]
     fn test_get_parent_key() {
-        let filter = Filter::from_path(RegQuery::from_key(
-            "Control Panel\\Accessibility\\On",
-            false,
-            false,
-        ));
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let filter = Filter::from_path(
+            RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build(),
+        );
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
         let parent_key = parser.get_parent_key(&mut key).unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", parent_key.path);
@@ -982,7 +908,9 @@ mod tests {
 
     #[test]
     fn test_get_root_key() {
-        let mut parser = Parser::from_path("test_data/NTUSER.DAT", None, None, false).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .build()
+            .unwrap();
         let root_key = parser.get_root_key().unwrap().unwrap();
         assert_eq!(
             "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}",
@@ -1006,8 +934,10 @@ mod tests {
                 children: false,
             }),
         };
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut parser_iter = parser.iter_postorder_include_ancestors();
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Preference", key.path);
@@ -1031,8 +961,10 @@ mod tests {
         let filter = Filter {
             reg_query: Some(reg_query),
         };
-        let mut parser =
-            Parser::from_path("test_data/NTUSER.DAT", None, Some(filter), false).unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+            .with_filter(filter)
+            .build()
+            .unwrap();
         let mut parser_iter = parser.iter_postorder_include_ancestors();
         let key = parser_iter.next().unwrap();
         assert_eq!(

@@ -20,8 +20,8 @@ use notatin::{
     cell_key_value::CellKeyValue,
     cli_util::parse_paths,
     err::Error,
-    filter::{Filter, RegQuery},
-    parser::Parser,
+    filter::{Filter, RegQueryBuilder},
+    parser_builder::{ParserBuilder, ParserBuilderTrait},
     util::{format_date_time, write_common_export_format},
 };
 use std::{
@@ -68,17 +68,18 @@ fn main() -> Result<(), Error> {
     let (input, logs) = parse_paths(matches.value_of("input").expect("Required value"));
     let output = matches.value_of("output").expect("Required value");
     let recover = matches.is_present("recover");
-
-    let filter;
-    if let Some(f) = matches.value_of("filter") {
-        filter = Some(Filter::from_path(RegQuery::from_key(f, false, true)));
-    } else {
-        filter = None;
-    }
-
     let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
-    let mut parser = Parser::from_path(input, logs, filter, recover)?;
+    let mut parser_builder = ParserBuilder::from_path(input).recover_deleted(recover);
+    if let Some(f) = matches.value_of("filter") {
+        parser_builder = parser_builder.with_filter(Filter::from_path(
+            RegQueryBuilder::from_key(f).return_child_keys(true).build(),
+        ));
+    }
+    for log in logs.unwrap_or_default() {
+        parser_builder = parser_builder.with_transaction_log(log);
+    }
+    let mut parser = parser_builder.build()?;
 
     let write_file = File::create(output)?;
 

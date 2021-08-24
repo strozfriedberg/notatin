@@ -30,6 +30,7 @@ pub mod log;
 pub(crate) mod macros;
 pub mod marvin_hash;
 pub mod parser;
+pub mod parser_builder;
 pub mod state;
 pub mod sub_key_list_lf;
 pub mod sub_key_list_lh;
