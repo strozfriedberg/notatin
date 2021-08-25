@@ -298,7 +298,7 @@ impl CellKeyNode {
         }
     }
 
-    pub fn is_deleted(&self) -> bool {
+    pub fn is_cell_state_deleted(&self) -> bool {
         self.state == CellState::DeletedPrimaryFile
             || self.state == CellState::DeletedPrimaryFileSlack
             || self.state == CellState::DeletedTransactionLog

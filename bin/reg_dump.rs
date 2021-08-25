@@ -109,7 +109,7 @@ fn main() -> Result<(), Error> {
 }
 
 fn get_value_status(value: &CellKeyValue, modified: bool) -> String {
-    if value.is_deleted() {
+    if value.is_cell_state_deleted() {
         "Deleted".to_string()
     } else if modified {
         "Modified".to_string()
@@ -125,7 +125,7 @@ fn write_value_tsv(
     status: &str,
 ) -> Result<(), Error> {
     let write_status;
-    if value.is_deleted() {
+    if value.is_cell_state_deleted() {
         write_status = "Deleted";
     } else {
         write_status = status;
@@ -153,7 +153,7 @@ fn versions_tsv(
     key_modified: bool,
 ) -> Result<(), Error> {
     let write_status;
-    if cell_key_node.is_deleted() {
+    if cell_key_node.is_cell_state_deleted() {
         write_status = "Deleted";
     } else {
         write_status = status;
