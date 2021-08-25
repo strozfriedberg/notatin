@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use crate::cell_value::CellState;
+use crate::cell::CellState;
 use crate::err::Error;
 use crate::log::{LogCode, Logs};
 use crate::parser::Parser;
@@ -137,13 +137,18 @@ pub(crate) fn string_from_bytes(
     }
 }
 
-/// Consumes any padding at the end of a hive bin cell.
+/// Consumes and returns any slack at the end of a hive bin cell.
 pub(crate) fn parser_eat_remaining(
     input: &[u8],
     cell_size: u32,
     bytes_consumed: usize,
 ) -> IResult<&[u8], &[u8]> {
-    take!(input, cell_size as usize - bytes_consumed)
+    let cell_size_usize = cell_size as usize;
+    if bytes_consumed < cell_size_usize {
+        take!(input, cell_size_usize - bytes_consumed)
+    } else {
+        Ok((input, &input[0..0]))
+    }
 }
 
 /// Converts a u64 filetime to a DateTime<Utc>
@@ -212,26 +217,6 @@ pub(crate) fn to_hex_string(bytes: &[u8]) -> String {
 
 #[allow(dead_code)]
 pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> Result<(), Error> {
-    /* ## Registry common export format
-    ## Key format
-    ## key,Is Free (A for in use, U for unused),Absolute offset in decimal,KeyPath,,,,LastWriteTime in UTC
-    ## Value format
-    ## value,Is Free (A for in use, U for unused),Absolute offset in decimal,KeyPath,Value name,Data type (as decimal integer),Value data as bytes separated by a singe space,
-    ##
-    ## Comparison of deleted keys/values is done to compare recovery of vk and nk records, not the algorithm used to associate deleted keys to other keys and their values.
-    ## When including deleted keys, only the recovered key name should be included, not the full path to the deleted key.
-    ## When including deleted values, do not include the parent key information.
-    ##
-    ## The following totals should also be included
-    ##
-    ## total_keys: total in use key count
-    ## total_values: total in use value count
-    ## total_deleted_keys: total recovered free key count
-    ## total_deleted_values: total recovered free value count
-    ##
-    ## Before comparison with other common export implementations, the files should be sorted
-    ##*/
-
     fn escape_string(orig: &str) -> String {
         if orig.contains(',') || orig.contains('\"') {
             let escaped = &str::replace(orig, "\"", "\"\"");
@@ -241,69 +226,106 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
         }
     }
 
+    fn get_alloc_char(state: &CellState) -> &str {
+        match state {
+            CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => "U",
+            CellState::DeletedTransactionLog => "D",
+            CellState::ModifiedTransactionLog => "M",
+            CellState::Allocated => "A",
+        }
+    }
+
     let mut writer = BufWriter::new(output);
-    let mut keys = 0;
-    let mut values = 0;
     writeln!(
         &mut writer,
         "## Registry common export format\n\
         ## Key format\n\
-        ## key,Is Free (A for in use, U for unused),Absolute offset in decimal,KeyPath,,,,LastWriteTime in UTC\n\
+        ## key,Is Free,Absolute offset in decimal,KeyPath,,,,LastWriteTime in UTC\n\
         ## Value format\n\
-        ## value,Is Free (A for in use, U for unused),Absolute offset in decimal,KeyPath,Value name,Data type (as decimal integer),Value data as bytes separated by a singe space,\n\
+        ## value,Is Free,Absolute offset in decimal,KeyPath,Value name,Data type (as decimal integer),Value data as bytes separated by a singe space,\n\
+        ## \"Is Free\" interpretation: A for in use, U for unused from the primary file, D for deleted from the transaction log, M for modified from the transaction log\n\
         ##\n\
-        ## Comparison of deleted keys/values is done to compare recovery of vk and nk records, not the algorithm used to associate deleted keys to other keys and their values.\n\
-        ## When including deleted keys, only the recovered key name should be included, not the full path to the deleted key.\n\
-        ## When including deleted values, do not include the parent key information.\n\
+        ## Comparison of unused keys/values is done to compare recovery of vk and nk records, not the algorithm used to associate unused keys to other keys and their values.\n\
+        ## When including unused keys, only the recovered key name should be included, not the full path to the unused key.\n\
+        ## When including unused values, do not include the parent key information.\n\
         ##\n\
         ## The following totals should also be included\n\
         ##\n\
         ## total_keys: total in use key count\n\
         ## total_values: total in use value count\n\
-        ## total_deleted_keys: total recovered free key count\n\
-        ## total_deleted_values: total recovered free value count\n\
+        ## total_unused_keys: total free key count (recovered from primary file)\n\
+        ## total_unused_values: total free value count (recovered from primary file)\n\
+        ## total_deleted_from_transaction_log_keys: total deleted key count (recovered from transaction logs)\n\
+        ## total_deleted_from_transaction_log_values: total deleted value count (recovered from transaction logs)\n\
+        ## total_modified_from_transaction_log_keys: total modified key count (recovered from transaction logs)\n\
+        ## total_modified_from_transaction_log_values: total modified value count (recovered from transaction logs)\n\
         ##\n\
         ## Before comparison with other common export implementations, the files should be sorted\n\
         ##"
     )?;
+    let mut keys = 0;
+    let mut values = 0;
+    let mut unused_keys = 0;
+    let mut unused_values = 0;
+    let mut tx_log_deleted_keys = 0;
+    let mut tx_log_deleted_values = 0;
+    let mut tx_log_modified_keys = 0;
+    let mut tx_log_modified_values = 0;
+
     for key in parser.iter() {
-        keys += 1;
-        let alloc_char = match key.state {
-            CellState::DeletedPrimaryFile => "U",
-            CellState::DeletedTransactionLog => "D",
-            CellState::ModifiedTransactionLog => "M",
-            CellState::Allocated => "A",
+        let key_path = match key.state {
+            CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
+                unused_keys += 1;
+                &key.key_name
+            } // ## When including unused keys, only the recovered key name should be included, not the full path to the deleted key.
+            CellState::Allocated => {
+                keys += 1;
+                &key.path[1..]
+            } // drop the first slash to match EZ's formatting
+            CellState::DeletedTransactionLog => {
+                tx_log_deleted_keys += 1;
+                &key.path[1..]
+            } // drop the first slash to match EZ's formatting
+            CellState::ModifiedTransactionLog => {
+                tx_log_modified_keys += 1;
+                &key.path[1..]
+            } // drop the first slash to match EZ's formatting
         };
         writeln!(
             &mut writer,
             "key,{},{},{},,,,{}",
-            alloc_char,
+            get_alloc_char(&key.state),
             key.detail.file_offset_absolute,
-            escape_string(&key.path[1..]), // drop the first slash to match EZ's formatting
+            escape_string(key_path),
             format_date_time(key.last_key_written_date_and_time)
         )?;
-        let key_name = key.key_name.clone();
+
         for value in key.value_iter() {
-            let name;
-            if value.value_name.is_empty() {
-                name = "(default)";
-            } else {
-                name = &value.value_name;
-            }
-            let alloc_char = match value.state {
-                CellState::DeletedPrimaryFile => "U",
-                CellState::DeletedTransactionLog => "D",
-                CellState::ModifiedTransactionLog => "M",
-                CellState::Allocated => "A",
+            let key_name = match value.state {
+                CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
+                    unused_values += 1;
+                    ""
+                } // ## When including unused values, do not include the parent key information
+                CellState::Allocated => {
+                    values += 1;
+                    &key.key_name[..]
+                }
+                CellState::DeletedTransactionLog => {
+                    tx_log_deleted_values += 1;
+                    &key.key_name[..]
+                }
+                CellState::ModifiedTransactionLog => {
+                    tx_log_modified_values += 1;
+                    &key.key_name[..]
+                }
             };
-            values += 1;
             writeln!(
                 &mut writer,
                 "value,{},{},{},{},{:?},{},",
-                alloc_char,
+                get_alloc_char(&value.state),
                 value.detail.file_offset_absolute,
-                escape_string(&key_name),
-                escape_string(name),
+                escape_string(key_name),
+                escape_string(&value.get_pretty_name()),
                 value.data_type as u32,
                 to_hex_string(&value.detail.value_bytes.unwrap_or_default()[..])
             )?;
@@ -311,8 +333,28 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     }
     writeln!(&mut writer, "## total_keys: {}", keys)?;
     writeln!(&mut writer, "## total_values: {}", values)?;
-    writeln!(&mut writer, "## total_deleted_keys")?;
-    writeln!(&mut writer, "## total_deleted_values")?;
+    writeln!(&mut writer, "## total_unused_keys: {}", unused_keys)?;
+    writeln!(&mut writer, "## total_unused_values: {}", unused_values)?;
+    writeln!(
+        &mut writer,
+        "## total_deleted_from_transaction_log_keys: {}",
+        tx_log_deleted_keys
+    )?;
+    writeln!(
+        &mut writer,
+        "## total_deleted_from_transaction_log_values: {}",
+        tx_log_deleted_values
+    )?;
+    writeln!(
+        &mut writer,
+        "## total_modified_from_transaction_log_keys: {}",
+        tx_log_modified_keys
+    )?;
+    writeln!(
+        &mut writer,
+        "## total_modified_from_transaction_log_values: {}",
+        tx_log_modified_values
+    )?;
     Ok(())
 }
 

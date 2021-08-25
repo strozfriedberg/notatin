@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
+use crate::cell::CellState;
 use crate::cell_big_data::CellBigData;
-use crate::cell_value::{CellState, CellValue, DecodableValue, DecodeFormat};
+use crate::cell_value::{CellValue, DecodableValue, DecodeFormat};
 use crate::err::Error;
 use crate::file_info::FileInfo;
 use crate::impl_serialize_for_bitflags;
@@ -188,7 +189,7 @@ impl_serialize_for_bitflags! {CellKeyValueFlags}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CellKeyValueDetail {
     pub file_offset_absolute: usize,
-    pub size: u32,
+    pub size: i32,
     pub value_name_size: u16, // If the value name size is 0 the value name is "(default)"
     pub data_size_raw: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
     pub data_offset_relative: u32,
@@ -206,8 +207,8 @@ pub struct CellKeyValue {
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
     pub data_offsets_absolute: Vec<usize>,
-    /// value_name is an empty string for an unnamed value. This is displayed as `(Default)` in Windows Registry Editor;
-    /// use `CellKeyValue::get_pretty_name()` to get `(default)` rather than empty string for the name
+    /// value_name is an empty string for an unnamed value. This is displayed as __(Default)__ in Windows Registry Editor;
+    /// use `CellKeyValue::get_pretty_name()` to get __(default)__ rather than empty string for the name (lowercase to be compatible with `python-registry`)
     pub value_name: String,
     pub state: CellState,
     pub logs: Logs,
@@ -228,78 +229,106 @@ impl Serialize for CellKeyValue {
 }
 
 impl CellKeyValue {
-    pub const BIG_DATA_SIZE_THRESHOLD: u32 = 16344;
+    pub(crate) const BIG_DATA_SIZE_THRESHOLD: u32 = 16344;
+    const MIN_CELL_VALUE_SIZE: usize = 24;
 
-    pub(crate) fn from_bytes<'a>(
-        file_info: &FileInfo,
-        input: &'a [u8],
+    fn check_size(size: i32, input: &[u8]) -> bool {
+        let size_abs = size.abs() as usize;
+        Self::MIN_CELL_VALUE_SIZE <= size_abs && size_abs <= input.len()
+    }
+
+    /// Returns the byte length of the cell (regardless of if it's allocated or free)
+    pub(crate) fn get_cell_size(&self) -> usize {
+        self.detail.size.abs() as usize
+    }
+
+    pub(crate) fn is_free(&self) -> bool {
+        self.detail.size > 0
+    }
+
+    pub(crate) fn slack_offset_absolute(&self) -> usize {
+        self.detail.file_offset_absolute + self.get_cell_size() - self.detail.slack.len()
+    }
+
+    pub(crate) fn from_bytes(
+        input_orig: &[u8],
+        file_offset_absolute: usize,
         sequence_num: Option<u32>,
-    ) -> IResult<&'a [u8], Self> {
-        let start_pos = input.as_ptr() as usize;
-        let file_offset_absolute = file_info.get_file_offset_from_ptr(start_pos);
+    ) -> IResult<&[u8], Self> {
+        let start_pos_ptr = input_orig.as_ptr() as usize;
 
-        let (input, size) = le_i32(input)?;
-        let (input, _signature) = tag("vk")(input)?;
-        let (input, value_name_size) = le_u16(input)?;
-        let (input, data_size_raw) = le_u32(input)?;
-        let (input, data_offset_relative) = le_u32(input)?;
-        let (input, data_type_raw) = le_u32(input)?;
-        let (input, flags_raw) = le_u16(input)?;
-        let flags = CellKeyValueFlags::from_bits(flags_raw).unwrap_or_default();
-        let (input, padding) = le_u16(input)?;
-        let (input, value_name_bytes) = take!(input, value_name_size)?;
-
-        const DEVPROP_MASK_TYPE: u32 = 0x00000FFF;
-        let data_type_bytes = data_type_raw & DEVPROP_MASK_TYPE;
-        let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
-            None => CellKeyValueDataTypes::REG_UNKNOWN,
-            Some(data_type) => data_type,
-        };
-
-        let mut logs = Logs::default();
-        let value_name;
-        if value_name_size == 0 {
-            value_name = String::new();
+        let (input, size) = le_i32(input_orig)?;
+        if !Self::check_size(size, input_orig) {
+            Err(nom::Err::Error(nom::error::Error {
+                input,
+                code: nom::error::ErrorKind::Eof,
+            }))
         } else {
-            value_name = util::string_from_bytes(
-                flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII),
-                value_name_bytes,
-                value_name_size,
-                &mut logs,
-                "value_name_bytes",
-            );
-        }
-        let size_abs = size.abs() as u32;
-        let (input, slack) =
-            util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
+            let (input, _signature) = tag("vk")(input)?;
+            let (input, value_name_size) = le_u16(input)?;
+            let (input, data_size_raw) = le_u32(input)?;
+            let (input, data_offset_relative) = le_u32(input)?;
+            let (input, data_type_raw) = le_u32(input)?;
+            let (input, flags_raw) = le_u16(input)?;
+            let flags = CellKeyValueFlags::from_bits(flags_raw).unwrap_or_default();
+            let (input, padding) = le_u16(input)?;
+            let (input, value_name_bytes) = take!(input, value_name_size)?;
 
-        Ok((
-            input,
-            CellKeyValue {
-                detail: CellKeyValueDetail {
-                    file_offset_absolute,
-                    size: size_abs,
+            const DEVPROP_MASK_TYPE: u32 = 0x00000FFF;
+            let data_type_bytes = data_type_raw & DEVPROP_MASK_TYPE;
+            let data_type = match CellKeyValueDataTypes::from_u32(data_type_bytes) {
+                None => CellKeyValueDataTypes::REG_UNKNOWN,
+                Some(data_type) => data_type,
+            };
+
+            let mut logs = Logs::default();
+            let value_name;
+            if value_name_size == 0 {
+                value_name = String::new();
+            } else {
+                value_name = util::string_from_bytes(
+                    flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII),
+                    value_name_bytes,
                     value_name_size,
-                    data_size_raw,
-                    data_offset_relative,
-                    data_type_raw,
-                    flags_raw,
-                    padding,
-                    value_bytes: None,
-                    slack: slack.to_vec(),
+                    &mut logs,
+                    "value_name_bytes",
+                );
+            }
+            let size_abs = size.abs() as u32;
+            let (input, slack) = util::parser_eat_remaining(
+                input,
+                size_abs,
+                input.as_ptr() as usize - start_pos_ptr,
+            )?;
+
+            Ok((
+                input,
+                CellKeyValue {
+                    detail: CellKeyValueDetail {
+                        file_offset_absolute,
+                        size,
+                        value_name_size,
+                        data_size_raw,
+                        data_offset_relative,
+                        data_type_raw,
+                        flags_raw,
+                        padding,
+                        value_bytes: None,
+                        slack: slack.to_vec(),
+                    },
+                    data_type,
+                    flags,
+                    value_name,
+                    state: CellState::Allocated,
+                    data_offsets_absolute: Vec::new(),
+                    logs,
+                    versions: Vec::new(),
+                    hash: None,
+                    sequence_num,
+                    updated_by_sequence_num: None,
                 },
-                data_type,
-                flags,
-                value_name,
-                state: CellState::Allocated,
-                data_offsets_absolute: Vec::new(),
-                logs,
-                versions: Vec::new(),
-                hash: None,
-                sequence_num,
-                updated_by_sequence_num: None,
-            },
-        ))
+            ))
+        }
     }
 
     fn read_value_bytes_direct(
@@ -401,6 +430,7 @@ impl CellKeyValue {
 
     pub fn is_deleted(&self) -> bool {
         self.state == CellState::DeletedPrimaryFile
+            || self.state == CellState::DeletedPrimaryFileSlack
             || self.state == CellState::DeletedTransactionLog
     }
 }
@@ -476,13 +506,12 @@ mod tests {
             buffer: slice.to_vec(),
         };
         let mut state = State::default();
-        let (_, mut key_value) =
-            CellKeyValue::from_bytes(&file_info, &file_info.buffer[..], None).unwrap();
+        let (_, mut key_value) = CellKeyValue::from_bytes(&file_info.buffer[..], 0, None).unwrap();
 
         let expected_output = CellKeyValue {
             detail: CellKeyValueDetail {
                 file_offset_absolute: 0,
-                size: 48,
+                size: -48,
                 value_name_size: 18,
                 data_size_raw: 8,
                 data_offset_relative: 3864,

@@ -47,7 +47,7 @@ impl FileInfo {
     }
 
     pub(crate) fn get_file_offset_from_ptr(&self, ptr: usize) -> usize {
-        ptr - self.buffer.as_ptr() as usize //self.start_pos
+        ptr - self.buffer.as_ptr() as usize
     }
 }
 

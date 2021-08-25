@@ -15,9 +15,9 @@
  */
 
 use crate::base_block::BaseBlockBase;
+use crate::cell::CellState;
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 use crate::cell_key_value::CellKeyValue;
-use crate::cell_value::CellState;
 use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::log::{LogCode, Logs};
@@ -58,6 +58,7 @@ struct DirtyPage {
     pub page_bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 enum ModifiedListType {
     Updated,
     Deleted,
@@ -544,11 +545,11 @@ impl TransactionAnalyzer<'_> {
             match modified_list_type {
                 ModifiedListType::Updated => {
                     full_key.state = CellState::ModifiedTransactionLog;
-                    state.updated_keys.add(path, full_key)
+                    state.updated_keys.add(path, full_key);
                 }
                 ModifiedListType::Deleted => {
                     full_key.state = CellState::DeletedTransactionLog;
-                    state.deleted_keys.add(parent_path, full_key)
+                    state.deleted_keys.add(parent_path, full_key);
                 }
             }
         }
@@ -564,8 +565,8 @@ impl TransactionAnalyzer<'_> {
         modified_list_type: ModifiedListType,
     ) -> Result<(), Error> {
         let (_, mut full_value) = CellKeyValue::from_bytes(
-            self.prior_file_info,
             &self.prior_file_info.buffer[file_offset_absolute..],
+            file_offset_absolute,
             Some(old_sequence_number),
         )?;
         full_value.read_value_bytes(self.prior_file_info, state);
@@ -574,11 +575,11 @@ impl TransactionAnalyzer<'_> {
         match modified_list_type {
             ModifiedListType::Updated => {
                 full_value.state = CellState::ModifiedTransactionLog;
-                state.updated_values.add(path, &name, full_value)
+                state.updated_values.add(path, &name, full_value);
             }
             ModifiedListType::Deleted => {
                 full_value.state = CellState::DeletedTransactionLog;
-                state.deleted_values.add(path, full_value)
+                state.deleted_values.add(path, full_value);
             }
         }
         Ok(())
