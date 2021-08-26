@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     use notatin::{
         cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags},
-        cell_value::CellState,
+        cell::CellState,
         log::Logs,
     };
 
