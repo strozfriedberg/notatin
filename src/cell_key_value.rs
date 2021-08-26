@@ -430,7 +430,7 @@ impl CellKeyValue {
 }
 
 impl DecodableValue for CellKeyValue {
-    fn decode_content(&self, format: DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
+    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
         if let Some(value_bytes) = &self.detail.value_bytes {
             match format {
                 DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
@@ -664,7 +664,7 @@ mod tests {
             sequence_num: None,
             updated_by_sequence_num: None,
         };
-        let (decoded_value, _) = cell_key_value.decode_content(DecodeFormat::Lznt1, 8);
+        let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Lznt1, 8);
         let expected_output = CellValue::ValueBinary(
             [
                 10, 0, 12, 0, 211, 12, 0, 0, 118, 18, 111, 104, 17, 31, 215, 1, 247, 109, 31, 2,
@@ -806,13 +806,13 @@ mod tests {
         assert_eq!(expected_output, decoded_value);
 
         let cell_value_lznt1 = CellValue::ValueBinary(lznt1);
-        let (decoded_value, _) = cell_value_lznt1.decode_content(DecodeFormat::Lznt1, 8);
+        let (decoded_value, _) = cell_value_lznt1.decode_content(&DecodeFormat::Lznt1, 8);
         assert_eq!(expected_output, decoded_value);
 
         let (decoded_value, _) = cell_key_value
-            .decode_content(DecodeFormat::Lznt1, 8)
+            .decode_content(&DecodeFormat::Lznt1, 8)
             .0
-            .decode_content(DecodeFormat::Utf16Multiple, 1860);
+            .decode_content(&DecodeFormat::Utf16Multiple, 1860);
         let expected_output = CellValue::ValueMultiString(vec![
             r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string(),
             r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\LOGONUI.EXE".to_string(),
@@ -867,7 +867,7 @@ mod tests {
         ];
         cell_key_value.detail.data_size_raw = utf16_multiple.len() as u32;
         cell_key_value.detail.value_bytes = Some(utf16_multiple.clone());
-        let (decoded_value, _) = cell_key_value.decode_content(DecodeFormat::Utf16Multiple, 0);
+        let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Utf16Multiple, 0);
         let expected_output = CellValue::ValueMultiString(vec![
             "NAS_requested_data.7z".to_string(),
             "BlackHarrier_D7_i686_FDE_20141219.dd.7z".to_string(),
@@ -883,7 +883,7 @@ mod tests {
 
         let cell_value_utf16_multiple = CellValue::ValueBinary(utf16_multiple);
         let (decoded_value, _) =
-            cell_value_utf16_multiple.decode_content(DecodeFormat::Utf16Multiple, 0);
+            cell_value_utf16_multiple.decode_content(&DecodeFormat::Utf16Multiple, 0);
         assert_eq!(expected_output, decoded_value);
 
         let utf16 = vec![
@@ -893,12 +893,12 @@ mod tests {
         ];
         cell_key_value.detail.data_size_raw = utf16.len() as u32;
         cell_key_value.detail.value_bytes = Some(utf16.clone());
-        let (decoded_value, _) = cell_key_value.decode_content(DecodeFormat::Utf16, 0);
+        let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Utf16, 0);
         let expected_output = CellValue::ValueString("NAS_requested_data.7z".to_string());
         assert_eq!(expected_output, decoded_value);
 
         let cell_value_utf16 = CellValue::ValueBinary(utf16);
-        let (decoded_value, _) = cell_value_utf16.decode_content(DecodeFormat::Utf16, 0);
+        let (decoded_value, _) = cell_value_utf16.decode_content(&DecodeFormat::Utf16, 0);
         assert_eq!(expected_output, decoded_value);
 
         let rot13 = vec![
@@ -911,12 +911,12 @@ mod tests {
         cell_key_value.detail.value_bytes = Some(rot13);
         cell_key_value.detail.data_type_raw = 1;
         cell_key_value.data_type = CellKeyValueDataTypes::REG_SZ;
-        let (decoded_value, _) = cell_key_value.decode_content(DecodeFormat::Rot13, 0);
+        let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Rot13, 0);
         let expected_output = CellValue::ValueString("Notatin unit test.".to_string());
         assert_eq!(expected_output, decoded_value);
 
         let cell_value_rot13 = CellValue::ValueString("Abgngva havg grfg.".to_string());
-        let (decoded_value, _) = cell_value_rot13.decode_content(DecodeFormat::Rot13, 0);
+        let (decoded_value, _) = cell_value_rot13.decode_content(&DecodeFormat::Rot13, 0);
         assert_eq!(expected_output, decoded_value);
     }
 

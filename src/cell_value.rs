@@ -32,6 +32,7 @@ pub enum CellValue {
     ValueError,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum DecodeFormat {
     Lznt1,
     Rot13,
@@ -40,7 +41,7 @@ pub enum DecodeFormat {
 }
 
 impl DecodableValue for CellValue {
-    fn decode_content(&self, format: DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
+    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
         match format {
             DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
                 if let CellValue::ValueBinary(b) = self {
@@ -60,7 +61,7 @@ impl DecodableValue for CellValue {
 }
 
 pub trait DecodableValue {
-    fn decode_content(&self, format: DecodeFormat, offset: usize) -> (CellValue, Option<Logs>);
+    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>);
 }
 
 impl dyn DecodableValue {
@@ -87,7 +88,7 @@ impl dyn DecodableValue {
 
     pub(crate) fn decode_bytes(
         value_bytes: &[u8],
-        format: DecodeFormat,
+        format: &DecodeFormat,
         offset: usize,
     ) -> (CellValue, Option<Logs>) {
         let mut warnings = Logs::default();

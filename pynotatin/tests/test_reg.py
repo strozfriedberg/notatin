@@ -22,7 +22,7 @@ import pytest
 
 from pathlib import Path
 
-from notatin import PyNotatinParser
+from notatin import PyNotatinParser, PyNotatinDecodeFormat
 
 @pytest.fixture
 def sample_parser():
@@ -33,6 +33,12 @@ def sample_parser():
 @pytest.fixture
 def sample_parser2():
     p = Path(__file__).parent.parent.parent / "test_data" / "system"
+    assert p.exists()
+    return p
+
+@pytest.fixture
+def sample_parser3():
+    p = Path(__file__).parent.parent.parent / "test_data" / "win7_ntuser.dat"
     assert p.exists()
     return p
 
@@ -154,3 +160,12 @@ def test_value_pretty_name(sample_parser):
                 assert value.pretty_name == "(default)"
             else:
                 assert value.pretty_name == value.name
+
+def test_value_decode(sample_parser3):
+    with open(sample_parser3, "rb") as m:
+        parser = PyNotatinParser(m)
+        key = parser.open("SOFTWARE\\7-Zip\\Compression\\")
+        value = key.value('ArcHistory')
+        assert value.name == "ArcHistory"
+        val = value.decode(PyNotatinDecodeFormat.utf16_multiple, 0).content
+        assert val == ['NAS_requested_data.7z', 'BlackHarrier_D7_i686_FDE_20141219.dd.7z', 'BlackHarrier_D7_amd64_20141217.7z', 'BlackHarrier_D7_amd64_FDE_20141217.7z', 'C:\\Users\\jmroberts\\Desktop\\USB_Research\\IEF.zip', 'Company_Report_10222013.vir.zip', 'LYNC.7z', 'viruses.zip', 'ALLDATA.txt.bz2']

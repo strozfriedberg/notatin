@@ -16,8 +16,9 @@
  */
 
 use crate::err::PyNotatinError;
+use crate::py_notatin_content::PyNotatinContent;
 use crate::py_notatin_key::PyNotatinKey;
-use crate::py_notatin_value::PyNotatinValue;
+use crate::py_notatin_value::{PyNotatinDecodeFormat, PyNotatinValue};
 use crate::util::{init_logging, FileOrFileLike};
 use notatin::{cell_key_node::CellKeyNode, parser::Parser, parser_builder::ParserBuilder};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
@@ -179,10 +180,7 @@ impl PyNotatinKeysIterator {
                     Err(e) => e.to_object(py),
                 }
             }
-            Err(e) => {
-                let err = PyErr::from(e);
-                err.to_object(py)
-            }
+            Err(e) => PyErr::from(e).to_object(py),
         }
     }
 
@@ -223,7 +221,8 @@ fn notatin(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyNotatinParser>()?;
     m.add_class::<PyNotatinKey>()?;
     m.add_class::<PyNotatinValue>()?;
+    m.add_class::<PyNotatinContent>()?;
+    m.add_class::<PyNotatinDecodeFormat>()?;
 
     Ok(())
 }
-
