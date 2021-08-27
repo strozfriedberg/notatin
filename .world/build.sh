@@ -12,10 +12,12 @@ PYTHON=python3
 VENV=venv
 VENVBIN=bin
 
+. "$VENV/$VENVBIN/activate"
+
+maturin build --release -o out
+
 cargo test
 cargo clippy --all-features --all-targets
-
-. "$VENV/$VENVBIN/activate"
 
 pushd pynotatin
 
