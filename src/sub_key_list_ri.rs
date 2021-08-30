@@ -59,7 +59,7 @@ impl SubKeyListRi {
         Ok((
             input,
             SubKeyListRi {
-                size: size.abs() as u32,
+                size: size.unsigned_abs(),
                 count,
                 items: list_offsets,
             },

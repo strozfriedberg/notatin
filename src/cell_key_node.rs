@@ -101,7 +101,7 @@ pub struct CellKeyNode {
     pub key_name: String,
 
     pub path: String,
-    pub state: CellState,
+    pub cell_state: CellState,
     pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
     pub logs: Logs,
     pub sequence_num: Option<u32>,
@@ -134,7 +134,7 @@ impl Default for CellKeyNode {
             number_of_key_values: u32::default(),
             key_name: String::default(),
             path: String::default(),
-            state: CellState::Allocated,
+            cell_state: CellState::Allocated,
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),
@@ -236,7 +236,7 @@ impl CellKeyNode {
             path.push('\\');
             path += &key_name;
 
-            let size_abs = size.abs() as u32;
+            let size_abs = size.unsigned_abs();
             let (input, slack) = util::parser_eat_remaining(
                 input,
                 size_abs,
@@ -272,7 +272,7 @@ impl CellKeyNode {
                 number_of_key_values,
                 key_name,
                 path,
-                state: CellState::Allocated,
+                cell_state: CellState::Allocated,
                 sub_values: Vec::new(),
                 logs,
                 cell_sub_key_offsets_absolute: Vec::new(),
@@ -296,12 +296,6 @@ impl CellKeyNode {
 
             Ok((input, cell_key_node))
         }
-    }
-
-    pub fn is_cell_state_deleted(&self) -> bool {
-        self.state == CellState::DeletedPrimaryFile
-            || self.state == CellState::DeletedPrimaryFileSlack
-            || self.state == CellState::DeletedTransactionLog
     }
 
     fn hash(
@@ -456,7 +450,7 @@ impl CellKeyNode {
         sequence_num: Option<u32>,
         get_deleted_and_modified: bool,
     ) -> (Vec<Self>, bool) {
-        if self.state == CellState::Allocated {
+        if self.cell_state == CellState::Allocated {
             let mut children = Vec::with_capacity(self.number_of_sub_keys as usize);
             let mut found_key = false;
             if self.number_of_sub_keys > 0 {
@@ -971,7 +965,7 @@ mod tests {
             value_name: "DelayBeforeAcceptance".to_string(),
             logs: Logs::default(),
             versions: Vec::new(),
-            state: CellState::Allocated,
+            cell_state: CellState::Allocated,
             hash: Some(hash_array.into()),
             sequence_num: None,
             updated_by_sequence_num: None,
@@ -1037,7 +1031,7 @@ mod tests {
             number_of_key_values: 0,
             key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
             path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
-            state: CellState::Allocated,
+            cell_state: CellState::Allocated,
             sub_values: Vec::new(),
             logs: Logs::default(),
             cell_sub_key_offsets_absolute: Vec::new(),

@@ -17,13 +17,21 @@
 use nom::{alt, named, tag};
 use serde::Serialize;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum CellState {
-    Allocated,
-    ModifiedTransactionLog,
-    DeletedTransactionLog,
-    DeletedPrimaryFile,
-    DeletedPrimaryFileSlack,
+    DeletedTransactionLog = -3,
+    DeletedPrimaryFile = -2,
+    DeletedPrimaryFileSlack = -1,
+    Allocated = 0,
+    ModifiedTransactionLog = 1,
+    // All Deleted* values are < 0 for support of `is_deleted()`.
+    // Make sure any new Deleted* values follow this pattern.
+}
+
+impl CellState {
+    pub fn is_deleted(self) -> bool {
+        (self as i8) < 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

@@ -210,7 +210,7 @@ pub struct CellKeyValue {
     /// value_name is an empty string for an unnamed value. This is displayed as __(Default)__ in Windows Registry Editor;
     /// use `CellKeyValue::get_pretty_name()` to get __(default)__ rather than empty string for the name (lowercase to be compatible with `python-registry`)
     pub value_name: String,
-    pub state: CellState,
+    pub cell_state: CellState,
     pub logs: Logs,
 
     pub versions: Vec<Self>,
@@ -294,7 +294,7 @@ impl CellKeyValue {
                     "value_name_bytes",
                 );
             }
-            let size_abs = size.abs() as u32;
+            let size_abs = size.unsigned_abs();
             let (input, slack) = util::parser_eat_remaining(
                 input,
                 size_abs,
@@ -319,7 +319,7 @@ impl CellKeyValue {
                     data_type,
                     flags,
                     value_name,
-                    state: CellState::Allocated,
+                    cell_state: CellState::Allocated,
                     data_offsets_absolute: Vec::new(),
                     logs,
                     versions: Vec::new(),
@@ -427,12 +427,6 @@ impl CellKeyValue {
             self.value_name.clone()
         }
     }
-
-    pub fn is_cell_state_deleted(&self) -> bool {
-        self.state == CellState::DeletedPrimaryFile
-            || self.state == CellState::DeletedPrimaryFileSlack
-            || self.state == CellState::DeletedTransactionLog
-    }
 }
 
 impl DecodableValue for CellKeyValue {
@@ -481,7 +475,7 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
             data_offsets_absolute: &other.data_offsets_absolute,
             sequence_num: &other.sequence_num,
             updated_by_sequence_num: &other.updated_by_sequence_num,
-            state: &other.state,
+            state: &other.cell_state,
             value,
             value_parse_warnings,
         }
@@ -524,7 +518,7 @@ mod tests {
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             value_name: "IE5_UA_Backup_Flag".to_string(),
-            state: CellState::Allocated,
+            cell_state: CellState::Allocated,
             data_offsets_absolute: Vec::new(),
             logs: Logs::default(),
             versions: Vec::new(),
@@ -662,7 +656,7 @@ mod tests {
             data_type: CellKeyValueDataTypes::REG_BIN,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             value_name: "test".to_string(),
-            state: CellState::Allocated,
+            cell_state: CellState::Allocated,
             data_offsets_absolute: Vec::new(),
             logs: Logs::default(),
             versions: Vec::new(),

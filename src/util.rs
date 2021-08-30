@@ -273,7 +273,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     let mut tx_log_modified_values = 0;
 
     for key in parser.iter() {
-        let key_path = match key.state {
+        let key_path = match key.cell_state {
             CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
                 unused_keys += 1;
                 &key.key_name
@@ -294,14 +294,14 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
         writeln!(
             &mut writer,
             "key,{},{},{},,,,{}",
-            get_alloc_char(&key.state),
+            get_alloc_char(&key.cell_state),
             key.detail.file_offset_absolute,
             escape_string(key_path),
             format_date_time(key.last_key_written_date_and_time)
         )?;
 
         for value in key.value_iter() {
-            let key_name = match value.state {
+            let key_name = match value.cell_state {
                 CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
                     unused_values += 1;
                     ""
@@ -322,7 +322,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
             writeln!(
                 &mut writer,
                 "value,{},{},{},{},{:?},{},",
-                get_alloc_char(&value.state),
+                get_alloc_char(&value.cell_state),
                 value.detail.file_offset_absolute,
                 escape_string(key_name),
                 escape_string(&value.get_pretty_name()),

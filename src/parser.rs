@@ -320,7 +320,7 @@ impl Parser {
         let mut values_deleted = 0;
 
         for key in self.iter() {
-            if key.is_cell_state_deleted() {
+            if key.cell_state.is_deleted() {
                 keys_deleted += 1;
             } else {
                 keys += 1;
@@ -328,7 +328,7 @@ impl Parser {
             keys_versions += key.versions.len();
 
             for value in key.value_iter() {
-                if value.is_cell_state_deleted() {
+                if value.cell_state.is_deleted() {
                     values_deleted += 1;
                 } else {
                     values += 1;

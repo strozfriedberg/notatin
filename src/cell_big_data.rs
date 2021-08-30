@@ -53,7 +53,7 @@ impl CellBigData {
             input,
             (
                 CellBigData {
-                    size: size.abs() as u32,
+                    size: size.unsigned_abs(),
                     count,
                     segment_list_offset_relative,
                     logs: Logs::default(),
@@ -81,7 +81,7 @@ impl CellBigData {
             if data_size_remaining > 0 {
                 let (input, size) = CellBigData::parse_big_data_size(file_info, *offset)?;
                 let size_to_read = std::cmp::min(
-                    size.abs() as u32,
+                    size.unsigned_abs(),
                     std::cmp::min(data_size_remaining, CellKeyValue::BIG_DATA_SIZE_THRESHOLD),
                 );
                 big_data_buffer.extend_from_slice(&input[..size_to_read as usize]);

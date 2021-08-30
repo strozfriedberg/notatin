@@ -115,7 +115,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         cell_state: CellState,
         force_add: bool,
     ) -> usize {
-        let mut offset_ret = 1; // return bytes to increment offset
+        let mut offset_ret = 1; // Return bytes to increment offset. If we encounter a parseable cell, we will increment by the size of the cell; if we don't, we inc by one.
         match CellKeyValue::from_bytes(input_orig, file_offset_absolute, None) {
             Ok((_, mut cell_key_value)) => {
                 self.find_cells_in_slack(
@@ -125,7 +125,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                 if force_add || cell_key_value.is_free() {
                     cell_key_value.read_value_bytes(self.file_info, &mut self.state);
                     offset_ret = cell_key_value.get_cell_size();
-                    cell_key_value.state = cell_state;
+                    cell_key_value.cell_state = cell_state;
                     self.state.deleted_values.add("", cell_key_value);
                 }
             }
@@ -149,7 +149,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         cell_state: CellState,
         force_add: bool,
     ) -> usize {
-        let mut offset_ret = 1; // return bytes to increment offset
+        let mut offset_ret = 1; // Return bytes to increment offset. If we encounter a parseable cell, we will increment by the size of the cell; if we don't, we inc by one.
         match CellKeyNode::read_from_slice(
             self.file_info,
             &mut self.state,
@@ -171,7 +171,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                     );
                     if force_add || full_key.is_free() {
                         offset_ret = full_key.get_cell_size();
-                        full_key.state = cell_state;
+                        full_key.cell_state = cell_state;
                         self.state.deleted_keys.add("", full_key);
                     }
                 }

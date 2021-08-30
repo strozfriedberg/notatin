@@ -544,11 +544,11 @@ impl TransactionAnalyzer<'_> {
             full_key.sub_values = vec![];
             match modified_list_type {
                 ModifiedListType::Updated => {
-                    full_key.state = CellState::ModifiedTransactionLog;
+                    full_key.cell_state = CellState::ModifiedTransactionLog;
                     state.updated_keys.add(path, full_key)
                 }
                 ModifiedListType::Deleted => {
-                    full_key.state = CellState::DeletedTransactionLog;
+                    full_key.cell_state = CellState::DeletedTransactionLog;
                     state.deleted_keys.add(parent_path, full_key)
                 }
             }
@@ -574,11 +574,11 @@ impl TransactionAnalyzer<'_> {
         let name = full_value.value_name.clone();
         match modified_list_type {
             ModifiedListType::Updated => {
-                full_value.state = CellState::ModifiedTransactionLog;
+                full_value.cell_state = CellState::ModifiedTransactionLog;
                 state.updated_values.add(path, &name, full_value)
             }
             ModifiedListType::Deleted => {
-                full_value.state = CellState::DeletedTransactionLog;
+                full_value.cell_state = CellState::DeletedTransactionLog;
                 state.deleted_values.add(path, full_value)
             }
         }

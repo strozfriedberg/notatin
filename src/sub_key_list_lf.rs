@@ -56,7 +56,7 @@ impl SubKeyListLf {
         Ok((
             input,
             SubKeyListLf {
-                size: size.abs() as u32,
+                size: size.unsigned_abs(),
                 count,
                 items,
             },
