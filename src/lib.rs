@@ -15,6 +15,7 @@
  */
 
 pub mod base_block;
+pub mod cell;
 pub mod cell_big_data;
 pub mod cell_key_node;
 pub mod cell_key_security;
@@ -31,6 +32,7 @@ pub(crate) mod macros;
 pub mod marvin_hash;
 pub mod parser;
 pub mod parser_builder;
+pub mod parser_recover_deleted;
 pub mod state;
 pub mod sub_key_list_lf;
 pub mod sub_key_list_lh;

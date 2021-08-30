@@ -19,7 +19,6 @@ use crate::err::Error;
 use crate::file_info::FileInfo;
 use crate::hive_bin_cell;
 use crate::state::State;
-use crate::util;
 use nom::{
     bytes::complete::tag,
     number::complete::{le_i32, le_u16, le_u32},
@@ -51,21 +50,16 @@ impl hive_bin_cell::CellSubKeyList for SubKeyListRi {
 impl SubKeyListRi {
     /// Uses nom to parse an ri sub key list (ri) hive bin cell.
     pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
-        let start_pos = input.as_ptr() as usize;
         let (input, size) = le_i32(input)?;
         let (input, _signature) = tag("ri")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, list_offsets) =
             nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
 
-        let size_abs = size.abs() as u32;
-        let (input, _) =
-            util::parser_eat_remaining(input, size_abs, input.as_ptr() as usize - start_pos)?;
-
         Ok((
             input,
             SubKeyListRi {
-                size: size_abs,
+                size: size.unsigned_abs(),
                 count,
                 items: list_offsets,
             },
@@ -172,7 +166,7 @@ mod tests {
                 },
             ],
         };
-        let remaining: [u8; 0] = [0; 0];
+        let remaining = [56, 0, 0, 0];
         let expected = Ok((&remaining[..], expected_output));
 
         assert_eq!(expected, ret);

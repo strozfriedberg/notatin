@@ -21,6 +21,7 @@ use crate::file_info::FileInfo;
 use crate::filter::{Filter, RegQueryBuilder};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::{LogCode, Logs};
+use crate::parser_recover_deleted::ParserRecoverDeleted;
 use crate::state::State;
 use crate::transaction_log::TransactionLog;
 use std::collections::HashMap;
@@ -62,7 +63,7 @@ impl Parser {
         let (is_supported_format, has_bad_checksum) = self.init_base_block()?;
         if is_supported_format {
             if recover_deleted {
-                //   self.init_recover_deleted()?;
+                self.init_recover_deleted()?;
             }
             self.apply_transaction_logs(has_bad_checksum)?;
 
@@ -144,6 +145,28 @@ impl Parser {
             .base
             .file_type
             != FileType::Unknown
+    }
+
+    fn init_recover_deleted(&mut self) -> Result<(), Error> {
+        self.find_free_keys_and_values()?;
+        Ok(())
+    }
+
+    fn find_free_keys_and_values(&mut self) -> Result<bool, Error> {
+        let base_block_base = &self.base_block.as_ref().expect("we just parsed this").base;
+        let hive_bins_size = base_block_base.hive_bins_data_size;
+
+        let mut file_offset_absolute = self.file_info.hbin_offset_absolute;
+        let mut parser_recover_deleted = ParserRecoverDeleted {
+            file_info: &self.file_info,
+            state: &mut self.state,
+        };
+        while file_offset_absolute < hive_bins_size as usize {
+            let file_offset_absolute_ret =
+                parser_recover_deleted.find_free_keys_and_values(file_offset_absolute)?;
+            file_offset_absolute = file_offset_absolute_ret;
+        }
+        Ok(true)
     }
 
     fn prepare_transaction_logs(
@@ -296,8 +319,8 @@ impl Parser {
         let mut values_versions = 0;
         let mut values_deleted = 0;
 
-        for key in self.iter_include_ancestors() {
-            if key.is_deleted() {
+        for key in self.iter() {
+            if key.cell_state.is_deleted() {
                 keys_deleted += 1;
             } else {
                 keys += 1;
@@ -305,7 +328,7 @@ impl Parser {
             keys_versions += key.versions.len();
 
             for value in key.value_iter() {
-                if value.is_deleted() {
+                if value.cell_state.is_deleted() {
                     values_deleted += 1;
                 } else {
                     values += 1;
@@ -737,7 +760,7 @@ mod tests {
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (2, 4, 1, 3, 1, 3),
+            (1, 4, 1, 3, 1, 3),
             (
                 keys,
                 keys_versions,
@@ -763,7 +786,7 @@ mod tests {
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified();
         assert_eq!(
-            (2, 0, 0, 3, 0, 0),
+            (1, 0, 0, 3, 0, 0),
             (
                 keys,
                 keys_versions,
@@ -813,6 +836,27 @@ mod tests {
             (2392, 4791),
             (keys, values),
             "key and/or value count doesn't match expected"
+        );
+    }
+
+    #[test]
+    fn test_parser_primary_deleted() {
+        let mut parser = ParserBuilder::from_path("test_data/system")
+            .recover_deleted(true)
+            .build()
+            .unwrap();
+        let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
+            parser._count_all_keys_and_values_with_modified();
+        assert_eq!(
+            (45527, 0, 192, 108055, 0, 225),
+            (
+                keys,
+                keys_versions,
+                keys_deleted,
+                values,
+                values_versions,
+                values_deleted
+            )
         );
     }
 

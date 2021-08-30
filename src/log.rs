@@ -105,6 +105,7 @@ pub enum LogCode {
     WarningIterator,
     WarningBaseBlock,
     WarningParse,
+    WarningRecovery,
     Info,
 }
 

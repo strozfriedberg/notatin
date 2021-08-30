@@ -19,7 +19,7 @@ use crate::err::PyNotatinError;
 use crate::py_notatin_key::PyNotatinKey;
 use crate::py_notatin_value::PyNotatinValue;
 use crate::util::{init_logging, FileOrFileLike};
-use notatin::{cell_key_node::CellKeyNode, parser::Parser, parser_builder::{ParserBuilder, ParserBuilderTrait}};
+use notatin::{cell_key_node::CellKeyNode, parser::Parser, parser_builder::ParserBuilder};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::PyIterProtocol;

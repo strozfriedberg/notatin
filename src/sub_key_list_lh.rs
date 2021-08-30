@@ -41,7 +41,7 @@ impl SubKeyListLh {
         Ok((
             input,
             SubKeyListLh {
-                size: size.abs() as u32,
+                size: size.unsigned_abs(),
                 count,
                 items,
             },

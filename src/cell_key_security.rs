@@ -68,7 +68,7 @@ impl CellKeySecurity {
             input,
             CellKeySecurity {
                 detail: CellKeySecurityDetail {
-                    size: size.abs() as u32,
+                    size: size.unsigned_abs(),
                     unknown1,
                     flink,
                     blink,

@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     use notatin::{
         cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags},
-        cell_value::CellState,
+        cell::CellState,
         log::Logs,
     };
 
@@ -116,7 +116,7 @@ mod tests {
                 data_type: CellKeyValueDataTypes::REG_SZ,
                 flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
                 value_name: "IE5_UA_Backup_Flag".to_string(),
-                state: CellState::Allocated,
+                cell_state: CellState::Allocated,
                 data_offsets_absolute: Vec::new(),
                 logs: Logs::default(),
                 versions: Vec::new(),
