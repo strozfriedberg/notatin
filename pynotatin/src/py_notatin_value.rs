@@ -316,7 +316,7 @@ mod tests {
                 data_type: CellKeyValueDataTypes::REG_BIN,
                 flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
                 value_name: "test".to_string(),
-                state: CellState::Allocated,
+                cell_state: CellState::Allocated,
                 data_offsets_absolute: Vec::new(),
                 logs: Logs::default(),
                 versions: Vec::new(),
