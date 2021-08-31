@@ -6,15 +6,15 @@ if [[ "$Linkage" == 'static' || "$Target" != 'linux' ]]; then
   exit
 fi
 
-BASEDIR=$(pwd)
-
-PYTHON=python3
-VENV=venv
-VENVBIN=bin
-
-. "$VENV/$VENVBIN/activate"
-
-maturin build --release -o out
+#BASEDIR=$(pwd)
+#
+#PYTHON=python3
+#VENV=venv
+#VENVBIN=bin
+#
+#. "$VENV/$VENVBIN/activate"
+#
+#maturin build --release -o out
 
 cargo test
 cargo clippy --all-features --all-targets
@@ -28,4 +28,4 @@ poetry run pytest
 
 popd
 
-deactivate
+#deactivate
