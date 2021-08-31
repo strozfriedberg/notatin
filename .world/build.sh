@@ -16,4 +16,6 @@ cargo clippy --all-features --all-targets
 poetry run maturin develop
 poetry run pytest
 
+poetry run maturin build --release
+
 popd
