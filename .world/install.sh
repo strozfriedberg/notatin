@@ -6,4 +6,4 @@ if [[ "$Linkage" == 'static' || "$Target" != 'linux' ]]; then
   exit
 fi
 
-# TODO: How to install?
+cp pynotatin/target/wheels/*.whl $INSTALL/lib/python
