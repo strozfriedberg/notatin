@@ -6,4 +6,5 @@ if [[ "$Linkage" == 'static' || "$Target" != 'linux' ]]; then
   exit
 fi
 
-cp pynotatin/target/wheels/*.whl $INSTALL/lib/python
+mkdir -p $INSTALL/lib/python/pynotatin
+cp pynotatin/target/wheels/* $INSTALL/lib/python/pynotatin
