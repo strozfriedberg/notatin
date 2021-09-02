@@ -36,9 +36,6 @@ pub trait ReadSeek: Read + Seek {
 impl<T: Read + Seek> ReadSeek for T {}
 
 #[pyclass(subclass)]
-/// PyNotatinParser(self, path_or_file_like, /)
-/// --
-///
 /// Returns an instance of the parser.
 /// Works on both a path (string), or a file-like object.
 pub struct PyNotatinParser {

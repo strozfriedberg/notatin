@@ -40,12 +40,16 @@ pub enum DecodeFormat {
     Utf16Multiple,
 }
 
-impl DecodableValue for CellValue {
-    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
-        match format {
+impl DecodeFormat {
+    pub(crate) fn decode(
+        &self,
+        cell_value: &CellValue,
+        offset: usize,
+    ) -> (CellValue, Option<Logs>) {
+        match self {
             DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
-                if let CellValue::ValueBinary(b) = self {
-                    <dyn DecodableValue>::decode_bytes(b, format, offset)
+                if let CellValue::ValueBinary(b) = cell_value {
+                    self.decode_bytes(b, offset)
                 } else {
                     let mut warnings = Logs::default();
                     warnings.add(
@@ -55,44 +59,13 @@ impl DecodableValue for CellValue {
                     (CellValue::ValueError, Some(warnings))
                 }
             }
-            DecodeFormat::Rot13 => <dyn DecodableValue>::decode_string(self),
-        }
-    }
-}
-
-pub trait DecodableValue {
-    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>);
-}
-
-impl dyn DecodableValue {
-    pub(crate) fn decode_string(cell_value: &CellValue) -> (CellValue, Option<Logs>) {
-        match cell_value {
-            CellValue::ValueString(s) => (CellValue::ValueString(util::decode_rot13(s)), None),
-            CellValue::ValueMultiString(m) => {
-                let mut decoded = vec![];
-                for s in m {
-                    decoded.push(util::decode_rot13(s));
-                }
-                (CellValue::ValueMultiString(decoded), None)
-            }
-            _ => {
-                let mut warnings = Logs::default();
-                warnings.add(
-                    LogCode::WarningConversion,
-                    &"Unsupported CellValue/format pair",
-                );
-                (CellValue::ValueError, Some(warnings))
-            }
+            DecodeFormat::Rot13 => Self::decode_string(cell_value),
         }
     }
 
-    pub(crate) fn decode_bytes(
-        value_bytes: &[u8],
-        format: &DecodeFormat,
-        offset: usize,
-    ) -> (CellValue, Option<Logs>) {
+    fn decode_bytes(&self, value_bytes: &[u8], offset: usize) -> (CellValue, Option<Logs>) {
         let mut warnings = Logs::default();
-        match format {
+        match self {
             DecodeFormat::Lznt1 => {
                 match util::decode_lznt1(value_bytes, offset, value_bytes.len()) {
                     Ok(decompressed) => (CellValue::ValueBinary(decompressed), None),
@@ -123,4 +96,35 @@ impl dyn DecodableValue {
             _ => (CellValue::ValueNone, warnings.get_option()),
         }
     }
+
+    fn decode_string(cell_value: &CellValue) -> (CellValue, Option<Logs>) {
+        match cell_value {
+            CellValue::ValueString(s) => (CellValue::ValueString(util::decode_rot13(s)), None),
+            CellValue::ValueMultiString(m) => {
+                let mut decoded = vec![];
+                for s in m {
+                    decoded.push(util::decode_rot13(s));
+                }
+                (CellValue::ValueMultiString(decoded), None)
+            }
+            _ => {
+                let mut warnings = Logs::default();
+                warnings.add(
+                    LogCode::WarningConversion,
+                    &"Unsupported CellValue/format pair",
+                );
+                (CellValue::ValueError, Some(warnings))
+            }
+        }
+    }
+}
+
+impl DecodableValue for CellValue {
+    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
+        format.decode(self, offset)
+    }
+}
+
+pub trait DecodableValue {
+    fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>);
 }

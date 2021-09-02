@@ -25,6 +25,7 @@ use notatin::{
 use pyo3::{Py, PyResult, Python};
 
 #[pyclass(subclass)]
+/// Returns an instance of a cell value.
 pub struct PyNotatinValue {
     inner: CellKeyValue,
 }
@@ -32,6 +33,7 @@ pub struct PyNotatinValue {
 #[pymethods]
 impl PyNotatinValue {
     #[getter]
+    /// Returns the value as bytes
     pub fn value(&self, py: Python) -> PyObject {
         pyo3::types::PyBytes::new(
             py,
@@ -51,21 +53,19 @@ impl PyNotatinValue {
     }
 
     #[getter]
+    /// Returns the data type as an integer
     pub fn raw_data_type(&self, py: Python) -> PyObject {
         self.inner.detail.data_type_raw.to_object(py)
     }
 
     #[getter]
-    pub fn data_type(&self, py: Python) -> PyObject {
-        self.inner.detail.data_type_raw.to_object(py)
-    }
-
-    #[getter]
+    /// Returns the value as typed data
     pub fn content(&self, py: Python) -> Option<PyObject> {
         let (content, _) = self.inner.get_content();
         Self::prepare_content(py, &content)
     }
 
+    /// Decodes the content using one of the supported decoders (see `PyNotatinDecodeFormat`)
     pub fn decode(
         &self,
         py: Python,
@@ -83,6 +83,7 @@ impl PyNotatinValue {
 }
 
 impl PyNotatinValue {
+    /// Returns a PyNotatinValue representing the `cell_key_value` parameter
     pub fn from_cell_key_value(
         py: Python,
         cell_key_value: CellKeyValue,
@@ -95,6 +96,7 @@ impl PyNotatinValue {
         )
     }
 
+    /// Returns typed data based upon the values's data_type
     pub(crate) fn prepare_content(py: Python, content: &CellValue) -> Option<PyObject> {
         match content {
             CellValue::ValueString(content) => Some(content.to_object(py)),

@@ -431,18 +431,8 @@ impl CellKeyValue {
 
 impl DecodableValue for CellKeyValue {
     fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
-        if let Some(value_bytes) = &self.detail.value_bytes {
-            match format {
-                DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
-                    return <dyn DecodableValue>::decode_bytes(value_bytes, format, offset);
-                }
-                DecodeFormat::Rot13 => {
-                    let (content, _) = self.get_content();
-                    return <dyn DecodableValue>::decode_string(&content);
-                }
-            }
-        }
-        (CellValue::ValueNone, None)
+        let (content, _) = self.get_content();
+        format.decode(&content, offset)
     }
 }
 
@@ -485,9 +475,9 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
     use std::fs::File;
     use std::io::Read;
-    use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 
     #[test]
     fn test_parse_cell_key_value() {
@@ -572,7 +562,9 @@ mod tests {
 
         let mut lznt1_decoded_file = File::open("test_data/lznt1_decoded_buffer").unwrap();
         let mut lznt1_decoded_buffer = Vec::new();
-        lznt1_decoded_file.read_to_end(&mut lznt1_decoded_buffer).unwrap();
+        lznt1_decoded_file
+            .read_to_end(&mut lznt1_decoded_buffer)
+            .unwrap();
         let expected_output = CellValue::ValueBinary(lznt1_decoded_buffer);
         assert_eq!(expected_output, decoded_value);
 
@@ -602,12 +594,16 @@ mod tests {
             .decode_content(&DecodeFormat::Lznt1, 8)
             .0
             .decode_content(&DecodeFormat::Utf16, 1860);
-        let expected_output = CellValue::ValueString(r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string());
+        let expected_output = CellValue::ValueString(
+            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string(),
+        );
         assert_eq!(expected_output, decoded_value);
 
         let mut utf16_multiple_file = File::open("test_data/utf16_multiple_buffer").unwrap();
         let mut utf16_multiple_buffer = Vec::new();
-        utf16_multiple_file.read_to_end(&mut utf16_multiple_buffer).unwrap();
+        utf16_multiple_file
+            .read_to_end(&mut utf16_multiple_buffer)
+            .unwrap();
         cell_key_value.detail.data_size_raw = utf16_multiple_buffer.len() as u32;
         cell_key_value.detail.value_bytes = Some(utf16_multiple_buffer.clone());
         let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Utf16Multiple, 0);
