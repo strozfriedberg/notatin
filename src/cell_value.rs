@@ -105,7 +105,7 @@ impl dyn DecodableValue {
             DecodeFormat::Utf16 => {
                 let s = util::from_utf16_le_string(
                     &value_bytes[offset..],
-                    value_bytes.len(),
+                    value_bytes.len() - offset,
                     &mut warnings,
                     "decode_content",
                 );
