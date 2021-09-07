@@ -78,7 +78,7 @@ fn main() -> Result<(), Error> {
         let path = key.path.clone();
         original_map.insert((path.clone(), None), key.hash); // TODO: update this to support deleted/modified as well. Sequence numbers, deleted/modified - that should be enough to get us to the original item
         for value in key.value_iter() {
-            original_map.insert((path.clone(), Some(value.get_pretty_name())), value.hash);
+            original_map.insert((path.clone(), Some(value.value_name)), value.hash);
         }
         k_added += 1;
         if k_added % 1000 == 0 {
@@ -120,7 +120,7 @@ fn main() -> Result<(), Error> {
 
         let path = key.path.clone();
         for value in key.value_iter() {
-            match original_map.remove(&(path.clone(), Some(value.get_pretty_name()))) {
+            match original_map.remove(&(path.clone(), Some(value.value_name.clone()))) {
                 Some(val) => {
                     if val != value.hash {
                         let original_key = parser1.get_key(&key.path, true).unwrap().unwrap();

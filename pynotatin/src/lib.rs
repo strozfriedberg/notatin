@@ -16,6 +16,7 @@
  */
 
 pub mod err;
+pub mod py_notatin_content;
 pub mod py_notatin_key;
 pub mod py_notatin_parser;
 pub mod py_notatin_value;
