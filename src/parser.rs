@@ -34,7 +34,7 @@ use std::collections::HashMap;
 /// `Parser` should be constructed using `ParserBuilder`
 /// ```
 /// use notatin::filter::{Filter, RegQueryBuilder};
-/// use notatin::parser_builder::{ParserBuilder, ParserBuilderTrait};
+/// use notatin::parser_builder::ParserBuilder;
 ///
 /// ParserBuilder::from_path("system")
 ///     .with_filter(Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build())) // optional
@@ -630,7 +630,7 @@ impl Iterator for ParserIterator<'_> {
 #[cfg(test)]
 mod tests {
     use crate::filter::{Filter, RegQuery, RegQueryBuilder, RegQueryComponent};
-    use crate::parser_builder::{ParserBuilder, ParserBuilderTrait};
+    use crate::parser_builder::ParserBuilder;
     use md5;
     use regex::Regex;
 
@@ -770,6 +770,18 @@ mod tests {
                 values_deleted
             )
         );
+
+        let mut parser = ParserBuilder::from_path("test_data/system")
+            .build()
+            .unwrap();
+        let _boo = parser._count_all_keys_and_values_with_modified();
+
+        let mut parser = ParserBuilder::from_path("test_data/system")
+            .with_transaction_log("test_data/system.log1")
+            .with_transaction_log("test_data/system.log2")
+            .build()
+            .unwrap();
+        let _boo = parser._count_all_keys_and_values_with_modified();
 
         let filter = Filter::from_path(
             RegQueryBuilder::from_key(r"RegistryTest")

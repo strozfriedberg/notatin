@@ -51,10 +51,10 @@ impl FileInfo {
     }
 }
 
-pub trait ReadSeek: Read + Seek {
+pub trait ReadSeek: Read + Seek + Send {
     fn tell(&mut self) -> io::Result<u64> {
         self.seek(SeekFrom::Current(0))
     }
 }
 
-impl<T: Read + Seek> ReadSeek for T {}
+impl<T: Read + Seek + Send> ReadSeek for T {}

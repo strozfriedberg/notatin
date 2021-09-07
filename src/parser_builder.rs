@@ -22,11 +22,7 @@ use crate::state::State;
 use crate::transaction_log::TransactionLog;
 use std::path::Path;
 
-pub trait ParserBuilderTrait {
-    fn with_filter(self, filter: Filter) -> Self;
-    fn recover_deleted(self, recover: bool) -> Self;
-}
-
+#[derive(Clone)]
 pub struct ParserBuilderBase {
     filter: Option<Filter>,
     recover_deleted: bool,
@@ -38,32 +34,30 @@ pub struct ParserBuilderFromPath {
     base: ParserBuilderBase,
 }
 
-impl ParserBuilderTrait for ParserBuilderFromPath {
-    fn with_filter(mut self, filter: Filter) -> Self {
+impl ParserBuilderFromPath {
+    pub fn with_filter(&mut self, filter: Filter) -> &mut Self {
         self.base.filter = Some(filter);
         self
     }
 
-    fn recover_deleted(mut self, recover: bool) -> Self {
+    pub fn recover_deleted(&mut self, recover: bool) -> &mut Self {
         self.base.recover_deleted = recover;
         self
     }
-}
 
-impl ParserBuilderFromPath {
-    pub fn with_transaction_log<T: AsRef<Path> + 'static>(mut self, log: T) -> Self {
+    pub fn with_transaction_log<T: AsRef<Path> + 'static>(&mut self, log: T) -> &mut Self {
         self.transaction_logs.push(Box::new(log));
         self
     }
 
-    pub fn build(self) -> Result<Parser, Error> {
+    pub fn build(&self) -> Result<Parser, Error> {
         let mut transaction_logs = vec![];
-        for transaction_log in self.transaction_logs {
+        for transaction_log in &self.transaction_logs {
             transaction_logs.push(Box::new(std::fs::File::open(transaction_log.as_ref())?))
         }
         ParserBuilder::build(
             FileInfo::from_path(self.primary.as_ref())?,
-            self.base,
+            self.base.clone(),
             transaction_logs,
         )
     }
@@ -75,22 +69,30 @@ pub struct ParserBuilderFromFile {
     base: ParserBuilderBase,
 }
 
-impl ParserBuilderTrait for ParserBuilderFromFile {
-    fn with_filter(mut self, filter: Filter) -> Self {
+impl ParserBuilderFromFile {
+    // These methods have consuming and reference versions of each because the consuming versions allow for chaining and are cleaner to use,
+    // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Becuase `build()` consumes members of ParserBuilder.)
+    pub fn with_filter(&mut self, filter: Filter) -> &Self {
         self.base.filter = Some(filter);
         self
     }
 
-    fn recover_deleted(mut self, recover: bool) -> Self {
-        self.base.recover_deleted = recover;
+    pub fn recover_deleted(&mut self, recover: bool) -> &Self {
+        self.recover_deleted_ref(recover);
         self
     }
-}
 
-impl ParserBuilderFromFile {
-    pub fn with_transaction_log<T: ReadSeek + 'static>(mut self, log: T) -> Self {
-        self.transaction_logs.push(Box::new(log));
+    pub fn recover_deleted_ref(&mut self, recover: bool) {
+        self.base.recover_deleted = recover;
+    }
+
+    pub fn with_transaction_log<T: ReadSeek + 'static>(&mut self, log: T) -> &Self {
+        self.with_transaction_log_ref(log);
         self
+    }
+
+    pub fn with_transaction_log_ref<T: ReadSeek + 'static>(&mut self, log: T) {
+        self.transaction_logs.push(Box::new(log));
     }
 
     pub fn build(self) -> Result<Parser, Error> {

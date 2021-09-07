@@ -21,7 +21,7 @@ use notatin::{
     cli_util::parse_paths,
     err::Error,
     filter::{Filter, RegQueryBuilder},
-    parser_builder::{ParserBuilder, ParserBuilderTrait},
+    parser_builder::ParserBuilder,
     util::{format_date_time, write_common_export_format},
 };
 use std::{
@@ -70,14 +70,15 @@ fn main() -> Result<(), Error> {
     let recover = matches.is_present("recover");
     let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
-    let mut parser_builder = ParserBuilder::from_path(input).recover_deleted(recover);
+    let mut parser_builder = ParserBuilder::from_path(input);
+    parser_builder.recover_deleted(recover);
     if let Some(f) = matches.value_of("filter") {
-        parser_builder = parser_builder.with_filter(Filter::from_path(
+        parser_builder.with_filter(Filter::from_path(
             RegQueryBuilder::from_key(f).return_child_keys(true).build(),
         ));
     }
     for log in logs.unwrap_or_default() {
-        parser_builder = parser_builder.with_transaction_log(log);
+        parser_builder.with_transaction_log(log);
     }
     let mut parser = parser_builder.build()?;
 

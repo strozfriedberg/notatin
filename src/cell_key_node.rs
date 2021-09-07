@@ -824,7 +824,7 @@ mod tests {
     use super::*;
     use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
     use crate::filter::RegQueryBuilder;
-    use crate::parser_builder::{ParserBuilder, ParserBuilderTrait};
+    use crate::parser_builder::ParserBuilder;
     use nom::error::ErrorKind;
 
     #[test]
