@@ -54,21 +54,21 @@ OPTIONS:
 ```rust,no_run
 use notatin::{
     err::Error,
-    filter::{Filter, RegQuery},
-    parser::Parser,
+    filter::{Filter, RegQueryBuilder},
+    parser_builder::{ParserBuilder, ParserBuilderTrait},
 };
 
 fn main() -> Result<(), Error> {
-    let mut parser = Parser::from_path(
-        "system",
-        Some(vec!["system.log1", "system.log2"]),
-        Some(Filter::from_path(RegQuery::from_key(
-            r"Software\Microsoft",
-            false, // key path doesn't contain the root name
-            true, // return children of the key path
-        ))),
-        false, // don't recover deleted/modified
-    )?;
+    let mut parser = ParserBuilder::from_path("system")
+        .recover_deleted(false)
+        .with_transaction_log("system.log1")
+        .with_transaction_log("system.log2")
+        .with_filter(Filter::from_path(
+            RegQueryBuilder::from_key(r"Software\Microsoft")
+                .return_child_keys(true)
+                .build(),
+        ))
+        .build()?;
 
     for key in parser.iter() {
         println!("{}", key.path);
