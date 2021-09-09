@@ -771,18 +771,6 @@ mod tests {
             )
         );
 
-        let mut parser = ParserBuilder::from_path("test_data/system")
-            .build()
-            .unwrap();
-        let _boo = parser._count_all_keys_and_values_with_modified();
-
-        let mut parser = ParserBuilder::from_path("test_data/system")
-            .with_transaction_log("test_data/system.log1")
-            .with_transaction_log("test_data/system.log2")
-            .build()
-            .unwrap();
-        let _boo = parser._count_all_keys_and_values_with_modified();
-
         let filter = Filter::from_path(
             RegQueryBuilder::from_key(r"RegistryTest")
                 .return_child_keys(true)
