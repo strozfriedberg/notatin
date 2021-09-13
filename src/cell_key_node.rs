@@ -753,6 +753,7 @@ impl CellKeyNode {
         self.key_node_flags.contains(KeyNodeFlags::KEY_HIVE_ENTRY)
     }
 
+    /// Returns path without root key
     pub fn get_pretty_path(&self) -> &str {
         &self.path[util::get_root_path_offset(&self.path)..]
     }
