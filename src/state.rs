@@ -145,13 +145,13 @@ impl ModifiedDeletedKeyMap {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct State {
+pub(crate) struct TransactionLogState {
     pub recover_deleted: bool,
     pub transaction_logs: Option<Vec<TransactionLog>>,
+}
 
-    // parser iteration
-    pub cell_key_node_stack: Vec<CellKeyNode>,
-
+#[derive(Clone, Debug)]
+pub(crate) struct State {
     // Path filters don't include the root name, but the cell key's path does.
     // This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
@@ -175,7 +175,7 @@ impl State {
         self.root_key_path_offset
     }
 
-    pub(crate) fn from_transaction_logs(
+    /*pub(crate) fn from_transaction_logs(
         logs: Option<Vec<TransactionLog>>,
         recover_deleted: bool,
     ) -> Self {
@@ -184,16 +184,15 @@ impl State {
             recover_deleted,
             ..Default::default()
         }
-    }
+    }*/
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            cell_key_node_stack: Vec::new(),
-            recover_deleted: false,
+            //recover_deleted: false,
             root_key_path_offset: 0,
-            transaction_logs: None,
+            //transaction_logs: None,
             info: Logs::default(),
             hasher: Hasher::new(),
             sequence_numbers: HashMap::new(),

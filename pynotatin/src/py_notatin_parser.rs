@@ -20,7 +20,11 @@ use crate::py_notatin_content::PyNotatinContent;
 use crate::py_notatin_key::PyNotatinKey;
 use crate::py_notatin_value::{PyNotatinDecodeFormat, PyNotatinValue};
 use crate::util::{init_logging, FileOrFileLike};
-use notatin::{cell_key_node::CellKeyNode, parser::Parser, parser_builder::ParserBuilder};
+use notatin::{
+    cell_key_node::CellKeyNode,
+    parser::{Parser, ParserIteratorContext},
+    parser_builder::ParserBuilder,
+};
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::PyIterProtocol;
@@ -118,7 +122,7 @@ impl PyNotatinParser {
     fn reg_keys_iterator(&mut self) -> PyResult<Py<PyNotatinKeysIterator>> {
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let mut inner = match self.inner.take() {
+        let inner = match self.inner.take() {
             Some(inner) => inner,
             None => {
                 return Err(PyErr::new::<PyRuntimeError, _>(
@@ -126,9 +130,14 @@ impl PyNotatinParser {
                 ));
             }
         };
-        inner.init_key_iter();
-
-        Py::new(py, PyNotatinKeysIterator { inner })
+        let iterator_context = ParserIteratorContext::from_parser(&inner, true, None);
+        Py::new(
+            py,
+            PyNotatinKeysIterator {
+                inner,
+                iterator_context,
+            },
+        )
     }
 }
 
@@ -176,6 +185,7 @@ impl PyNotatinParserBuilder {
 #[pyclass]
 pub struct PyNotatinKeysIterator {
     inner: Parser,
+    iterator_context: ParserIteratorContext,
 }
 
 impl PyNotatinKeysIterator {
@@ -199,7 +209,7 @@ impl PyNotatinKeysIterator {
         let gil = Python::acquire_gil();
         let py = gil.python();
         self.inner
-            .next_key_preorder(false)
+            .next_key_preorder(&mut self.iterator_context, false)
             .map(|key| Self::reg_key_to_pyobject(Ok(key), py))
     }
 }

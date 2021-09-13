@@ -22,7 +22,7 @@ use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
-use crate::parser::{Parser, RegItems};
+use crate::parser::{Parser, ParserIterator, RegItems};
 use crate::state::State;
 use crate::util;
 use nom::{
@@ -254,7 +254,7 @@ impl TransactionLog {
 
                     // save the prior buffer for use
                     let prior_file_info;
-                    if parser.state.recover_deleted {
+                    if parser.transaction_log_state.recover_deleted {
                         prior_file_info = Some(parser.file_info.clone());
                     } else {
                         prior_file_info = None;
@@ -270,7 +270,7 @@ impl TransactionLog {
                         dst.copy_from_slice(src);
                     }
 
-                    if parser.state.recover_deleted {
+                    if parser.transaction_log_state.recover_deleted {
                         let mut logs = Logs::default();
                         let transaction_analyzer = TransactionAnalyzer {
                             prior_file_info: &prior_file_info.unwrap(),
@@ -308,9 +308,13 @@ impl TransactionLog {
 
     pub(crate) fn get_reg_items(parser: &mut Parser, sequence_num: u32) -> Result<RegItems, Error> {
         let mut reg_items: RegItems = HashMap::new();
-        if parser.state.recover_deleted {
+        if parser.transaction_log_state.recover_deleted {
             parser.init_root()?;
-            for key in parser.iter_postorder_include_ancestors() {
+            for key in ParserIterator::new(parser)
+                .filter_include_ancestors(true)
+                .postorder_iteration(true)
+                .iter()
+            {
                 reg_items.insert(
                     (key.path.clone(), None),
                     (
@@ -354,7 +358,10 @@ impl TransactionAnalyzer<'_> {
 
         updated_parser.init_root()?;
 
-        for mut updated_key in updated_parser.iter_skip_modified() {
+        for mut updated_key in ParserIterator::new(updated_parser)
+            .get_modified_items(false)
+            .iter()
+        {
             // Is the key in our prior list?
             let sequence_num;
             if let Some(prior_key) = prior_reg_items.remove(&(updated_key.path.clone(), None)) {

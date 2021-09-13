@@ -21,6 +21,7 @@ use notatin::{
     cli_util::parse_paths,
     err::Error,
     filter::{Filter, RegQueryBuilder},
+    parser::ParserIterator,
     parser_builder::ParserBuilder,
     util::{format_date_time, write_common_export_format},
 };
@@ -80,7 +81,7 @@ fn main() -> Result<(), Error> {
     for log in logs.unwrap_or_default() {
         parser_builder.with_transaction_log(log);
     }
-    let mut parser = parser_builder.build()?;
+    let parser = parser_builder.build()?;
 
     let write_file = File::create(output)?;
 
@@ -89,18 +90,18 @@ fn main() -> Result<(), Error> {
             let mut writer = BufWriter::new(write_file);
             //write!(writer, "{}", std::str::from_utf8(&vec![0xEF, 0xBB, 0xBF]).expect("known good bytes (utf8 BOM)"))?; // need explicit BOM to keep Excel happy with multibyte UTF8 chars
             writeln!(writer,"Key Path\tValue Name\tStatus\tKey Original Sequence Number\tKey Modifying Sequence Number\tValue Original Sequence Number\tValue Modifying Sequence Number\tTimestamp\tFlags\tAccess Flags\tValue\tLogs")?;
-            for key in parser.iter() {
+            for key in ParserIterator::new(&parser).iter() {
                 versions_tsv(&key, &mut writer, "Current", false)?;
             }
             writeln!(writer, "\nLogs\n-----------")?;
             parser.get_parse_logs().write(&mut writer)?;
         }
         OutputType::Common => {
-            write_common_export_format(&mut parser, write_file)?;
+            write_common_export_format(&parser, write_file)?;
         }
         OutputType::Jsonl => {
             let mut writer = BufWriter::new(write_file);
-            for key in parser.iter() {
+            for key in ParserIterator::new(&parser).iter() {
                 writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
             }
         }

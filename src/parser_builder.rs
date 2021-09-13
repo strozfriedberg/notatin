@@ -18,7 +18,7 @@ use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::filter::Filter;
 use crate::parser::Parser;
-use crate::state::State;
+use crate::state::{State, TransactionLogState};
 use crate::transaction_log::TransactionLog;
 use std::path::Path;
 
@@ -72,12 +72,12 @@ pub struct ParserBuilderFromFile {
 impl ParserBuilderFromFile {
     // These methods have consuming and reference versions of each because the consuming versions allow for chaining and are cleaner to use,
     // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Becuase `build()` consumes members of ParserBuilder.)
-    pub fn with_filter(&mut self, filter: Filter) -> &Self {
+    pub fn with_filter(mut self, filter: Filter) -> Self {
         self.base.filter = Some(filter);
         self
     }
 
-    pub fn recover_deleted(&mut self, recover: bool) -> &Self {
+    pub fn recover_deleted(mut self, recover: bool) -> Self {
         self.recover_deleted_ref(recover);
         self
     }
@@ -86,7 +86,7 @@ impl ParserBuilderFromFile {
         self.base.recover_deleted = recover;
     }
 
-    pub fn with_transaction_log<T: ReadSeek + 'static>(&mut self, log: T) -> &Self {
+    pub fn with_transaction_log<T: ReadSeek + 'static>(mut self, log: T) -> Self {
         self.with_transaction_log_ref(log);
         self
     }
@@ -151,14 +151,15 @@ impl ParserBuilder {
 
         let mut parser = Parser {
             file_info,
-            state: State::from_transaction_logs(parsed_transaction_logs, base.recover_deleted),
-            filter: base.filter.unwrap_or_default(),
+            transaction_log_state: TransactionLogState {
+                transaction_logs: parsed_transaction_logs,
+                recover_deleted: base.recover_deleted,
+            },
+            state: State::default(),
+            //filter: base.filter.unwrap_or_default(),
             base_block: None,
             hive_bin_header: None,
             cell_key_node_root: None,
-            stack_to_traverse: Vec::new(),
-            stack_to_return: Vec::new(),
-            get_modified: false,
         };
         parser.init(base.recover_deleted)?;
 

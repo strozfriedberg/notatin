@@ -17,7 +17,7 @@
 use crate::cell::CellState;
 use crate::err::Error;
 use crate::log::{LogCode, Logs};
-use crate::parser::Parser;
+use crate::parser::{Parser, ParserIterator};
 use chrono::{DateTime, Utc};
 use nom::{take, IResult};
 use serde::ser;
@@ -216,7 +216,7 @@ pub(crate) fn to_hex_string(bytes: &[u8]) -> String {
 }
 
 #[allow(dead_code)]
-pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> Result<(), Error> {
+pub fn write_common_export_format<W: Write>(parser: &Parser, output: W) -> Result<(), Error> {
     fn escape_string(orig: &str) -> String {
         if orig.contains(',') || orig.contains('\"') {
             let escaped = &str::replace(orig, "\"", "\"\"");
@@ -272,7 +272,7 @@ pub fn write_common_export_format<W: Write>(parser: &mut Parser, output: W) -> R
     let mut tx_log_modified_keys = 0;
     let mut tx_log_modified_values = 0;
 
-    for key in parser.iter() {
+    for key in ParserIterator::new(parser).iter() {
         let key_path = match key.cell_state {
             CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
                 unused_keys += 1;

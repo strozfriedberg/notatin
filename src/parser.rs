@@ -22,7 +22,7 @@ use crate::filter::{Filter, RegQueryBuilder};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::{LogCode, Logs};
 use crate::parser_recover_deleted::ParserRecoverDeleted;
-use crate::state::State;
+use crate::state::{State, TransactionLogState};
 use crate::transaction_log::TransactionLog;
 use std::collections::HashMap;
 
@@ -46,16 +46,12 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Parser {
     pub(crate) file_info: FileInfo,
+    pub(crate) transaction_log_state: TransactionLogState,
     pub(crate) state: State,
-    pub(crate) filter: Filter,
+    //pub(crate) filter: Filter,
     pub(crate) base_block: Option<BaseBlock>,
     pub(crate) hive_bin_header: Option<HiveBinHeader>,
     pub(crate) cell_key_node_root: Option<CellKeyNode>,
-
-    // members to support iteration. TODO: move into ParserIterator, along with state. Then Parser can be used immutably
-    pub(crate) stack_to_traverse: Vec<CellKeyNode>,
-    pub(crate) stack_to_return: Vec<CellKeyNode>,
-    pub(crate) get_modified: bool,
 }
 
 impl Parser {
@@ -68,7 +64,7 @@ impl Parser {
             self.apply_transaction_logs(has_bad_checksum)?;
 
             self.init_root()?;
-            self.init_key_iter();
+            //self.init_key_iter();
         }
         Ok(())
     }
@@ -77,19 +73,19 @@ impl Parser {
         let input = &self.file_info.buffer[self.file_info.hbin_offset_absolute..];
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.file_info, input)?;
         self.hive_bin_header = Some(hive_bin_header);
-        let kn = CellKeyNode::read(
+        let root = CellKeyNode::read(
             &self.file_info,
             &mut self.state,
             CellKeyNodeReadOptions {
                 offset: self.file_info.get_file_offset(input),
                 cur_path: &String::new(),
-                filter: Some(&self.filter),
+                filter: None, // root will always match, so no need for a filter here
                 self_is_filter_match_or_descendent: true,
                 sequence_num: None,
                 get_deleted_and_modified: true,
             },
         )?;
-        self.cell_key_node_root = kn;
+        self.cell_key_node_root = root;
         Ok(())
     }
 
@@ -240,8 +236,13 @@ impl Parser {
     }
 
     fn apply_transaction_logs(&mut self, has_bad_checksum: bool) -> Result<(), Error> {
-        if self.state.transaction_logs.is_some() {
-            let mut transaction_logs = self.state.transaction_logs.as_ref().unwrap().clone();
+        if self.transaction_log_state.transaction_logs.is_some() {
+            let mut transaction_logs = self
+                .transaction_log_state
+                .transaction_logs
+                .as_ref()
+                .unwrap()
+                .clone();
             let primary_base_block = self
                 .base_block
                 .as_ref()
@@ -287,21 +288,15 @@ impl Parser {
     }
 
     /// Counts all subkeys and values
-    pub fn count_all_keys_and_values(&mut self) -> (usize, usize) {
+    pub fn count_all_keys_and_values(&self, filter: Option<Filter>) -> (usize, usize) {
         let mut keys = 0;
         let mut values = 0;
-        for key in self.iter_include_ancestors() {
-            keys += 1;
-            values += key.sub_values.len();
+        let mut iter = ParserIterator::new(self);
+        iter.filter_include_ancestors(true);
+        if let Some(filter) = filter {
+            iter.with_filter(filter);
         }
-        (keys, values)
-    }
-
-    /// Counts all subkeys and values
-    pub fn count_all_keys_and_values_skip_ancestors(&mut self) -> (usize, usize) {
-        let mut keys = 0;
-        let mut values = 0;
-        for key in self.iter() {
+        for key in iter.iter() {
             keys += 1;
             values += key.sub_values.len();
         }
@@ -311,6 +306,7 @@ impl Parser {
     /// Counts all subkeys and values
     pub(crate) fn _count_all_keys_and_values_with_modified(
         &mut self,
+        filter: Option<Filter>,
     ) -> (usize, usize, usize, usize, usize, usize) {
         let mut keys = 0;
         let mut keys_versions = 0;
@@ -319,7 +315,11 @@ impl Parser {
         let mut values_versions = 0;
         let mut values_deleted = 0;
 
-        for key in self.iter() {
+        let mut iter = ParserIterator::new(self);
+        if let Some(filter) = filter {
+            iter.with_filter(filter);
+        }
+        for key in iter.iter() {
             if key.cell_state.is_deleted() {
                 keys_deleted += 1;
             } else {
@@ -451,113 +451,59 @@ impl Parser {
         Ok(parent)
     }
 
-    pub fn iter(&mut self) -> ParserIterator<'_> {
-        self.init_iter_inner(true);
-        ParserIterator {
-            inner: self,
-            postorder: false,
-            filter_include_ancestors: false,
-        }
-    }
-
-    pub fn iter_include_ancestors(&mut self) -> ParserIterator<'_> {
-        self.init_iter_inner(true);
-        ParserIterator {
-            inner: self,
-            postorder: false,
-            filter_include_ancestors: true,
-        }
-    }
-
-    pub fn iter_postorder_include_ancestors(&mut self) -> ParserIterator<'_> {
-        self.init_iter_inner(true);
-        ParserIterator {
-            inner: self,
-            postorder: true,
-            filter_include_ancestors: true,
-        }
-    }
-
-    pub fn iter_postorder(&mut self) -> ParserIterator<'_> {
-        self.init_iter_inner(true);
-        ParserIterator {
-            inner: self,
-            postorder: true,
-            filter_include_ancestors: false,
-        }
-    }
-
-    pub(crate) fn iter_skip_modified(&mut self) -> ParserIterator<'_> {
-        self.init_iter_inner(false);
-        ParserIterator {
-            inner: self,
-            postorder: true,
-            filter_include_ancestors: true,
-        }
-    }
-
-    pub fn init_key_iter(&mut self) {
-        self.init_iter_inner(true)
-    }
-
-    fn init_iter_inner(&mut self, get_modified: bool) {
-        self.stack_to_traverse = Vec::new();
-        self.stack_to_return = Vec::new();
-        self.get_modified = get_modified;
-        if let Some(cell_key_node_root) = &self.cell_key_node_root {
-            self.stack_to_traverse.push(cell_key_node_root.clone());
-        }
-    }
-
-    // Iterative postorder traversal
-    pub fn next_key_postorder(&mut self, filter_include_ancestors: bool) -> Option<CellKeyNode> {
-        while !self.stack_to_traverse.is_empty() {
+    pub fn next_key_postorder(
+        &self,
+        iter_context: &mut ParserIteratorContext,
+        filter_include_ancestors: bool,
+    ) -> Option<CellKeyNode> {
+        while !iter_context.stack_to_traverse.is_empty() {
             // first check to see if we are done with anything on stack_to_return;
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
-            if !self.stack_to_return.is_empty() {
-                let last = self
+            if !iter_context.stack_to_return.is_empty() {
+                let last = iter_context
                     .stack_to_return
                     .last()
                     .expect("Just checked that stack_to_return wasn't empty");
                 if last.iteration_state.track_returned == last.iteration_state.to_return {
                     return Some(
-                        self.stack_to_return
+                        iter_context
+                            .stack_to_return
                             .pop()
                             .expect("Just checked that stack_to_return wasn't empty"),
                     );
                 }
             }
 
-            let mut node = self
+            let mut node = iter_context
                 .stack_to_traverse
                 .pop()
                 .expect("Just checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let (children, _) = node.read_sub_keys_internal(
                     &self.file_info,
-                    &mut self.state,
-                    &self.filter,
+                    &mut iter_context.state,
+                    &iter_context.filter,
                     None,
-                    self.get_modified,
+                    iter_context.get_modified_items,
                 );
                 node.iteration_state.to_return = children.len() as u32;
                 for c in children.into_iter().rev() {
-                    self.stack_to_traverse.push(c);
+                    iter_context.stack_to_traverse.push(c);
                 }
             }
-            if !self.stack_to_return.is_empty() {
-                let last = self
+            if !iter_context.stack_to_return.is_empty() {
+                let last = iter_context
                     .stack_to_return
                     .last_mut()
                     .expect("Just checked that stack_to_return wasn't empty");
                 last.iteration_state.track_returned += 1;
             }
-            self.stack_to_return.push(node);
+            iter_context.stack_to_return.push(node);
         }
 
         // Handle any remaining elements
-        if !self.stack_to_return.is_empty() {
-            let to_return = self
+        if !iter_context.stack_to_return.is_empty() {
+            let to_return = iter_context
                 .stack_to_return
                 .pop()
                 .expect("Just checked that stack_to_return wasn't empty");
@@ -570,32 +516,35 @@ impl Parser {
         None
     }
 
-    // Iterative preorder traversal
-    pub fn next_key_preorder(&mut self, filter_include_ancestors: bool) -> Option<CellKeyNode> {
-        while !self.stack_to_traverse.is_empty() {
-            let mut node = self
+    pub fn next_key_preorder(
+        &self,
+        iter_context: &mut ParserIteratorContext,
+        filter_include_ancestors: bool,
+    ) -> Option<CellKeyNode> {
+        while !iter_context.stack_to_traverse.is_empty() {
+            let mut node = iter_context
                 .stack_to_traverse
                 .pop()
                 .expect("Just checked that stack_to_traverse wasn't empty");
             if node.number_of_sub_keys > 0 {
                 let (children, _) = node.read_sub_keys_internal(
                     &self.file_info,
-                    &mut self.state,
-                    &self.filter,
+                    &mut iter_context.state,
+                    &iter_context.filter,
                     None,
-                    self.get_modified,
+                    iter_context.get_modified_items,
                 );
                 node.iteration_state.to_return = children.len() as u32;
                 for c in children.into_iter().rev() {
-                    self.stack_to_traverse.push(c);
+                    iter_context.stack_to_traverse.push(c);
                 }
             }
             for d in node.deleted_keys.iter_mut() {
                 d.iteration_state.filter_state = node.iteration_state.filter_state;
-                self.stack_to_traverse.push(d.clone());
+                iter_context.stack_to_traverse.push(d.clone());
             }
             if filter_include_ancestors
-                || !self.filter.is_valid()
+                || !iter_context.filter.is_valid()
                 || node.is_filter_match_or_descendent()
             {
                 return Some(node);
@@ -608,26 +557,88 @@ impl Parser {
 // key: (key_path, value_name)  value: (hash, file_offset_absolute, sequence_num)
 pub type RegItems = HashMap<(String, Option<String>), (blake3::Hash, usize, u32)>;
 
+#[derive(Clone)]
+pub struct ParserIteratorContext {
+    pub(crate) state: State,
+    pub(crate) filter: Filter,
+    stack_to_traverse: Vec<CellKeyNode>,
+    stack_to_return: Vec<CellKeyNode>,
+    get_modified_items: bool,
+}
+
+impl ParserIteratorContext {
+    pub fn from_parser(parser: &Parser, get_modified_items: bool, filter: Option<Filter>) -> Self {
+        ParserIteratorContext {
+            state: parser.state.clone(),
+            filter: filter.unwrap_or_default(),
+            stack_to_traverse: vec![parser.cell_key_node_root.clone().unwrap_or_default()],
+            stack_to_return: vec![],
+            get_modified_items,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct ParserIterator<'a> {
-    inner: &'a mut Parser,
-    postorder: bool,
+    parser: &'a Parser,
+    postorder_iteration: bool,
     filter_include_ancestors: bool,
+    context: ParserIteratorContext,
 }
 
 impl Iterator for ParserIterator<'_> {
     type Item = CellKeyNode;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.postorder {
-            self.inner.next_key_postorder(self.filter_include_ancestors)
+        if self.postorder_iteration {
+            self.parser
+                .next_key_postorder(&mut self.context, self.filter_include_ancestors)
         } else {
-            self.inner.next_key_preorder(self.filter_include_ancestors)
+            self.parser
+                .next_key_preorder(&mut self.context, self.filter_include_ancestors)
         }
+    }
+}
+
+impl<'a> ParserIterator<'a> {
+    pub fn new(parser: &'a Parser) -> Self {
+        let context = ParserIteratorContext::from_parser(parser, true, None);
+        ParserIterator {
+            parser,
+            postorder_iteration: false,
+            filter_include_ancestors: false,
+            context,
+        }
+    }
+
+    pub fn with_filter(&mut self, filter: Filter) -> &mut Self {
+        self.context.filter = filter;
+        self
+    }
+
+    pub fn filter_include_ancestors(&mut self, value: bool) -> &mut Self {
+        self.filter_include_ancestors = value;
+        self
+    }
+
+    pub fn postorder_iteration(&mut self, value: bool) -> &mut Self {
+        self.postorder_iteration = value;
+        self
+    }
+
+    pub fn get_modified_items(&mut self, value: bool) -> &mut Self {
+        self.context.get_modified_items = value;
+        self
+    }
+
+    pub fn iter(&mut self) -> Self {
+        self.clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::filter::{Filter, RegQuery, RegQueryBuilder, RegQueryComponent};
     use crate::parser_builder::ParserBuilder;
     use md5;
@@ -635,14 +646,19 @@ mod tests {
 
     #[test]
     fn test_parser_iter_postorder() {
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
             .build()
             .unwrap();
-        let (keys, values) = parser.count_all_keys_and_values();
+        let (keys, values) = parser.count_all_keys_and_values(None);
         assert_eq!((2853, 5523), (keys, values));
 
         let mut md5_context = md5::Context::new();
-        for key in parser.iter_postorder_include_ancestors() {
+
+        for key in ParserIterator::new(&parser)
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter()
+        {
             md5_context.consume(key.path);
         }
         assert_eq!(
@@ -654,13 +670,13 @@ mod tests {
 
     #[test]
     fn test_parser_next_key_postorder() {
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
             .build()
             .unwrap();
         let mut keys = 0;
         let mut values = 0;
-        parser.init_key_iter();
-        while let Some(key) = parser.next_key_postorder(true) {
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        while let Some(key) = parser.next_key_postorder(&mut iter_context, true) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -668,8 +684,8 @@ mod tests {
 
         let mut keys = 0;
         let mut values = 0;
-        parser.init_key_iter();
-        while let Some(key) = parser.next_key_postorder(false) {
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        while let Some(key) = parser.next_key_postorder(&mut iter_context, false) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -678,13 +694,13 @@ mod tests {
 
     #[test]
     fn test_parser_iterator_preorder_next() {
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
             .build()
             .unwrap();
         let mut keys = 0;
         let mut values = 0;
-        parser.init_key_iter();
-        while let Some(key) = parser.next_key_preorder(true) {
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        while let Some(key) = parser.next_key_preorder(&mut iter_context, true) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -693,13 +709,13 @@ mod tests {
 
     #[test]
     fn test_parser_iterator_postorder_next() {
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
             .build()
             .unwrap();
         let mut keys = 0;
         let mut values = 0;
-        parser.init_key_iter();
-        while let Some(key) = parser.next_key_postorder(true) {
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        while let Some(key) = parser.next_key_postorder(&mut iter_context, true) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -707,8 +723,8 @@ mod tests {
 
         let mut keys = 0;
         let mut values = 0;
-        parser.init_key_iter();
-        while let Some(key) = parser.next_key_postorder(false) {
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        while let Some(key) = parser.next_key_postorder(&mut iter_context, false) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -749,7 +765,6 @@ mod tests {
         );
 
         let mut parser = ParserBuilder::from_path("test_data/system")
-            .with_filter(filter)
             .with_transaction_log("test_data/system.log1")
             .with_transaction_log("test_data/system.log2")
             .recover_deleted(true)
@@ -757,7 +772,7 @@ mod tests {
             .unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
-            parser._count_all_keys_and_values_with_modified();
+            parser._count_all_keys_and_values_with_modified(Some(filter));
         assert_eq!(
             (1, 4, 1, 3, 1, 3),
             (
@@ -776,14 +791,14 @@ mod tests {
                 .build(),
         );
         let mut parser = ParserBuilder::from_path("test_data/system")
-            .with_filter(filter)
+            // .with_filter(filter)
             .with_transaction_log("test_data/system.log1")
             .with_transaction_log("test_data/system.log2")
             .build()
             .unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
-            parser._count_all_keys_and_values_with_modified();
+            parser._count_all_keys_and_values_with_modified(Some(filter));
         assert_eq!(
             (1, 0, 0, 3, 0, 0),
             (
@@ -804,11 +819,10 @@ mod tests {
                 .return_child_keys(true)
                 .build(),
         );
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
             .build()
             .unwrap();
-        let (keys, values) = parser.count_all_keys_and_values();
+        let (keys, values) = parser.count_all_keys_and_values(Some(filter.clone()));
         assert_eq!(
             (2392, 4791),
             (keys, values),
@@ -816,7 +830,12 @@ mod tests {
         );
 
         let mut md5_context = md5::Context::new();
-        for key in parser.iter_postorder_include_ancestors() {
+        for key in ParserIterator::new(&parser)
+            .with_filter(filter.clone())
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter()
+        {
             md5_context.consume(key.path);
         }
         assert_eq!(
@@ -827,7 +846,11 @@ mod tests {
 
         let mut keys = 0;
         let mut values = 0;
-        for key in parser.iter_include_ancestors() {
+        for key in ParserIterator::new(&parser)
+            .with_filter(filter)
+            .filter_include_ancestors(true)
+            .iter()
+        {
             keys += 1;
             values += key.sub_values.len();
         }
@@ -845,7 +868,7 @@ mod tests {
             .build()
             .unwrap();
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
-            parser._count_all_keys_and_values_with_modified();
+            parser._count_all_keys_and_values_with_modified(None);
         assert_eq!(
             (45527, 0, 192, 108055, 0, 225),
             (
@@ -914,10 +937,15 @@ mod tests {
         let filter =
             Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
             .build()
             .unwrap();
-        let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
+        let mut key = ParserIterator::new(&parser)
+            .with_filter(filter)
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter()
+            .next()
+            .unwrap();
         let sub_key = parser
             .get_sub_key(&mut key, "Keyboard Response")
             .unwrap()
@@ -931,10 +959,15 @@ mod tests {
         let filter = Filter::from_path(RegQueryBuilder::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility").key_path_has_root(true).build());
 
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
             .build()
             .unwrap();
-        let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
+        let mut key = ParserIterator::new(&parser)
+            .with_filter(filter)
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter()
+            .next()
+            .unwrap();
         let sub_key = parser
             .get_sub_key(&mut key, "Keyboard Response")
             .unwrap()
@@ -952,10 +985,16 @@ mod tests {
             RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build(),
         );
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
             .build()
             .unwrap();
-        let mut key = parser.iter_postorder_include_ancestors().next().unwrap();
+
+        let mut key = ParserIterator::new(&parser)
+            .with_filter(filter)
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter()
+            .next()
+            .unwrap();
         let parent_key = parser.get_parent_key(&mut key).unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", parent_key.path);
         assert_eq!(2, parent_key.sub_values.len());
@@ -975,7 +1014,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reg_query() {
+    fn test_reg_query() -> Result<(), Error> {
         let filter = Filter {
             reg_query: Some(RegQuery {
                 key_path: vec![
@@ -989,16 +1028,18 @@ mod tests {
                 children: false,
             }),
         };
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
-            .build()
-            .unwrap();
-        let mut parser_iter = parser.iter_postorder_include_ancestors();
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+
+        let mut parser_iter = ParserIterator::new(&parser)
+            .with_filter(filter.clone())
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter();
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Preference", key.path);
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
-        let kv = parser.count_all_keys_and_values();
+        let kv = parser.count_all_keys_and_values(Some(filter));
         assert_eq!((5, 10), kv, "if we get 12 values back then we are incorrectly returning values for the Control Panel\\Accessibility key");
 
         let reg_query = RegQuery {
@@ -1016,11 +1057,13 @@ mod tests {
         let filter = Filter {
             reg_query: Some(reg_query),
         };
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
-            .build()
-            .unwrap();
-        let mut parser_iter = parser.iter_postorder_include_ancestors();
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+
+        let mut parser_iter = ParserIterator::new(&parser)
+            .with_filter(filter.clone())
+            .filter_include_ancestors(true)
+            .postorder_iteration(true)
+            .iter();
         let key = parser_iter.next().unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\ActivatingDocument\.Current",
@@ -1041,7 +1084,8 @@ mod tests {
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\Navigating",
             key.path
         );
-        let kv = parser.count_all_keys_and_values();
+        let kv = parser.count_all_keys_and_values(Some(filter));
         assert_eq!((13, 4), kv);
+        Ok(())
     }
 }

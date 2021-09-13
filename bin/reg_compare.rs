@@ -21,7 +21,7 @@ use notatin::{
     cell_key_value::CellKeyValue,
     err::Error,
     filter::{Filter, RegQueryBuilder},
-    parser::Parser,
+    parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
     util::format_date_time,
 };
@@ -70,11 +70,18 @@ fn main() -> Result<(), Error> {
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
     let mut parser1 = get_parser(base_primary, base_logs, matches.value_of("filter"))?;
+    let filter = matches
+        .value_of("filter")
+        .map(|f| Filter::from_path(RegQueryBuilder::from_key(f).return_child_keys(true).build()));
 
-    let (k_total, _) = parser1.count_all_keys_and_values();
+    let (k_total, _) = parser1.count_all_keys_and_values(filter.clone());
     let mut k_added = 0;
 
-    for key in parser1.iter() {
+    let mut iter = ParserIterator::new(&parser1);
+    if let Some(f) = filter.clone() {
+        iter.with_filter(f);
+    }
+    for key in iter.iter() {
         let path = key.path.clone();
         original_map.insert((path.clone(), None), key.hash); // TODO: update this to support deleted/modified as well. Sequence numbers, deleted/modified - that should be enough to get us to the original item
         for value in key.value_iter() {
@@ -100,14 +107,18 @@ fn main() -> Result<(), Error> {
     //     If same, it's a match (ignore it)
     //     If different, it's an update
 
-    let mut parser2 = get_parser(
+    let parser2 = get_parser(
         comparison_primary,
         comparison_logs,
         matches.value_of("filter"),
     )?;
-    let (k_total, _) = parser2.count_all_keys_and_values();
+    let (k_total, _) = parser2.count_all_keys_and_values(filter.clone());
     let mut k_added = 0;
-    for key in parser2.iter() {
+    let mut iter = ParserIterator::new(&parser2);
+    if let Some(f) = filter {
+        iter.with_filter(f);
+    }
+    for key in iter.iter() {
         match original_map.remove(&(key.path.clone(), None)) {
             Some(val) => {
                 if val != key.hash {
