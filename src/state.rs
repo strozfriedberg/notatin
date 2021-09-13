@@ -18,6 +18,7 @@ use crate::cell_key_node::CellKeyNode;
 use crate::cell_key_value::CellKeyValue;
 use crate::log::Logs;
 use crate::transaction_log::TransactionLog;
+use crate::util;
 use blake3::{Hash, Hasher};
 use std::collections::HashMap;
 
@@ -169,10 +170,7 @@ pub(crate) struct State {
 impl State {
     pub(crate) fn get_root_path_offset(&mut self, key_path: &str) -> usize {
         if self.root_key_path_offset == 0 {
-            match key_path[1..].find('\\') {
-                Some(second_backslash) => self.root_key_path_offset = second_backslash + 2,
-                None => return 0,
-            }
+            self.root_key_path_offset = util::get_root_path_offset(key_path)
         }
         self.root_key_path_offset
     }

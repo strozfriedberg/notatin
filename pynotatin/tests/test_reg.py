@@ -24,21 +24,23 @@ from pathlib import Path
 
 from notatin import PyNotatinParser, PyNotatinParserBuilder, PyNotatinDecodeFormat
 
+test_directory = Path(__file__).parents[2] / "test_data"
+
 @pytest.fixture
 def sample_parser():
-    p = Path(__file__).parent.parent.parent / "test_data" / "NTUSER.DAT"
+    p = test_directory / "NTUSER.DAT"
     assert p.exists()
     return p
 
 @pytest.fixture
 def sample_parser2():
-    p = Path(__file__).parent.parent.parent / "test_data" / "system"
+    p = test_directory / "system"
     assert p.exists()
     return p
 
 @pytest.fixture
 def sample_parser3():
-    p = Path(__file__).parent.parent.parent / "test_data" / "win7_ntuser.dat"
+    p = test_directory / "win7_ntuser.dat"
     assert p.exists()
     return p
 
@@ -72,9 +74,13 @@ def test_it_works_with_logs(sample_parser2):
 
         m.seek(0)
         builder = PyNotatinParserBuilder(m)
-        builder.with_transaction_log(open(Path(__file__).parent.parent.parent / "test_data" / "system.log1", "rb"))
-        builder.with_transaction_log(open(Path(__file__).parent.parent.parent / "test_data" / "system.log2", "rb"))
+        log1 = open(test_directory / "system.log1", "rb")
+        log2 = open(test_directory / "system.log2", "rb")
+        builder.with_transaction_log(log1)
+        builder.with_transaction_log(log2)
         parser = builder.build()
+        log1.close()
+        log2.close()
         keys = 0
         values = 0
         for key in parser.reg_keys():

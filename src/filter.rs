@@ -137,22 +137,6 @@ pub struct RegQuery {
 }
 
 impl RegQuery {
-    /*pub fn from_key(key_path: &str, key_path_has_root: bool, children: bool) -> RegQuery {
-        let mut query_components = Vec::new();
-        for segment in key_path
-            .trim_end_matches('\\')
-            .to_ascii_lowercase()
-            .split('\\')
-        {
-            query_components.push(RegQueryComponent::ComponentString(segment.to_string()));
-        }
-        RegQuery {
-            key_path: query_components,
-            key_path_has_root,
-            children,
-        }
-    }*/
-
     fn check_key_match(&self, key_name: &str, mut root_key_name_offset: usize) -> FilterFlags {
         if self.key_path_has_root {
             root_key_name_offset = 0;

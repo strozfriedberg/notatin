@@ -470,6 +470,17 @@ pub(crate) fn decode_lznt1(
     Ok(decompressed)
 }
 
+pub(crate) fn get_root_path_offset(path: &str) -> usize {
+    if let Some(path) = path.strip_prefix('\\') {
+        match path.find('\\') {
+            Some(second_backslash) => second_backslash + 2,
+            None => 0,
+        }
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
