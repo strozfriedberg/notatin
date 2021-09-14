@@ -752,6 +752,11 @@ impl CellKeyNode {
     pub(crate) fn is_key_root(&self) -> bool {
         self.key_node_flags.contains(KeyNodeFlags::KEY_HIVE_ENTRY)
     }
+
+    /// Returns path without root key
+    pub fn get_pretty_path(&self) -> &str {
+        &self.path[util::get_root_path_offset(&self.path)..]
+    }
 }
 
 pub struct CellKeyNodeValueIterator<'a> {
@@ -824,7 +829,7 @@ mod tests {
     use super::*;
     use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
     use crate::filter::RegQueryBuilder;
-    use crate::parser_builder::{ParserBuilder, ParserBuilderTrait};
+    use crate::parser_builder::ParserBuilder;
     use nom::error::ErrorKind;
 
     #[test]
@@ -1057,5 +1062,14 @@ mod tests {
             code: ErrorKind::Eof,
         }));
         assert_eq!(expected_error, ret);
+    }
+
+    #[test]
+    fn test_get_pretty_path() {
+        let key_node = CellKeyNode {
+            path: String::from("\\Root\\folder1\\folder2"),
+            ..Default::default()
+        };
+        assert_eq!("folder1\\folder2", key_node.get_pretty_path());
     }
 }

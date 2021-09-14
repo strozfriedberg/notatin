@@ -34,7 +34,7 @@ use std::collections::HashMap;
 /// `Parser` should be constructed using `ParserBuilder`
 /// ```
 /// use notatin::filter::{Filter, RegQueryBuilder};
-/// use notatin::parser_builder::{ParserBuilder, ParserBuilderTrait};
+/// use notatin::parser_builder::ParserBuilder;
 ///
 /// ParserBuilder::from_path("system")
 ///     .with_filter(Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build())) // optional
@@ -402,18 +402,16 @@ impl Parser {
         match self.get_root_key() {
             Ok(root) => {
                 if let Some(mut root) = root {
+                    // if key_path starts with '\\', strip it
+                    if key_path.starts_with('\\') {
+                        key_path = &key_path[1..];
+                    }
                     // if key_path_has_root, strip that before searching
                     if key_path_has_root {
-                        if let Some(first_char) = key_path.chars().next() {
-                            if first_char == '\\' {
-                                key_path = &key_path[1..];
-                            }
-                        }
                         if let Some(slash_offset) = key_path.find('\\') {
                             key_path = &key_path[slash_offset + 1..];
                         } else {
-                            // key_path _is_ root
-                            key_path = "";
+                            key_path = ""; // key_path _is_ root
                         }
                     }
                     let key = root.get_sub_key_by_path(self, key_path);
@@ -431,11 +429,12 @@ impl Parser {
         cell_key_node: &mut CellKeyNode,
     ) -> Result<Option<CellKeyNode>, Error> {
         let mut parent_path = cell_key_node.path.clone();
-        let last_slash_offset = parent_path.rfind('\\');
-        parent_path.truncate(last_slash_offset.unwrap()); // todo: handle unwrap
-        let last_slash_offset = parent_path.rfind('\\');
-        parent_path.truncate(last_slash_offset.unwrap());
-
+        if let Some(last_slash_offset) = parent_path.rfind('\\') {
+            parent_path.truncate(last_slash_offset);
+        }
+        if let Some(last_slash_offset) = parent_path.rfind('\\') {
+            parent_path.truncate(last_slash_offset);
+        }
         let parent = CellKeyNode::read(
             &self.file_info,
             &mut self.state,
@@ -630,7 +629,7 @@ impl Iterator for ParserIterator<'_> {
 #[cfg(test)]
 mod tests {
     use crate::filter::{Filter, RegQuery, RegQueryBuilder, RegQueryComponent};
-    use crate::parser_builder::{ParserBuilder, ParserBuilderTrait};
+    use crate::parser_builder::ParserBuilder;
     use md5;
     use regex::Regex;
 
@@ -865,8 +864,16 @@ mod tests {
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
             .build()
             .unwrap();
+
         let sub_key = parser
             .get_key("Control Panel\\Accessibility\\Keyboard Response", false)
+            .unwrap()
+            .unwrap();
+        assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
+        assert_eq!(9, sub_key.sub_values.len());
+
+        let sub_key = parser
+            .get_key("\\Control Panel\\Accessibility\\Keyboard Response", false)
             .unwrap()
             .unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
@@ -883,6 +890,10 @@ mod tests {
         assert_eq!(Ok(None), sub_key);
 
         let sub_key = parser.get_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", true).unwrap().unwrap();
+        assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
+        assert_eq!(9, sub_key.sub_values.len());
+
+        let sub_key = parser.get_key("CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", true).unwrap().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
 

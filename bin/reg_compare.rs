@@ -22,7 +22,7 @@ use notatin::{
     err::Error,
     filter::{Filter, RegQueryBuilder},
     parser::Parser,
-    parser_builder::{ParserBuilder, ParserBuilderTrait},
+    parser_builder::ParserBuilder,
     util::format_date_time,
 };
 use std::{
@@ -209,12 +209,12 @@ fn get_parser(
 ) -> Result<Parser, Error> {
     let mut parser_builder = ParserBuilder::from_path(primary);
     if let Some(f) = filter {
-        parser_builder = parser_builder.with_filter(Filter::from_path(
+        parser_builder.with_filter(Filter::from_path(
             RegQueryBuilder::from_key(f).return_child_keys(true).build(),
         ));
     }
     for log in logs.unwrap_or_default() {
-        parser_builder = parser_builder.with_transaction_log(log);
+        parser_builder.with_transaction_log(log);
     }
     parser_builder.build()
 }

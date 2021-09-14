@@ -22,29 +22,31 @@ import pytest
 
 from pathlib import Path
 
-from notatin import PyNotatinParser, PyNotatinDecodeFormat
+from notatin import PyNotatinParser, PyNotatinParserBuilder, PyNotatinDecodeFormat
+
+test_directory = Path(__file__).parents[2] / "test_data"
 
 @pytest.fixture
 def sample_parser():
-    p = Path(__file__).parent.parent.parent / "test_data" / "NTUSER.DAT"
+    p = test_directory / "NTUSER.DAT"
     assert p.exists()
     return p
 
 @pytest.fixture
 def sample_parser2():
-    p = Path(__file__).parent.parent.parent / "test_data" / "system"
+    p = test_directory / "system"
     assert p.exists()
     return p
 
 @pytest.fixture
 def sample_parser3():
-    p = Path(__file__).parent.parent.parent / "test_data" / "win7_ntuser.dat"
+    p = test_directory / "win7_ntuser.dat"
     assert p.exists()
     return p
 
 def test_it_works(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         keys = 0
         values = 0
 
@@ -53,13 +55,45 @@ def test_it_works(sample_parser):
             keys += 1
             for value in key.values():
                 values += 1
-                print("\t"+ value.name + "\t" + str(value.raw_data_type))
         assert keys == 2853
         assert values == 5523
 
+def test_it_works_with_logs(sample_parser2):
+    with open(sample_parser2, "rb") as m:
+        parser = PyNotatinParserBuilder(m).build()
+        keys = 0
+        values = 0
+        for key in parser.reg_keys():
+            print(key.path)
+            keys += 1
+            for value in key.values():
+                values += 1
+                print("\t"+ value.name + "\t" + str(value.raw_data_type))
+        assert keys == 45527
+        assert values == 107925
+
+        m.seek(0)
+        builder = PyNotatinParserBuilder(m)
+        log1 = open(test_directory / "system.log1", "rb")
+        log2 = open(test_directory / "system.log2", "rb")
+        builder.with_transaction_log(log1)
+        builder.with_transaction_log(log2)
+        parser = builder.build()
+        log1.close()
+        log2.close()
+        keys = 0
+        values = 0
+        for key in parser.reg_keys():
+            print(key.path)
+            keys += 1
+            for value in key.values():
+                values += 1
+        assert keys == 45587
+        assert values == 108178
+
 def test_get_key(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         sub = key.find_key(parser, "Keyboard Response")
@@ -67,7 +101,7 @@ def test_get_key(sample_parser):
 
 def test_sub_keys(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel"
         keys = 0
@@ -87,7 +121,7 @@ def test_values(sample_parser):
 
 def test_key_get_value(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         value = key.value('MinimumHitRadius')
@@ -95,7 +129,7 @@ def test_key_get_value(sample_parser):
 
 def test_value_raw_data_type(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         value = key.value('MinimumHitRadius')
@@ -104,7 +138,7 @@ def test_value_raw_data_type(sample_parser):
 
 def test_value_value(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility\\MouseKeys")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\MouseKeys"
         value = key.value('MaximumSpeed')
@@ -115,7 +149,7 @@ def test_value_value(sample_parser):
 
 def test_value_get_content2(sample_parser2):
     with open(sample_parser2, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("ControlSet001\\Enum\\SWD\\PRINTENUM\\PrintQueues\\Properties\\{83da6326-97a6-4088-9453-a1923f573b29}\\0066")
         value = key.value('')
         assert value.raw_data_type & 0x0fff == 16
@@ -124,7 +158,7 @@ def test_value_get_content2(sample_parser2):
 
 def test_value_get_content(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility\\MouseKeys")
         value = key.value('MaximumSpeed')
         assert value.name == "MaximumSpeed"
@@ -152,7 +186,7 @@ def test_value_get_content(sample_parser):
 
 def test_value_pretty_name(sample_parser):
     with open(sample_parser, "rb") as m:
-        parser = PyNotatinParser(m)
+        parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Cursors")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Cursors"
         for value in key.values():

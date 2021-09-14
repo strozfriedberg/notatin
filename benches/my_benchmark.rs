@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use notatin::parser_builder::{ParserBuilder, ParserBuilderTrait};
+use notatin::parser_builder::ParserBuilder;
 
 fn test_read_small_reg() {
     let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")

@@ -16,23 +16,24 @@
  */
 
 use log::{Level, Log, Metadata, Record, SetLoggerError};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fs::File, io::BufReader};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
+use notatin::file_info::ReadSeek;
 use pyo3::types::{PyDateTime, PyString};
 use pyo3::ToPyObject;
 use pyo3::{PyObject, PyResult, Python};
 use pyo3_file::PyFileLikeObject;
 
 #[derive(Debug)]
-pub enum FileOrFileLike {
-    File(String),
-    FileLike(PyFileLikeObject),
+pub enum Output {
+    Python,
 }
 
 #[derive(Debug)]
-pub enum Output {
-    Python,
+pub enum FileOrFileLike {
+    File(String),
+    FileLike(PyFileLikeObject),
 }
 
 impl FileOrFileLike {
@@ -51,6 +52,17 @@ impl FileOrFileLike {
         match PyFileLikeObject::with_requirements(path_or_file_like, true, false, true) {
             Ok(f) => Ok(FileOrFileLike::FileLike(f)),
             Err(e) => Err(e),
+        }
+    }
+
+    pub(crate) fn to_read_seek(path_or_file_like: &PyObject) -> PyResult<Box<dyn ReadSeek + Send>> {
+        match FileOrFileLike::from_pyobject(path_or_file_like.clone())? {
+            FileOrFileLike::File(s) => {
+                let file = File::open(s)?;
+                let reader = BufReader::with_capacity(4096, file);
+                Ok(Box::new(reader) as Box<dyn ReadSeek + Send>)
+            }
+            FileOrFileLike::FileLike(f) => Ok(Box::new(f) as Box<dyn ReadSeek + Send>),
         }
     }
 }

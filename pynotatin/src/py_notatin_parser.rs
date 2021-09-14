@@ -24,16 +24,6 @@ use notatin::{cell_key_node::CellKeyNode, parser::Parser, parser_builder::Parser
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::PyIterProtocol;
-use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
-
-pub trait ReadSeek: Read + Seek {
-    fn tell(&mut self) -> io::Result<u64> {
-        self.seek(SeekFrom::Current(0))
-    }
-}
-
-impl<T: Read + Seek> ReadSeek for T {}
 
 #[pyclass(subclass)]
 /// Returns an instance of the parser.
@@ -46,17 +36,7 @@ pub struct PyNotatinParser {
 impl PyNotatinParser {
     #[new]
     fn new(path_or_file_like: PyObject) -> PyResult<Self> {
-        let file_or_file_like = FileOrFileLike::from_pyobject(path_or_file_like)?;
-        let boxed_read_seek = match file_or_file_like {
-            FileOrFileLike::File(s) => {
-                let file = File::open(s)?;
-                let reader = BufReader::with_capacity(4096, file);
-                Box::new(reader) as Box<dyn ReadSeek + Send>
-            }
-            FileOrFileLike::FileLike(f) => Box::new(f) as Box<dyn ReadSeek + Send>,
-        };
-
-        let parser = ParserBuilder::from_file(boxed_read_seek)
+        let parser = ParserBuilder::from_file(FileOrFileLike::to_read_seek(&path_or_file_like)?)
             .build()
             .map_err(PyNotatinError)?;
         Ok(PyNotatinParser {
@@ -153,6 +133,47 @@ impl PyNotatinParser {
 }
 
 #[pyclass]
+pub struct PyNotatinParserBuilder {
+    pub primary_file: PyObject,
+    pub recover_deleted: bool,
+    pub transaction_logs: Vec<PyObject>,
+}
+
+#[pymethods]
+impl PyNotatinParserBuilder {
+    #[new]
+    fn new(path_or_file_like: PyObject) -> PyResult<Self> {
+        Ok(PyNotatinParserBuilder {
+            primary_file: path_or_file_like,
+            recover_deleted: false,
+            transaction_logs: vec![],
+        })
+    }
+
+    pub fn recover_deleted(&mut self, recover: bool) -> PyResult<()> {
+        self.recover_deleted = recover;
+        Ok(())
+    }
+
+    pub fn with_transaction_log(&mut self, log: PyObject) -> PyResult<()> {
+        self.transaction_logs.push(log);
+        Ok(())
+    }
+
+    pub fn build(&self) -> PyResult<PyNotatinParser> {
+        let mut builder =
+            ParserBuilder::from_file(FileOrFileLike::to_read_seek(&self.primary_file)?);
+        builder.recover_deleted_ref(self.recover_deleted);
+        for transaction_log in &self.transaction_logs {
+            builder.with_transaction_log_ref(FileOrFileLike::to_read_seek(transaction_log)?);
+        }
+        Ok(PyNotatinParser {
+            inner: Some(builder.build().map_err(PyNotatinError)?),
+        })
+    }
+}
+
+#[pyclass]
 pub struct PyNotatinKeysIterator {
     inner: Parser,
 }
@@ -208,6 +229,7 @@ impl PyIterProtocol for PyNotatinKeysIterator {
 fn notatin(py: Python, m: &PyModule) -> PyResult<()> {
     init_logging(py).ok();
 
+    m.add_class::<PyNotatinParserBuilder>()?;
     m.add_class::<PyNotatinParser>()?;
     m.add_class::<PyNotatinKey>()?;
     m.add_class::<PyNotatinValue>()?;
