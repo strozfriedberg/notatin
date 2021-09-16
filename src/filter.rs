@@ -15,27 +15,22 @@
  */
 
 use crate::cell_key_node::CellKeyNode;
+use crate::err::Error;
 use crate::impl_serialize_for_bitflags;
 use crate::state::State;
 use bitflags::bitflags;
 use regex::Regex;
 
 /// Filter allows specification of a condition to be met when reading the registry.
-/// Execution will short-circuit when possible
+/// Evaluation will short-circuit when possible
 #[derive(Clone, Debug, Default)]
 pub struct Filter {
-    pub(crate) reg_query: Option<RegQuery>,
+    reg_query: Option<RegQuery>,
 }
 
 impl Filter {
     pub fn new() -> Self {
         Filter { reg_query: None }
-    }
-
-    pub fn from_path(find_path: RegQuery) -> Self {
-        Filter {
-            reg_query: Some(find_path),
-        }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -84,27 +79,49 @@ pub enum RegQueryComponent {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct RegQueryBuilder {
+pub struct FilterBuilder {
     key_path: Vec<RegQueryComponent>,
     key_path_has_root: bool,
     children: bool,
+    regex_errors: Vec<String>,
 }
 
-impl RegQueryBuilder {
-    pub fn from_key(key_path: &str) -> Self {
-        let mut query_components = Vec::new();
+impl FilterBuilder {
+    pub fn new() -> Self {
+        FilterBuilder {
+            key_path: vec![],
+            key_path_has_root: false,
+            children: false,
+            regex_errors: vec![],
+        }
+    }
+
+    pub fn add_key_path(mut self, key_path: &str) -> Self {
         for segment in key_path
             .trim_end_matches('\\')
             .to_ascii_lowercase()
             .split('\\')
         {
-            query_components.push(RegQueryComponent::ComponentString(segment.to_string()));
+            self.key_path.push(RegQueryComponent::ComponentString(
+                segment.to_ascii_lowercase(),
+            ));
         }
-        RegQueryBuilder {
-            key_path: query_components,
-            key_path_has_root: false,
-            children: false,
+        self
+    }
+
+    pub fn add_literal_segment(mut self, segment: &str) -> Self {
+        self.key_path.push(RegQueryComponent::ComponentString(
+            segment.to_ascii_lowercase(),
+        ));
+        self
+    }
+
+    pub fn add_regex_segment(mut self, regex: &str) -> Self {
+        match Regex::new(&regex.to_ascii_lowercase()) {
+            Ok(r) => self.key_path.push(RegQueryComponent::ComponentRegex(r)),
+            Err(e) => self.regex_errors.push(e.to_string()),
         }
+        self
     }
 
     pub fn key_path_has_root(mut self, key_path_has_root: bool) -> Self {
@@ -117,11 +134,19 @@ impl RegQueryBuilder {
         self
     }
 
-    pub fn build(self) -> RegQuery {
-        RegQuery {
-            key_path: self.key_path,
-            key_path_has_root: self.key_path_has_root,
-            children: self.children,
+    pub fn build(self) -> Result<Filter, Error> {
+        if self.regex_errors.is_empty() {
+            Ok(Filter {
+                reg_query: Some(RegQuery {
+                    key_path: self.key_path,
+                    key_path_has_root: self.key_path_has_root,
+                    children: self.children,
+                }),
+            })
+        } else {
+            Err(Error::Any {
+                detail: format!("Regex errors encountered: {}", self.regex_errors.join(",")),
+            })
         }
     }
 }
@@ -190,13 +215,12 @@ mod tests {
     use crate::cell_key_node;
 
     #[test]
-    fn test_check_cell_match_key() {
+    fn test_check_cell_match_key() -> Result<(), Error> {
         let mut state = State::default();
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key("HighContrast")
-                .return_child_keys(true)
-                .build(),
-        );
+        let filter = FilterBuilder::new()
+            .add_key_path("HighContrast")
+            .return_child_keys(true)
+            .build()?;
         let mut key_node = cell_key_node::CellKeyNode {
             path: String::from("HighContrast"),
             ..Default::default()
@@ -220,5 +244,6 @@ mod tests {
             filter.check_cell(&mut state, &key_node),
             "check_cell: No match key match failed"
         );
+        Ok(())
     }
 }

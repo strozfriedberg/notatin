@@ -54,7 +54,6 @@ OPTIONS:
 ```rust,no_run
 use notatin::{
     err::Error,
-    filter::{Filter, RegQueryBuilder},
     parser_builder::{ParserBuilder, ParserBuilderTrait},
 };
 
@@ -63,11 +62,6 @@ fn main() -> Result<(), Error> {
         .recover_deleted(false)
         .with_transaction_log("system.log1")
         .with_transaction_log("system.log2")
-        .with_filter(Filter::from_path(
-            RegQueryBuilder::from_key(r"Software\Microsoft")
-                .return_child_keys(true)
-                .build(),
-        ))
         .build()?;
 
     for key in parser.iter() {
@@ -87,33 +81,24 @@ for key in parser.iter_postorder() {
 }
 ```
 Result filters are optional, but they can speed up processing as Notatin will skip parsing what doesn't match.
-Filters may include regular expressions or literal paths but setting up a regular expression filter needs to be streamlined (see [Upcoming Improvements](#Upcoming-improvements))
+Filters may include regular expressions and/or literal paths and are applied at iteration time.
 ```rust,no_run
-let filter = Filter {
-    reg_query: Some(RegQuery {
-        key_path: vec![
-            RegQueryComponent::ComponentString(
-                "control Panel".to_string().to_ascii_lowercase(),
-            ),
-            RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
-            RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap()),
-        ],
-        key_path_has_root: false,
-        children: false,
-    }),
-};
+let filter = FilterBuilder::new()
+    .add_literal_segment("control Panel")
+    .add_regex_segment("access.*")
+    .add_regex_segment("keyboard.+")
+    .return_child_keys(false)
+    .build();
 ```
 
 ## Upcoming improvements
- - Recover deleted keys and values from the primary registry file
  - Support for optional Hachoir-light style struct information
- - Improve regular expression filter creation
  - Improve performance of transaction log analysis
 
  ## What is Notatin?
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
  It is present in honey because honeybees synthesize the enzyme and deposit it into the honey, where it acts as a natural preservative.
- So, Notatin preserves honey. https://en.wikipedia.org/wiki/Glucose_oxidase
+ So, Notatin helps preserve things in hives. https://en.wikipedia.org/wiki/Glucose_oxidase
 
  ## Copyright
  Copyright 2021 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.

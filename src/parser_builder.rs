@@ -35,11 +35,6 @@ pub struct ParserBuilderFromPath {
 }
 
 impl ParserBuilderFromPath {
-    pub fn with_filter(&mut self, filter: Filter) -> &mut Self {
-        self.base.filter = Some(filter);
-        self
-    }
-
     pub fn recover_deleted(&mut self, recover: bool) -> &mut Self {
         self.base.recover_deleted = recover;
         self

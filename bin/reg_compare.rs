@@ -20,7 +20,7 @@ use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
     err::Error,
-    filter::{Filter, RegQueryBuilder},
+    filter::FilterBuilder,
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
     util::format_date_time,
@@ -69,21 +69,27 @@ fn main() -> Result<(), Error> {
 
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
-    let mut parser1 = get_parser(base_primary, base_logs, matches.value_of("filter"))?;
-    let filter = matches
-        .value_of("filter")
-        .map(|f| Filter::from_path(RegQueryBuilder::from_key(f).return_child_keys(true).build()));
+    let mut parser1 = get_parser(base_primary, base_logs)?;
+    let filter = match matches.value_of("filter") {
+        Some(f) => Some(
+            FilterBuilder::new()
+                .add_key_path(f)
+                .return_child_keys(true)
+                .build()?,
+        ),
+        None => None,
+    };
 
-    let (k_total, _) = parser1.count_all_keys_and_values(filter.clone());
+    let (k_total, _) = parser1.count_all_keys_and_values(filter.as_ref());
     let mut k_added = 0;
 
     let mut iter = ParserIterator::new(&parser1);
-    if let Some(f) = filter.clone() {
-        iter.with_filter(f);
+    if let Some(f) = &filter {
+        iter.with_filter(f.clone());
     }
     for key in iter.iter() {
-        let path = key.path.clone();
-        original_map.insert((path.clone(), None), key.hash); // TODO: update this to support deleted/modified as well. Sequence numbers, deleted/modified - that should be enough to get us to the original item
+        let path = &key.path;
+        original_map.insert((path.clone(), None), key.hash);
         for value in key.value_iter() {
             original_map.insert((path.clone(), Some(value.value_name)), value.hash);
         }
@@ -107,29 +113,26 @@ fn main() -> Result<(), Error> {
     //     If same, it's a match (ignore it)
     //     If different, it's an update
 
-    let parser2 = get_parser(
-        comparison_primary,
-        comparison_logs,
-        matches.value_of("filter"),
-    )?;
-    let (k_total, _) = parser2.count_all_keys_and_values(filter.clone());
+    let parser2 = get_parser(comparison_primary, comparison_logs)?;
+    let (k_total, _) = parser2.count_all_keys_and_values(filter.as_ref());
     let mut k_added = 0;
     let mut iter = ParserIterator::new(&parser2);
     if let Some(f) = filter {
         iter.with_filter(f);
     }
     for key in iter.iter() {
-        match original_map.remove(&(key.path.clone(), None)) {
+        let path = &key.path;
+
+        match original_map.remove(&(path.clone(), None)) {
             Some(val) => {
                 if val != key.hash {
-                    let original_key = parser1.get_key(&key.path, true);
+                    let original_key = parser1.get_key(path, true);
                     keys_modified.push((original_key.unwrap().unwrap(), key.clone()));
                 }
             }
             None => keys_added.push(key.clone()),
         }
 
-        let path = key.path.clone();
         for value in key.value_iter() {
             match original_map.remove(&(path.clone(), Some(value.value_name.clone()))) {
                 Some(val) => {
@@ -213,17 +216,8 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn get_parser(
-    primary: String,
-    logs: Option<Vec<String>>,
-    filter: Option<&str>,
-) -> Result<Parser, Error> {
+fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Error> {
     let mut parser_builder = ParserBuilder::from_path(primary);
-    if let Some(f) = filter {
-        parser_builder.with_filter(Filter::from_path(
-            RegQueryBuilder::from_key(f).return_child_keys(true).build(),
-        ));
-    }
     for log in logs.unwrap_or_default() {
         parser_builder.with_transaction_log(log);
     }

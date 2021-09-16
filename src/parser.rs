@@ -18,7 +18,7 @@ use crate::base_block::{BaseBlock, BaseBlockBase, FileType};
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions, FilterMatchState};
 use crate::err::Error;
 use crate::file_info::FileInfo;
-use crate::filter::{Filter, RegQueryBuilder};
+use crate::filter::{Filter, FilterBuilder};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::{LogCode, Logs};
 use crate::parser_recover_deleted::ParserRecoverDeleted;
@@ -33,11 +33,9 @@ use std::collections::HashMap;
 
 /// `Parser` should be constructed using `ParserBuilder`
 /// ```
-/// use notatin::filter::{Filter, RegQueryBuilder};
 /// use notatin::parser_builder::ParserBuilder;
 ///
 /// ParserBuilder::from_path("system")
-///     .with_filter(Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build())) // optional
 ///     .with_transaction_log("system.log1") // optional
 ///     .with_transaction_log("system.log2") // optional
 ///     .recover_deleted(true) // optional
@@ -172,24 +170,7 @@ impl Parser {
         has_bad_checksum: bool,
     ) -> Result<bool, Error> {
         if has_bad_checksum {
-            transaction_logs.sort_by(|a, b| {
-                b.base_block
-                    .primary_sequence_number
-                    .cmp(&a.base_block.primary_sequence_number)
-            });
-            self.state
-                .info
-                .add(LogCode::WarningBaseBlock, &"Applying recovered base block");
-            let newest_log = transaction_logs
-                .first()
-                .expect("shouldn't be here unless we have logs");
-            self.file_info.buffer[..512].copy_from_slice(&newest_log.base_block_bytes);
-
-            // Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
-            //  "If a primary file contains an invalid base block, only the transaction log file with latest log entries is used in the recovery."
-            transaction_logs.truncate(1);
-
-            self.init_base_block()?;
+            self.handle_bad_checksum(transaction_logs)?;
         }
         if primary_base_block.primary_sequence_number
             == primary_base_block.secondary_sequence_number
@@ -205,6 +186,31 @@ impl Parser {
                 .cmp(&b.base_block.primary_sequence_number)
         });
         Ok(true)
+    }
+
+    fn handle_bad_checksum(
+        &mut self,
+        transaction_logs: &mut Vec<TransactionLog>,
+    ) -> Result<(), Error> {
+        transaction_logs.sort_by(|a, b| {
+            b.base_block
+                .primary_sequence_number
+                .cmp(&a.base_block.primary_sequence_number)
+        });
+        self.state
+            .info
+            .add(LogCode::WarningBaseBlock, &"Applying recovered base block");
+        let newest_log = transaction_logs
+            .first()
+            .expect("shouldn't be here unless we have logs");
+        self.file_info.buffer[..512].copy_from_slice(&newest_log.base_block_bytes);
+
+        // Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
+        //  "If a primary file contains an invalid base block, only the transaction log file with latest log entries is used in the recovery."
+        transaction_logs.truncate(1);
+
+        self.init_base_block()?;
+        Ok(())
     }
 
     fn update_header_after_transaction_logs(
@@ -236,6 +242,7 @@ impl Parser {
     }
 
     fn apply_transaction_logs(&mut self, has_bad_checksum: bool) -> Result<(), Error> {
+        // TODO: all the clones and ref wonkiness here is code smell. Look at refactoring.
         if self.transaction_log_state.transaction_logs.is_some() {
             let mut transaction_logs = self
                 .transaction_log_state
@@ -254,7 +261,7 @@ impl Parser {
                 &mut transaction_logs,
                 has_bad_checksum,
             )? {
-                let mut new_sequence_number: u32 = 0;
+                let mut new_sequence_number = 0;
                 let mut original_items = TransactionLog::get_reg_items(self, 0)?;
 
                 for log in transaction_logs {
@@ -288,13 +295,13 @@ impl Parser {
     }
 
     /// Counts all subkeys and values
-    pub fn count_all_keys_and_values(&self, filter: Option<Filter>) -> (usize, usize) {
+    pub fn count_all_keys_and_values(&self, filter: Option<&Filter>) -> (usize, usize) {
         let mut keys = 0;
         let mut values = 0;
         let mut iter = ParserIterator::new(self);
         iter.filter_include_ancestors(true);
         if let Some(filter) = filter {
-            iter.with_filter(filter);
+            iter.with_filter(filter.clone());
         }
         for key in iter.iter() {
             keys += 1;
@@ -384,9 +391,9 @@ impl Parser {
     ) -> Result<Option<CellKeyNode>, Error> {
         let key_path_sans_root =
             &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key(&(key_path_sans_root.to_string() + "\\" + name)).build(),
-        );
+        let filter = FilterBuilder::new()
+            .add_key_path(&(key_path_sans_root.to_string() + "\\" + name))
+            .build()?;
         cell_key_node
             .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, None, false)
             .0
@@ -639,10 +646,10 @@ impl<'a> ParserIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::{Filter, RegQuery, RegQueryBuilder, RegQueryComponent};
+    use crate::err::Error;
+    use crate::filter::FilterBuilder;
     use crate::parser_builder::ParserBuilder;
     use md5;
-    use regex::Regex;
 
     #[test]
     fn test_parser_iter_postorder() {
@@ -757,19 +764,17 @@ mod tests {
     }
 
     #[test]
-    fn test_reg_logs_with_filter() {
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key(r"RegistryTest")
-                .return_child_keys(true)
-                .build(),
-        );
+    fn test_reg_logs_with_filter() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path(r"RegistryTest")
+            .return_child_keys(true)
+            .build()?;
 
         let mut parser = ParserBuilder::from_path("test_data/system")
             .with_transaction_log("test_data/system.log1")
             .with_transaction_log("test_data/system.log2")
             .recover_deleted(true)
-            .build()
-            .unwrap();
+            .build()?;
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified(Some(filter));
@@ -785,17 +790,15 @@ mod tests {
             )
         );
 
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key(r"RegistryTest")
-                .return_child_keys(true)
-                .build(),
-        );
+        let filter = FilterBuilder::new()
+            .add_key_path(r"RegistryTest")
+            .return_child_keys(true)
+            .build()?;
         let mut parser = ParserBuilder::from_path("test_data/system")
             // .with_filter(filter)
             .with_transaction_log("test_data/system.log1")
             .with_transaction_log("test_data/system.log2")
-            .build()
-            .unwrap();
+            .build()?;
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified(Some(filter));
@@ -810,19 +813,17 @@ mod tests {
                 values_deleted
             )
         );
+        Ok(())
     }
 
     #[test]
-    fn test_cell_key_node_count_all_keys_and_values_with_key_filter() {
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key(r"Software\Microsoft")
-                .return_child_keys(true)
-                .build(),
-        );
-        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()
-            .unwrap();
-        let (keys, values) = parser.count_all_keys_and_values(Some(filter.clone()));
+    fn test_cell_key_node_count_all_keys_and_values_with_key_filter() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path(r"Software\Microsoft")
+            .return_child_keys(true)
+            .build()?;
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let (keys, values) = parser.count_all_keys_and_values(Some(&filter));
         assert_eq!(
             (2392, 4791),
             (keys, values),
@@ -859,6 +860,7 @@ mod tests {
             (keys, values),
             "key and/or value count doesn't match expected"
         );
+        Ok(())
     }
 
     #[test]
@@ -933,12 +935,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_get_sub_key() {
-        let filter =
-            Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()
-            .unwrap();
+    fn test_parser_get_sub_key() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path("Control Panel\\Accessibility")
+            .build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
         let mut key = ParserIterator::new(&parser)
             .with_filter(filter)
             .filter_include_ancestors(true)
@@ -946,21 +947,16 @@ mod tests {
             .iter()
             .next()
             .unwrap();
-        let sub_key = parser
-            .get_sub_key(&mut key, "Keyboard Response")
-            .unwrap()
-            .unwrap();
+        let sub_key = parser.get_sub_key(&mut key, "Keyboard Response")?.unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
 
         let sub_key = parser.get_sub_key(&mut key, "Nope").unwrap();
         assert_eq!(None, sub_key);
 
-        let filter = Filter::from_path(RegQueryBuilder::from_key("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility").key_path_has_root(true).build());
+        let filter = FilterBuilder::new().add_key_path("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility").key_path_has_root(true).build()?;
 
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()
-            .unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
         let mut key = ParserIterator::new(&parser)
             .with_filter(filter)
             .filter_include_ancestors(true)
@@ -968,25 +964,21 @@ mod tests {
             .iter()
             .next()
             .unwrap();
-        let sub_key = parser
-            .get_sub_key(&mut key, "Keyboard Response")
-            .unwrap()
-            .unwrap();
+        let sub_key = parser.get_sub_key(&mut key, "Keyboard Response")?.unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", sub_key.path);
         assert_eq!(9, sub_key.sub_values.len());
 
         let sub_key = parser.get_sub_key(&mut key, "Nope").unwrap();
         assert_eq!(None, sub_key);
+        Ok(())
     }
 
     #[test]
-    fn test_get_parent_key() {
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key("Control Panel\\Accessibility\\On").build(),
-        );
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()
-            .unwrap();
+    fn test_get_parent_key() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path("Control Panel\\Accessibility\\On")
+            .build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
 
         let mut key = ParserIterator::new(&parser)
             .with_filter(filter)
@@ -995,9 +987,10 @@ mod tests {
             .iter()
             .next()
             .unwrap();
-        let parent_key = parser.get_parent_key(&mut key).unwrap().unwrap();
+        let parent_key = parser.get_parent_key(&mut key)?.unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility", parent_key.path);
         assert_eq!(2, parent_key.sub_values.len());
+        Ok(())
     }
 
     #[test]
@@ -1015,19 +1008,12 @@ mod tests {
 
     #[test]
     fn test_reg_query() -> Result<(), Error> {
-        let filter = Filter {
-            reg_query: Some(RegQuery {
-                key_path: vec![
-                    RegQueryComponent::ComponentString(
-                        "control Panel".to_string().to_ascii_lowercase(),
-                    ),
-                    RegQueryComponent::ComponentRegex(Regex::new("access.*").unwrap()),
-                    RegQueryComponent::ComponentRegex(Regex::new("keyboard.+").unwrap()),
-                ],
-                key_path_has_root: false,
-                children: false,
-            }),
-        };
+        let filter = FilterBuilder::new()
+            .add_literal_segment("control Panel")
+            .add_regex_segment("access.*")
+            .add_regex_segment("keyboard.+")
+            .return_child_keys(false)
+            .build()?;
         let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
 
         let mut parser_iter = ParserIterator::new(&parser)
@@ -1039,24 +1025,15 @@ mod tests {
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Preference", key.path);
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
-        let kv = parser.count_all_keys_and_values(Some(filter));
+        let kv = parser.count_all_keys_and_values(Some(&filter));
         assert_eq!((5, 10), kv, "if we get 12 values back then we are incorrectly returning values for the Control Panel\\Accessibility key");
 
-        let reg_query = RegQuery {
-            key_path: vec![
-                RegQueryComponent::ComponentString("appevents".to_string().to_ascii_lowercase()),
-                RegQueryComponent::ComponentString("schemes".to_string().to_ascii_lowercase()),
-                RegQueryComponent::ComponentString("apps".to_string().to_ascii_lowercase()),
-                RegQueryComponent::ComponentString("Explorer".to_string().to_ascii_lowercase()),
-                RegQueryComponent::ComponentRegex(Regex::new(".*a.*").unwrap()),
-                RegQueryComponent::ComponentString(".current".to_string().to_ascii_lowercase()),
-            ],
-            key_path_has_root: false,
-            children: false,
-        };
-        let filter = Filter {
-            reg_query: Some(reg_query),
-        };
+        let filter = FilterBuilder::new()
+            .add_key_path(r"appevents\schemes\apps\Explorer")
+            .add_regex_segment(".*a.*")
+            .add_literal_segment(".current")
+            .return_child_keys(false)
+            .build()?;
         let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
 
         let mut parser_iter = ParserIterator::new(&parser)
@@ -1084,7 +1061,7 @@ mod tests {
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\AppEvents\Schemes\Apps\Explorer\Navigating",
             key.path
         );
-        let kv = parser.count_all_keys_and_values(Some(filter));
+        let kv = parser.count_all_keys_and_values(Some(&filter));
         assert_eq!((13, 4), kv);
         Ok(())
     }
