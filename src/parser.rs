@@ -299,7 +299,6 @@ impl Parser {
         let mut keys = 0;
         let mut values = 0;
         let mut iter = ParserIterator::new(self);
-        iter.filter_include_ancestors(true);
         if let Some(filter) = filter {
             iter.with_filter(filter.clone());
         }
@@ -361,107 +360,9 @@ impl Parser {
         &self.state.info
     }
 
-    // the methods below are here primarily to support the python interface
-    pub fn get_root_key(&mut self) -> Result<Option<CellKeyNode>, Error> {
-        match &self.base_block {
-            Some(bb) => {
-                let root = CellKeyNode::read(
-                    &self.file_info,
-                    &mut self.state,
-                    CellKeyNodeReadOptions {
-                        offset: bb.base.root_cell_offset_relative as usize
-                            + self.file_info.hbin_offset_absolute,
-                        cur_path: &String::new(),
-                        filter: None,
-                        self_is_filter_match_or_descendent: true,
-                        sequence_num: None,
-                        get_deleted_and_modified: true,
-                    },
-                )?;
-                Ok(root)
-            }
-            _ => Ok(None),
-        }
-    }
-
-    pub fn get_sub_key(
-        &mut self,
-        cell_key_node: &mut CellKeyNode,
-        name: &str,
-    ) -> Result<Option<CellKeyNode>, Error> {
-        let key_path_sans_root =
-            &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
-        let filter = FilterBuilder::new()
-            .add_key_path(&(key_path_sans_root.to_string() + "\\" + name))
-            .build()?;
-        cell_key_node
-            .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, None, false)
-            .0
-            .get(0)
-            .map_or_else(|| Ok(None), |k| Ok(Some(k.clone())))
-    }
-
-    pub fn get_key(
-        &mut self,
-        mut key_path: &str,
-        key_path_has_root: bool,
-    ) -> Result<Option<CellKeyNode>, Error> {
-        match self.get_root_key() {
-            Ok(root) => {
-                if let Some(mut root) = root {
-                    // if key_path starts with '\\', strip it
-                    if key_path.starts_with('\\') {
-                        key_path = &key_path[1..];
-                    }
-                    // if key_path_has_root, strip that before searching
-                    if key_path_has_root {
-                        if let Some(slash_offset) = key_path.find('\\') {
-                            key_path = &key_path[slash_offset + 1..];
-                        } else {
-                            key_path = ""; // key_path _is_ root
-                        }
-                    }
-                    let key = root.get_sub_key_by_path(self, key_path);
-                    Ok(key)
-                } else {
-                    Ok(None)
-                }
-            }
-            _ => Ok(None),
-        }
-    }
-
-    pub fn get_parent_key(
-        &mut self,
-        cell_key_node: &mut CellKeyNode,
-    ) -> Result<Option<CellKeyNode>, Error> {
-        let mut parent_path = cell_key_node.path.clone();
-        if let Some(last_slash_offset) = parent_path.rfind('\\') {
-            parent_path.truncate(last_slash_offset);
-        }
-        if let Some(last_slash_offset) = parent_path.rfind('\\') {
-            parent_path.truncate(last_slash_offset);
-        }
-        let parent = CellKeyNode::read(
-            &self.file_info,
-            &mut self.state,
-            CellKeyNodeReadOptions {
-                offset: cell_key_node.parent_key_offset_relative as usize
-                    + self.file_info.hbin_offset_absolute,
-                cur_path: &parent_path,
-                filter: None,
-                self_is_filter_match_or_descendent: true,
-                sequence_num: None,
-                get_deleted_and_modified: true,
-            },
-        )?;
-        Ok(parent)
-    }
-
     pub fn next_key_postorder(
         &self,
-        iter_context: &mut ParserIteratorContext,
-        filter_include_ancestors: bool,
+        iter_context: &mut ParserIteratorContext
     ) -> Option<CellKeyNode> {
         while !iter_context.stack_to_traverse.is_empty() {
             // first check to see if we are done with anything on stack_to_return;
@@ -514,7 +415,7 @@ impl Parser {
                 .stack_to_return
                 .pop()
                 .expect("Just checked that stack_to_return wasn't empty");
-            if filter_include_ancestors
+            if iter_context.filter_include_ancestors
                 || to_return.iteration_state.filter_state != Some(FilterMatchState::None)
             {
                 return Some(to_return);
@@ -526,7 +427,6 @@ impl Parser {
     pub fn next_key_preorder(
         &self,
         iter_context: &mut ParserIteratorContext,
-        filter_include_ancestors: bool,
     ) -> Option<CellKeyNode> {
         while !iter_context.stack_to_traverse.is_empty() {
             let mut node = iter_context
@@ -550,7 +450,7 @@ impl Parser {
                 d.iteration_state.filter_state = node.iteration_state.filter_state;
                 iter_context.stack_to_traverse.push(d.clone());
             }
-            if filter_include_ancestors
+            if iter_context.filter_include_ancestors
                 || !iter_context.filter.is_valid()
                 || node.is_filter_match_or_descendent()
             {
@@ -558,6 +458,103 @@ impl Parser {
             }
         }
         None
+    }
+}
+
+// Direct key accessor methods - used by PyNotatin
+impl Parser {
+    pub fn get_root_key(&mut self) -> Result<Option<CellKeyNode>, Error> {
+        match &self.base_block {
+            Some(bb) => {
+                let root = CellKeyNode::read(
+                    &self.file_info,
+                    &mut self.state,
+                    CellKeyNodeReadOptions {
+                        offset: bb.base.root_cell_offset_relative as usize
+                            + self.file_info.hbin_offset_absolute,
+                        cur_path: &String::new(),
+                        filter: None,
+                        self_is_filter_match_or_descendent: true,
+                        sequence_num: None,
+                        get_deleted_and_modified: true,
+                    },
+                )?;
+                Ok(root)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub fn get_sub_key(
+        &mut self,
+        cell_key_node: &mut CellKeyNode,
+        name: &str,
+    ) -> Result<Option<CellKeyNode>, Error> {
+        let key_path_sans_root =
+            &cell_key_node.path[self.state.get_root_path_offset(&cell_key_node.path)..];
+        let filter = FilterBuilder::new()
+            .add_key_path(&(key_path_sans_root.to_string() + "\\" + name))
+            .build()?;
+        cell_key_node
+            .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, None, false)
+            .0
+            .get(0)
+            .map_or_else(|| Ok(None), |k| Ok(Some(k.clone())))
+    }
+
+    pub fn get_key(
+        &mut self,
+        mut key_path: &str,
+        key_path_has_root: bool,
+    ) -> Result<Option<CellKeyNode>, Error> {
+        match self.get_root_key() {
+            Ok(root) => {
+                if let Some(mut root) = root {
+                    // if key_path starts with '\\', strip it
+                    key_path = key_path.trim_start_matches('\\');
+                    // if key_path_has_root, strip that before searching
+                    if key_path_has_root {
+                        if let Some(slash_offset) = key_path.find('\\') {
+                            key_path = &key_path[slash_offset + 1..];
+                        } else {
+                            key_path = ""; // key_path _is_ root
+                        }
+                    }
+                    let key = root.get_sub_key_by_path(self, key_path);
+                    Ok(key)
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub fn get_parent_key(
+        &mut self,
+        cell_key_node: &mut CellKeyNode,
+    ) -> Result<Option<CellKeyNode>, Error> {
+        let mut parent_path = cell_key_node.path.clone();
+        if let Some(last_slash_offset) = parent_path.rfind('\\') {
+            parent_path.truncate(last_slash_offset);
+        }
+        if let Some(last_slash_offset) = parent_path.rfind('\\') {
+            parent_path.truncate(last_slash_offset);
+        }
+        let parent = CellKeyNode::read(
+            &self.file_info,
+            &mut self.state,
+            CellKeyNodeReadOptions {
+                offset: cell_key_node.parent_key_offset_relative as usize
+                    + self.file_info.hbin_offset_absolute,
+                cur_path: &parent_path,
+                filter: None,
+                self_is_filter_match_or_descendent: true,
+                sequence_num: None,
+                get_deleted_and_modified: true,
+            },
+        )?;
+        Ok(parent)
     }
 }
 
@@ -571,16 +568,19 @@ pub struct ParserIteratorContext {
     stack_to_traverse: Vec<CellKeyNode>,
     stack_to_return: Vec<CellKeyNode>,
     get_modified_items: bool,
+    filter_include_ancestors: bool,
 }
 
 impl ParserIteratorContext {
-    pub fn from_parser(parser: &Parser, get_modified_items: bool, filter: Option<Filter>) -> Self {
+    pub fn from_parser(parser: &Parser, get_modified_items: bool, filter_and_ancestors: Option<(Filter, bool)>) -> Self {
+        let (filter, filter_include_ancestors) = filter_and_ancestors.unwrap_or_default();
         ParserIteratorContext {
             state: parser.state.clone(),
-            filter: filter.unwrap_or_default(),
+            filter,
             stack_to_traverse: vec![parser.cell_key_node_root.clone().unwrap_or_default()],
             stack_to_return: vec![],
             get_modified_items,
+            filter_include_ancestors
         }
     }
 }
@@ -589,7 +589,6 @@ impl ParserIteratorContext {
 pub struct ParserIterator<'a> {
     parser: &'a Parser,
     postorder_iteration: bool,
-    filter_include_ancestors: bool,
     context: ParserIteratorContext,
 }
 
@@ -599,10 +598,10 @@ impl Iterator for ParserIterator<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.postorder_iteration {
             self.parser
-                .next_key_postorder(&mut self.context, self.filter_include_ancestors)
+                .next_key_postorder(&mut self.context)
         } else {
             self.parser
-                .next_key_preorder(&mut self.context, self.filter_include_ancestors)
+                .next_key_preorder(&mut self.context)
         }
     }
 }
@@ -613,7 +612,6 @@ impl<'a> ParserIterator<'a> {
         ParserIterator {
             parser,
             postorder_iteration: false,
-            filter_include_ancestors: false,
             context,
         }
     }
@@ -624,7 +622,7 @@ impl<'a> ParserIterator<'a> {
     }
 
     pub fn filter_include_ancestors(&mut self, value: bool) -> &mut Self {
-        self.filter_include_ancestors = value;
+        self.context.filter_include_ancestors = value;
         self
     }
 
@@ -642,6 +640,7 @@ impl<'a> ParserIterator<'a> {
         self.clone()
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -683,16 +682,7 @@ mod tests {
         let mut keys = 0;
         let mut values = 0;
         let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
-        while let Some(key) = parser.next_key_postorder(&mut iter_context, true) {
-            keys += 1;
-            values += key.value_iter().count();
-        }
-        assert_eq!((2853, 5523), (keys, values));
-
-        let mut keys = 0;
-        let mut values = 0;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
-        while let Some(key) = parser.next_key_postorder(&mut iter_context, false) {
+        while let Some(key) = parser.next_key_postorder(&mut iter_context) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -707,7 +697,7 @@ mod tests {
         let mut keys = 0;
         let mut values = 0;
         let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
-        while let Some(key) = parser.next_key_preorder(&mut iter_context, true) {
+        while let Some(key) = parser.next_key_preorder(&mut iter_context) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -722,16 +712,7 @@ mod tests {
         let mut keys = 0;
         let mut values = 0;
         let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
-        while let Some(key) = parser.next_key_postorder(&mut iter_context, true) {
-            keys += 1;
-            values += key.value_iter().count();
-        }
-        assert_eq!((2853, 5523), (keys, values));
-
-        let mut keys = 0;
-        let mut values = 0;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
-        while let Some(key) = parser.next_key_postorder(&mut iter_context, false) {
+        while let Some(key) = parser.next_key_postorder(&mut iter_context) {
             keys += 1;
             values += key.value_iter().count();
         }
@@ -795,7 +776,6 @@ mod tests {
             .return_child_keys(true)
             .build()?;
         let mut parser = ParserBuilder::from_path("test_data/system")
-            // .with_filter(filter)
             .with_transaction_log("test_data/system.log1")
             .with_transaction_log("test_data/system.log2")
             .build()?;
@@ -825,7 +805,7 @@ mod tests {
         let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
         let (keys, values) = parser.count_all_keys_and_values(Some(&filter));
         assert_eq!(
-            (2392, 4791),
+            (2390, 4791),
             (keys, values),
             "key and/or value count doesn't match expected"
         );
@@ -1026,7 +1006,7 @@ mod tests {
         let key = parser_iter.next().unwrap();
         assert_eq!("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response", key.path);
         let kv = parser.count_all_keys_and_values(Some(&filter));
-        assert_eq!((5, 10), kv, "if we get 12 values back then we are incorrectly returning values for the Control Panel\\Accessibility key");
+        assert_eq!((2, 10), kv, "if we get 12 values back then we are incorrectly returning values for the Control Panel\\Accessibility key");
 
         let filter = FilterBuilder::new()
             .add_key_path(r"appevents\schemes\apps\Explorer")
@@ -1062,7 +1042,7 @@ mod tests {
             key.path
         );
         let kv = parser.count_all_keys_and_values(Some(&filter));
-        assert_eq!((13, 4), kv);
+        assert_eq!((4, 4), kv);
         Ok(())
     }
 }

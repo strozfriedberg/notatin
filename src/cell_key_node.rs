@@ -366,7 +366,7 @@ impl CellKeyNode {
             || filter_flags.contains(FilterFlags::FILTER_KEY_MATCH)
     }
 
-    /// Reads a key node from file_info.
+    /// Reads a key node from a slice.
     /// Returns a CellKeyNode
     pub(crate) fn read_from_slice(
         file_info: &FileInfo,
@@ -837,8 +837,8 @@ mod tests {
     fn test_get_sub_key_by_path() -> Result<(), Error> {
         let filter = FilterBuilder::new().add_key_path("Control Panel").build()?;
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some(filter));
-        let mut key = parser.next_key_postorder(&mut iter_context, true).unwrap();
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
 
         let sub_key = key
             .get_sub_key_by_path(&mut parser, "Accessibility")
@@ -875,8 +875,8 @@ mod tests {
             .add_key_path("Control Panel\\Accessibility")
             .build()?;
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some(filter));
-        let mut key = parser.next_key_postorder(&mut iter_context, true).unwrap();
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
@@ -899,8 +899,8 @@ mod tests {
             .add_key_path("Control Panel\\Accessibility")
             .build()?;
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some(filter));
-        let mut key = parser.next_key_postorder(&mut iter_context, true).unwrap();
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
