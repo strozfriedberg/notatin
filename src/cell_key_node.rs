@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use crate::cell::CellState;
+use crate::cell::{Cell, CellState};
 use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
@@ -759,6 +759,20 @@ impl CellKeyNode {
     }
 }
 
+impl Cell for CellKeyNode {
+    fn get_file_offset_absolute(&self) -> usize {
+        self.detail.file_offset_absolute
+    }
+
+    fn get_hash(&self) -> Option<blake3::Hash> {
+        self.hash
+    }
+
+    fn get_logs(&self) -> &Logs {
+        &self.logs
+    }
+}
+
 pub struct CellKeyNodeValueIterator<'a> {
     inner: &'a CellKeyNode,
     sub_values_iter_index: usize,
@@ -837,7 +851,8 @@ mod tests {
     fn test_get_sub_key_by_path() -> Result<(), Error> {
         let filter = FilterBuilder::new().add_key_path("Control Panel").build()?;
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut iter_context =
+            ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
         let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
 
         let sub_key = key
@@ -875,7 +890,8 @@ mod tests {
             .add_key_path("Control Panel\\Accessibility")
             .build()?;
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut iter_context =
+            ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
         let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
         assert_eq!(
@@ -899,7 +915,8 @@ mod tests {
             .add_key_path("Control Panel\\Accessibility")
             .build()?;
         let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
-        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut iter_context =
+            ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
         let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
         assert_eq!(

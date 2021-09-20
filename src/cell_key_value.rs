@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use crate::cell::CellState;
+use crate::cell::{Cell, CellState};
 use crate::cell_big_data::CellBigData;
 use crate::cell_value::{CellValue, DecodableValue, DecodeFormat};
 use crate::err::Error;
@@ -433,6 +433,20 @@ impl DecodableValue for CellKeyValue {
     fn decode_content(&self, format: &DecodeFormat, offset: usize) -> (CellValue, Option<Logs>) {
         let (content, _) = self.get_content();
         format.decode(&content, offset)
+    }
+}
+
+impl Cell for CellKeyValue {
+    fn get_file_offset_absolute(&self) -> usize {
+        self.detail.file_offset_absolute
+    }
+
+    fn get_hash(&self) -> Option<blake3::Hash> {
+        self.hash
+    }
+
+    fn get_logs(&self) -> &Logs {
+        &self.logs
     }
 }
 

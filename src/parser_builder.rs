@@ -18,7 +18,7 @@ use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::filter::Filter;
 use crate::parser::Parser;
-use crate::state::{State, TransactionLogState};
+use crate::state::State;
 use crate::transaction_log::TransactionLog;
 use std::path::Path;
 
@@ -133,30 +133,17 @@ impl ParserBuilder {
         base: ParserBuilderBase,
         transaction_logs: Vec<Box<T>>,
     ) -> Result<Parser, Error> {
-        let parsed_transaction_logs;
-        let warning_logs;
-        if transaction_logs.is_empty() {
-            parsed_transaction_logs = None;
-            warning_logs = None;
-        } else {
-            let ret = TransactionLog::parse(Some(transaction_logs))?;
-            parsed_transaction_logs = ret.0;
-            warning_logs = ret.1;
-        }
+        let (parsed_transaction_logs, warning_logs) = TransactionLog::parse(transaction_logs)?;
 
         let mut parser = Parser {
             file_info,
-            transaction_log_state: TransactionLogState {
-                transaction_logs: parsed_transaction_logs,
-                recover_deleted: base.recover_deleted,
-            },
             state: State::default(),
-            //filter: base.filter.unwrap_or_default(),
             base_block: None,
             hive_bin_header: None,
             cell_key_node_root: None,
+            recover_deleted: base.recover_deleted,
         };
-        parser.init(base.recover_deleted)?;
+        parser.init(base.recover_deleted, parsed_transaction_logs)?;
 
         if let Some(warning_logs) = warning_logs {
             parser.state.info.extend(warning_logs);

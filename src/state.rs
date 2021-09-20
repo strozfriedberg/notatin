@@ -17,7 +17,6 @@
 use crate::cell_key_node::CellKeyNode;
 use crate::cell_key_value::CellKeyValue;
 use crate::log::Logs;
-use crate::transaction_log::TransactionLog;
 use crate::util;
 use blake3::{Hash, Hasher};
 use std::collections::HashMap;
@@ -142,12 +141,6 @@ impl ModifiedDeletedKeyMap {
             }
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TransactionLogState {
-    pub recover_deleted: bool,
-    pub transaction_logs: Option<Vec<TransactionLog>>,
 }
 
 #[derive(Clone, Debug)]

@@ -22,9 +22,8 @@ use crate::filter::{Filter, FilterBuilder};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::{LogCode, Logs};
 use crate::parser_recover_deleted::ParserRecoverDeleted;
-use crate::state::{State, TransactionLogState};
+use crate::state::State;
 use crate::transaction_log::TransactionLog;
-use std::collections::HashMap;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -44,25 +43,26 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Parser {
     pub(crate) file_info: FileInfo,
-    pub(crate) transaction_log_state: TransactionLogState,
     pub(crate) state: State,
-    //pub(crate) filter: Filter,
     pub(crate) base_block: Option<BaseBlock>,
     pub(crate) hive_bin_header: Option<HiveBinHeader>,
     pub(crate) cell_key_node_root: Option<CellKeyNode>,
+    pub(crate) recover_deleted: bool,
 }
 
 impl Parser {
-    pub fn init(&mut self, recover_deleted: bool) -> Result<(), Error> {
+    pub(crate) fn init(
+        &mut self,
+        recover_deleted: bool,
+        parsed_transaction_logs: Vec<TransactionLog>,
+    ) -> Result<(), Error> {
         let (is_supported_format, has_bad_checksum) = self.init_base_block()?;
         if is_supported_format {
             if recover_deleted {
                 self.init_recover_deleted()?;
             }
-            self.apply_transaction_logs(has_bad_checksum)?;
-
+            self.apply_transaction_logs(has_bad_checksum, parsed_transaction_logs)?;
             self.init_root()?;
-            //self.init_key_iter();
         }
         Ok(())
     }
@@ -165,49 +165,47 @@ impl Parser {
 
     fn prepare_transaction_logs(
         &mut self,
-        primary_base_block: &BaseBlockBase,
-        transaction_logs: &mut Vec<TransactionLog>,
         has_bad_checksum: bool,
+        parsed_transaction_logs: &mut Vec<TransactionLog>,
     ) -> Result<bool, Error> {
         if has_bad_checksum {
-            self.handle_bad_checksum(transaction_logs)?;
+            self.handle_bad_checksum(parsed_transaction_logs)?;
         }
+        let primary_base_block = &self
+            .base_block
+            .as_ref()
+            .expect("Shouldn't be here unless we have a base block")
+            .base;
         if primary_base_block.primary_sequence_number
             == primary_base_block.secondary_sequence_number
         {
             self.state.info.add(LogCode::WarningTransactionLog, &"Skipping transaction logs because the primary file's primary_sequence_number matches the secondary_sequence_number");
             return Ok(false);
         }
-
-        // put the logs in order of oldest (lowest sequence number) first
-        transaction_logs.sort_by(|a, b| {
-            a.base_block
-                .primary_sequence_number
-                .cmp(&b.base_block.primary_sequence_number)
-        });
         Ok(true)
     }
 
     fn handle_bad_checksum(
         &mut self,
-        transaction_logs: &mut Vec<TransactionLog>,
+        parsed_transaction_logs: &mut Vec<TransactionLog>,
     ) -> Result<(), Error> {
-        transaction_logs.sort_by(|a, b| {
-            b.base_block
-                .primary_sequence_number
-                .cmp(&a.base_block.primary_sequence_number)
-        });
         self.state
             .info
             .add(LogCode::WarningBaseBlock, &"Applying recovered base block");
-        let newest_log = transaction_logs
-            .first()
+
+        // logs come in here sorted oldest to newest
+        let newest_log = parsed_transaction_logs
+            .last()
             .expect("shouldn't be here unless we have logs");
         self.file_info.buffer[..512].copy_from_slice(&newest_log.base_block_bytes);
 
         // Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
         //  "If a primary file contains an invalid base block, only the transaction log file with latest log entries is used in the recovery."
-        transaction_logs.truncate(1);
+        debug_assert!(parsed_transaction_logs.len() <= 2); // Per Microsoft there will max two logs at this point.
+                                                           // if there are two logs, remove the first (older) one
+        if parsed_transaction_logs.len() > 1 {
+            parsed_transaction_logs.remove(0);
+        }
 
         self.init_base_block()?;
         Ok(())
@@ -220,6 +218,7 @@ impl Parser {
         // Update primary file header
         const PRIMARY_SEQUENCE_NUMBER_OFFSET: usize = 4;
         const SECONDARY_SEQUENCE_NUMBER_OFFSET: usize = 8;
+
         // Update sequence numbers with latest available
         let new_sequence_number_bytes = new_sequence_number.to_le_bytes();
         self.file_info.buffer[PRIMARY_SEQUENCE_NUMBER_OFFSET
@@ -228,9 +227,13 @@ impl Parser {
         self.file_info.buffer[SECONDARY_SEQUENCE_NUMBER_OFFSET
             ..SECONDARY_SEQUENCE_NUMBER_OFFSET + new_sequence_number_bytes.len()]
             .copy_from_slice(&new_sequence_number_bytes);
+
         // Update the checksum
+        const CHECKSUM_OFFSET: usize = 508;
         let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
-        self.file_info.buffer[508..512].copy_from_slice(&new_checksum.to_le_bytes());
+        self.file_info.buffer
+            [CHECKSUM_OFFSET..CHECKSUM_OFFSET + std::mem::size_of_val(&new_checksum)]
+            .copy_from_slice(&new_checksum.to_le_bytes());
 
         // read the header again
         self.init_base_block()?;
@@ -241,57 +244,55 @@ impl Parser {
         Ok(())
     }
 
-    fn apply_transaction_logs(&mut self, has_bad_checksum: bool) -> Result<(), Error> {
-        // TODO: all the clones and ref wonkiness here is code smell. Look at refactoring.
-        if self.transaction_log_state.transaction_logs.is_some() {
-            let mut transaction_logs = self
-                .transaction_log_state
-                .transaction_logs
-                .as_ref()
-                .unwrap()
-                .clone();
-            let primary_base_block = self
-                .base_block
-                .as_ref()
-                .expect("Shouldn't be here unless we have a base block")
-                .base
-                .clone();
-            if self.prepare_transaction_logs(
-                &primary_base_block,
-                &mut transaction_logs,
-                has_bad_checksum,
-            )? {
-                let mut new_sequence_number = 0;
-                let mut original_items = TransactionLog::get_reg_items(self, 0)?;
+    fn apply_transaction_logs(
+        &mut self,
+        has_bad_checksum: bool,
+        mut parsed_transaction_logs: Vec<TransactionLog>,
+    ) -> Result<(), Error> {
+        if !parsed_transaction_logs.is_empty()
+            && self.prepare_transaction_logs(has_bad_checksum, &mut parsed_transaction_logs)?
+        {
+            let mut new_sequence_number = 0;
+            let mut original_items = TransactionLog::get_reg_items(self, 0)?;
 
-                for log in transaction_logs {
-                    if log.base_block.primary_sequence_number
-                        >= primary_base_block.secondary_sequence_number
+            let (primary_file_secondary_seq_num, _) = self.get_base_block_info();
+            for log in &mut parsed_transaction_logs {
+                if log.base_block.primary_sequence_number >= primary_file_secondary_seq_num {
+                    if new_sequence_number == 0
+                        || (log.base_block.primary_sequence_number == new_sequence_number + 1)
                     {
-                        if new_sequence_number == 0
-                            || (log.base_block.primary_sequence_number == new_sequence_number + 1)
-                        {
-                            let (new_sequence_number_ret, prior_reg_items) =
-                                log.update_bytes(self, &primary_base_block, original_items);
-                            original_items = prior_reg_items;
-                            new_sequence_number = new_sequence_number_ret;
-                        } else {
-                            self.state.info.add(
-                                LogCode::WarningTransactionLog,
-                                &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
-                            );
-                        }
+                        let (new_sequence_number_ret, prior_reg_items) =
+                            log.update_parser(self, original_items);
+                        original_items = prior_reg_items;
+                        new_sequence_number = new_sequence_number_ret;
                     } else {
                         self.state.info.add(
                             LogCode::WarningTransactionLog,
-                            &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_base_block.secondary_sequence_number)
+                            &format!("Skipping log file; the log's primary sequence number ({}) does not follow the previous log's last sequence number ({})", log.base_block.primary_sequence_number, new_sequence_number)
                         );
                     }
+                } else {
+                    self.state.info.add(
+                        LogCode::WarningTransactionLog,
+                        &format!("Skipping log file; the log's primary sequence number ({}) is less than the primary file's secondary sequence number ({})", log.base_block.primary_sequence_number, primary_file_secondary_seq_num)
+                    );
                 }
-                self.update_header_after_transaction_logs(new_sequence_number)?;
             }
+            self.update_header_after_transaction_logs(new_sequence_number)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn get_base_block_info(&self) -> (u32, u32) {
+        let base_block = &self
+            .base_block
+            .as_ref()
+            .expect("Shouldn't be here unless we have a base block")
+            .base;
+        (
+            base_block.secondary_sequence_number,
+            base_block.hive_bins_data_size,
+        )
     }
 
     /// Counts all subkeys and values
@@ -362,7 +363,7 @@ impl Parser {
 
     pub fn next_key_postorder(
         &self,
-        iter_context: &mut ParserIteratorContext
+        iter_context: &mut ParserIteratorContext,
     ) -> Option<CellKeyNode> {
         while !iter_context.stack_to_traverse.is_empty() {
             // first check to see if we are done with anything on stack_to_return;
@@ -558,9 +559,6 @@ impl Parser {
     }
 }
 
-// key: (key_path, value_name)  value: (hash, file_offset_absolute, sequence_num)
-pub type RegItems = HashMap<(String, Option<String>), (blake3::Hash, usize, u32)>;
-
 #[derive(Clone)]
 pub struct ParserIteratorContext {
     pub(crate) state: State,
@@ -572,7 +570,11 @@ pub struct ParserIteratorContext {
 }
 
 impl ParserIteratorContext {
-    pub fn from_parser(parser: &Parser, get_modified_items: bool, filter_and_ancestors: Option<(Filter, bool)>) -> Self {
+    pub fn from_parser(
+        parser: &Parser,
+        get_modified_items: bool,
+        filter_and_ancestors: Option<(Filter, bool)>,
+    ) -> Self {
         let (filter, filter_include_ancestors) = filter_and_ancestors.unwrap_or_default();
         ParserIteratorContext {
             state: parser.state.clone(),
@@ -580,7 +582,7 @@ impl ParserIteratorContext {
             stack_to_traverse: vec![parser.cell_key_node_root.clone().unwrap_or_default()],
             stack_to_return: vec![],
             get_modified_items,
-            filter_include_ancestors
+            filter_include_ancestors,
         }
     }
 }
@@ -597,11 +599,9 @@ impl Iterator for ParserIterator<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.postorder_iteration {
-            self.parser
-                .next_key_postorder(&mut self.context)
+            self.parser.next_key_postorder(&mut self.context)
         } else {
-            self.parser
-                .next_key_preorder(&mut self.context)
+            self.parser.next_key_preorder(&mut self.context)
         }
     }
 }
@@ -640,7 +640,6 @@ impl<'a> ParserIterator<'a> {
         self.clone()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -722,17 +721,17 @@ mod tests {
     #[test]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
-        /*let mut parser = ParserBuilder::from_path("test_data/system")
-            .with_transaction_log("test_data/system.log1")
+    /*    let mut parser = ParserBuilder::from_path("test_data/system")
             .with_transaction_log("test_data/system.log2")
+            .with_transaction_log("test_data/system.log1")
             .recover_deleted(true)
             .build()
             .unwrap();
 
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
-            parser._count_all_keys_and_values_with_modified();
+            parser._count_all_keys_and_values_with_modified(None);
         assert_eq!(
-            (45587, 278, 1, 108178, 139, 5),
+            (45587, 319, 31, 108178, 139, 240),
             (
                 keys,
                 keys_versions,

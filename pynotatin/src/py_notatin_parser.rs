@@ -209,7 +209,7 @@ impl PyNotatinKeysIterator {
         let gil = Python::acquire_gil();
         let py = gil.python();
         self.inner
-            .next_key_preorder(&mut self.iterator_context, false)
+            .next_key_preorder(&mut self.iterator_context)
             .map(|key| Self::reg_key_to_pyobject(Ok(key), py))
     }
 }
