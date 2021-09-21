@@ -72,6 +72,24 @@ macro_rules! impl_enum_from_value {
     };
 }
 
+// impl_read_value_offset_length! { size, u32, le_u32 }
+#[macro_export]
+macro_rules! impl_read_value_offset_length {
+    ($input: ident, $start_pos: ident, $get_offset_info: ident, $var: ident, $var_type: ident, $nom_fn: ident) => {
+        let $var: Box<dyn DetailValue<$var_type>>;
+        let cur_offset = $input.as_ptr() as usize;
+        let ($input, val) = $nom_fn($input)?;
+        if $get_offset_info {
+            $var = Box::new(ValueOffsetLen::<$var_type>::new(
+                val,
+                cur_offset - $start_pos,
+            ));
+        } else {
+            $var = Box::new(Value::new(val));
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use crate::log::{Log, LogCode, Logs};

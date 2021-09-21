@@ -320,7 +320,7 @@ impl TransactionLog {
                     RegItemMapKey::new(key.path.clone(), None),
                     RegItemMapValue::new(
                         key.hash.expect("Must have a hash here"),
-                        key.detail.file_offset_absolute,
+                        key.detail.file_offset_absolute(),
                         sequence_num,
                     ),
                 );

@@ -28,6 +28,12 @@ pub enum CellState {
     // Make sure any new Deleted* values follow this pattern.
 }
 
+impl Default for CellState {
+    fn default() -> Self {
+        Self::Allocated
+    }
+}
+
 impl CellState {
     pub fn is_deleted(self) -> bool {
         (self as i8) < 0

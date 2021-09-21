@@ -158,7 +158,7 @@ impl<'a> ParserRecoverDeleted<'a> {
             Ok(full_key) => {
                 if let Some(mut full_key) = full_key {
                     self.find_cells_in_slack(
-                        &full_key.detail.slack,
+                        &full_key.detail.slack(),
                         full_key.slack_offset_absolute(),
                     );
                     if force_add || full_key.is_free() {

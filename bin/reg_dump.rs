@@ -175,9 +175,9 @@ fn versions_tsv(
         write_status,
         cell_key_node.sequence_num,
         cell_key_node.updated_by_sequence_num,
-        format_date_time(cell_key_node.last_key_written_date_and_time),
-        cell_key_node.key_node_flags,
-        cell_key_node.access_flags,
+        format_date_time(cell_key_node.last_key_written_date_and_time()),
+        cell_key_node.detail.key_node_flags(),
+        cell_key_node.detail.access_flags(),
         cell_key_node.logs
     )?;
 
