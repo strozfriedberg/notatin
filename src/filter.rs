@@ -97,23 +97,21 @@ impl FilterBuilder {
     }
 
     pub fn add_key_path(mut self, key_path: &str) -> Self {
-        for segment in key_path
-            .trim_end_matches('\\')
-            .to_ascii_lowercase()
-            .split('\\')
-        {
-            self.key_path.push(RegQueryComponent::ComponentString(
-                segment.to_ascii_lowercase(),
-            ));
+        for segment in key_path.trim_end_matches('\\').split('\\') {
+            Self::add_literal_segment_internal(&mut self.key_path, segment);
         }
         self
     }
 
     pub fn add_literal_segment(mut self, segment: &str) -> Self {
-        self.key_path.push(RegQueryComponent::ComponentString(
+        Self::add_literal_segment_internal(&mut self.key_path, segment.trim_matches('\\'));
+        self
+    }
+
+    fn add_literal_segment_internal(key_path: &mut Vec<RegQueryComponent>, segment: &str) {
+        key_path.push(RegQueryComponent::ComponentString(
             segment.to_ascii_lowercase(),
         ));
-        self
     }
 
     pub fn add_regex_segment(mut self, regex: &str) -> Self {
@@ -145,7 +143,7 @@ impl FilterBuilder {
             })
         } else {
             Err(Error::Any {
-                detail: format!("Regex errors encountered: {}", self.regex_errors.join(",")),
+                detail: format!("Regex errors encountered: {}", self.regex_errors.join(", ")),
             })
         }
     }
@@ -162,11 +160,11 @@ pub struct RegQuery {
 }
 
 impl RegQuery {
-    fn check_key_match(&self, key_name: &str, mut root_key_name_offset: usize) -> FilterFlags {
+    fn check_key_match(&self, key_path: &str, mut root_key_name_offset: usize) -> FilterFlags {
         if self.key_path_has_root {
             root_key_name_offset = 0;
         }
-        let key_path_iterator = key_name[root_key_name_offset..].split('\\'); // key path can be shorter and match
+        let key_path_iterator = key_path[root_key_name_offset..].split('\\'); // key path can be shorter and match
         let mut filter_iterator = self.key_path.iter();
         let mut filter_path_segment = filter_iterator.next();
 

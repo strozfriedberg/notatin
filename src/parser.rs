@@ -197,7 +197,8 @@ impl Parser {
         let newest_log = parsed_transaction_logs
             .last()
             .expect("shouldn't be here unless we have logs");
-        self.file_info.buffer[..512].copy_from_slice(&newest_log.base_block_bytes);
+        self.file_info.buffer[..BaseBlockBase::BASE_BLOCK_LEN]
+            .copy_from_slice(&newest_log.base_block_bytes);
 
         // Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
         //  "If a primary file contains an invalid base block, only the transaction log file with latest log entries is used in the recovery."
@@ -229,10 +230,9 @@ impl Parser {
             .copy_from_slice(&new_sequence_number_bytes);
 
         // Update the checksum
-        const CHECKSUM_OFFSET: usize = 508;
         let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
-        self.file_info.buffer
-            [CHECKSUM_OFFSET..CHECKSUM_OFFSET + std::mem::size_of_val(&new_checksum)]
+        self.file_info.buffer[BaseBlockBase::CHECKSUM_OFFSET
+            ..BaseBlockBase::CHECKSUM_OFFSET + std::mem::size_of_val(&new_checksum)]
             .copy_from_slice(&new_checksum.to_le_bytes());
 
         // read the header again
@@ -721,7 +721,7 @@ mod tests {
     #[test]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
-    /*    let mut parser = ParserBuilder::from_path("test_data/system")
+        /*    let mut parser = ParserBuilder::from_path("test_data/system")
             .with_transaction_log("test_data/system.log2")
             .with_transaction_log("test_data/system.log1")
             .recover_deleted(true)
@@ -988,7 +988,7 @@ mod tests {
     #[test]
     fn test_reg_query() -> Result<(), Error> {
         let filter = FilterBuilder::new()
-            .add_literal_segment("control Panel")
+            .add_literal_segment("\\control Panel")
             .add_regex_segment("access.*")
             .add_regex_segment("keyboard.+")
             .return_child_keys(false)

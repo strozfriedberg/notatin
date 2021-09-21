@@ -94,6 +94,9 @@ pub struct BaseBlockBase {
 }
 
 impl BaseBlockBase {
+    pub(crate) const CHECKSUM_OFFSET: usize = 508;
+    pub(crate) const BASE_BLOCK_LEN: usize = 512;
+
     /// Parses the registry file header.
     pub(crate) fn from_bytes(input: &[u8]) -> IResult<&[u8], Self> {
         let (input, _signature) = tag("regf")(input)?;
