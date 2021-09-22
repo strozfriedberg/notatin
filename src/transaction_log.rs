@@ -454,22 +454,22 @@ impl TransactionAnalyzer<'_> {
 
         // If we have any items that are left in prior_reg_items, then we didn't see them in the newly parsed buffer and therefore they're deleted.
         // Move them to the relevant lists in state
-        for prior_item in prior_reg_items {
-            match &prior_item.0.value_name {
+        for (prior_item_map_key, prior_item_map_value) in prior_reg_items {
+            match &prior_item_map_key.value_name {
                 Some(_) => {
                     if let Err(e) = self.add_full_value_to_list(
                         &mut updated_parser.state,
-                        &prior_item.0.key_path,
-                        prior_item.1.file_offset_absolute,
-                        prior_item.1.sequence_num,
+                        &prior_item_map_key.key_path,
+                        prior_item_map_value.file_offset_absolute,
+                        prior_item_map_value.sequence_num,
                         ModifiedListType::Deleted,
                     ) {
                         logs.add(
                             LogCode::WarningTransactionLog,
                             &format!(
                                 "Error adding {:?} to updated list for sequence num: {} ({})",
-                                prior_item.0,
-                                prior_item.1.sequence_num,
+                                prior_item_map_key,
+                                prior_item_map_value.sequence_num,
                                 &e.to_string()
                             ),
                         );
@@ -478,17 +478,17 @@ impl TransactionAnalyzer<'_> {
                 None => {
                     if let Err(e) = self.add_full_key_to_list(
                         &mut updated_parser.state,
-                        &prior_item.0.key_path,
-                        prior_item.1.file_offset_absolute,
-                        prior_item.1.sequence_num,
+                        &prior_item_map_key.key_path,
+                        prior_item_map_value.file_offset_absolute,
+                        prior_item_map_value.sequence_num,
                         ModifiedListType::Deleted,
                     ) {
                         logs.add(
                             LogCode::WarningTransactionLog,
                             &format!(
                                 "Error adding {} to deleted list for sequence num: {} ({})",
-                                prior_item.0.key_path,
-                                prior_item.1.sequence_num,
+                                prior_item_map_key.key_path,
+                                prior_item_map_value.sequence_num,
                                 &e.to_string()
                             ),
                         );
@@ -499,16 +499,17 @@ impl TransactionAnalyzer<'_> {
 
         // Check all new items against the deleted list. If it's in the deleted list, remove it.
         // This is a mitigation against ending up with a bunch of spurious deleted items from unparsable buffers.
-        for item in &latest_reg_items {
-            match &item.0.value_name {
-                Some(_) => updated_parser
-                    .state
-                    .deleted_values
-                    .remove(&item.0.key_path, &item.1.hash),
+        for (reg_item_map_key, reg_item_map_value) in &latest_reg_items {
+            match &reg_item_map_key.value_name {
+                Some(value_name) => updated_parser.state.deleted_values.remove(
+                    &reg_item_map_key.key_path,
+                    value_name,
+                    &reg_item_map_value.hash,
+                ),
                 None => updated_parser
                     .state
                     .deleted_keys
-                    .remove(&item.0.key_path, &item.1.hash),
+                    .remove(&reg_item_map_key.key_path, &reg_item_map_value.hash),
             }
         }
 

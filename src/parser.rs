@@ -256,6 +256,14 @@ impl Parser {
             let mut original_items = TransactionLog::get_reg_items(self, 0)?;
 
             let (primary_file_secondary_seq_num, _) = self.get_base_block_info();
+
+            /* https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
+            If a primary file contains a valid base block, both transaction log files are used to recover the dirty hive,
+            i.e. log entries from both transaction log files are applied.
+            The transaction log file with earlier log entries is used first.
+            (If recovery stops when applying log entries from this transaction log file, then recovery is resumed with the next
+            transaction log file; the first log entry of the next transaction log file is expected to have a sequence number
+            equal to N + 1, where N is a sequence number of the last log entry applied) */
             for log in &mut parsed_transaction_logs {
                 if log.base_block.primary_sequence_number >= primary_file_secondary_seq_num {
                     if new_sequence_number == 0
@@ -719,9 +727,10 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
-        /*    let mut parser = ParserBuilder::from_path("test_data/system")
+        let mut parser = ParserBuilder::from_path("test_data/system")
             .with_transaction_log("test_data/system.log2")
             .with_transaction_log("test_data/system.log1")
             .recover_deleted(true)
@@ -740,10 +749,11 @@ mod tests {
                 values_versions,
                 values_deleted
             )
-        );*/
+        );
     }
 
     #[test]
+    #[ignore]
     fn test_reg_logs_with_filter() -> Result<(), Error> {
         let filter = FilterBuilder::new()
             .add_key_path(r"RegistryTest")
@@ -843,6 +853,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_parser_primary_deleted() {
         let mut parser = ParserBuilder::from_path("test_data/system")
             .recover_deleted(true)

@@ -318,9 +318,6 @@ impl CellKeyNode {
         } else {
             path = &self.path;
         }
-        if let Some(sequence_num) = state.sequence_numbers.get(&(path.to_string(), None)) {
-            self.sequence_num = Some(*sequence_num);
-        }
         if let Some(deleted_keys) = state.deleted_keys.get(path) {
             self.deleted_keys = deleted_keys.to_vec();
             for dk in self.deleted_keys.iter_mut() {
@@ -332,12 +329,6 @@ impl CellKeyNode {
         }
 
         for val in &mut self.sub_values {
-            if let Some(sequence_num) = state
-                .sequence_numbers
-                .get(&(path.to_string(), Some(val.value_name.clone())))
-            {
-                val.sequence_num = Some(*sequence_num);
-            }
             if let Some(updated_values) = state.updated_values.get(path, &val.value_name) {
                 val.versions = updated_values.to_vec();
             }

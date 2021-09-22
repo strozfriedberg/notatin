@@ -81,16 +81,18 @@ impl DeletedValueMap {
         self.map.get(&key_path.to_string())
     }
 
-    pub(crate) fn remove(&mut self, key_path: &str, hash: &Hash) {
+    pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
         if let Some(values) = self.map.get_mut(key_path) {
             for (index, value) in values.iter().enumerate() {
-                if let Some(value_hash) = value.hash {
-                    if hash == &value_hash {
-                        values.remove(index);
-                        if values.is_empty() {
-                            self.map.remove(key_path);
+                if value.value_name == value_name {
+                    if let Some(value_hash) = value.hash {
+                        if hash == &value_hash {
+                            values.remove(index);
+                            if values.is_empty() {
+                                self.map.remove(key_path);
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
             }
@@ -153,7 +155,6 @@ pub(crate) struct State {
 
     pub hasher: Hasher,
 
-    pub sequence_numbers: HashMap<(String, Option<String>), u32>,
     pub deleted_keys: ModifiedDeletedKeyMap,
     pub updated_keys: ModifiedDeletedKeyMap,
     pub deleted_values: DeletedValueMap,
@@ -167,28 +168,14 @@ impl State {
         }
         self.root_key_path_offset
     }
-
-    /*pub(crate) fn from_transaction_logs(
-        logs: Option<Vec<TransactionLog>>,
-        recover_deleted: bool,
-    ) -> Self {
-        State {
-            transaction_logs: logs,
-            recover_deleted,
-            ..Default::default()
-        }
-    }*/
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            //recover_deleted: false,
             root_key_path_offset: 0,
-            //transaction_logs: None,
             info: Logs::default(),
             hasher: Hasher::new(),
-            sequence_numbers: HashMap::new(),
             deleted_keys: ModifiedDeletedKeyMap::new(),
             updated_keys: ModifiedDeletedKeyMap::new(),
             deleted_values: DeletedValueMap::new(),

@@ -66,28 +66,20 @@ pub struct ParserBuilderFromFile {
 
 impl ParserBuilderFromFile {
     // These methods have consuming and reference versions of each because the consuming versions allow for chaining and are cleaner to use,
-    // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Becuase `build()` consumes members of ParserBuilder.)
+    // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Because `build()` consumes members of ParserBuilder.)
     pub fn with_filter(mut self, filter: Filter) -> Self {
         self.base.filter = Some(filter);
         self
     }
 
     pub fn recover_deleted(mut self, recover: bool) -> Self {
-        self.recover_deleted_ref(recover);
-        self
-    }
-
-    pub fn recover_deleted_ref(&mut self, recover: bool) {
         self.base.recover_deleted = recover;
+        self
     }
 
     pub fn with_transaction_log<T: ReadSeek + 'static>(mut self, log: T) -> Self {
-        self.with_transaction_log_ref(log);
-        self
-    }
-
-    pub fn with_transaction_log_ref<T: ReadSeek + 'static>(&mut self, log: T) {
         self.transaction_logs.push(Box::new(log));
+        self
     }
 
     pub fn build(self) -> Result<Parser, Error> {
