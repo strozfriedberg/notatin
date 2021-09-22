@@ -23,6 +23,7 @@ use crate::filter::{Filter, FilterBuilder, FilterFlags};
 use crate::impl_flags_from_bits;
 use crate::impl_read_value_offset_length;
 use crate::impl_serialize_for_bitflags;
+use crate::make_file_offset_structs;
 use crate::log::{LogCode, Logs};
 use crate::parser::Parser;
 use crate::state::State;
@@ -39,205 +40,39 @@ use nom::{
     bytes::complete::tag,
     multi::count,
     number::complete::{le_i32, le_u16, le_u32, le_u64},
-    take, IResult,
+    take,
+    IResult,
 };
 use serde::Serialize;
 use std::any::Any;
 use winstructs::security::SecurityDescriptor;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct CellKeyNodeDetailLight {
-    file_offset_absolute: usize,
-    size: Value<i32>,
-    key_node_flags: Value<KeyNodeFlags>,
-    last_key_written_date_and_time_bytes: Value<u64>,
-    access_flags: Value<AccessFlags>,
-    parent_key_offset_relative: Value<i32>,
-    number_of_sub_keys: Value<u32>,
-    number_of_volatile_sub_keys: Value<u32>,
-    number_of_key_values: Value<u32>,
-    sub_keys_list_offset_relative: Value<u32>,
-    volatile_sub_keys_list_offset_relative: Value<i32>,
-    key_values_list_offset_relative: Value<i32>,
-    security_key_offset_relative: Value<u32>,
-    class_name_offset_relative: Value<i32>,
-    largest_sub_key_name_size: Value<u32>,
-    largest_sub_key_class_name_size: Value<u32>,
-    largest_value_name_size: Value<u32>,
-    largest_value_data_size: Value<u32>,
-    work_var: Value<u32>,
-    key_name_size: Value<u16>,
-    class_name_size: Value<u16>,
-    slack: Value<Vec<u8>>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct CellKeyNodeDetailBulky {
-    file_offset_absolute: usize,
-    size: ValueOffsetLen<i32>,
-    key_node_flags: ValueOffsetLen<KeyNodeFlags>,
-    last_key_written_date_and_time_bytes: ValueOffsetLen<u64>,
-    access_flags: ValueOffsetLen<AccessFlags>,
-    parent_key_offset_relative: ValueOffsetLen<i32>,
-    number_of_sub_keys: ValueOffsetLen<u32>,
-    number_of_volatile_sub_keys: ValueOffsetLen<u32>,
-    number_of_key_values: ValueOffsetLen<u32>,
-    sub_keys_list_offset_relative: ValueOffsetLen<u32>,
-    volatile_sub_keys_list_offset_relative: ValueOffsetLen<i32>,
-    key_values_list_offset_relative: ValueOffsetLen<i32>,
-    security_key_offset_relative: ValueOffsetLen<u32>,
-    class_name_offset_relative: ValueOffsetLen<i32>,
-    largest_sub_key_name_size: ValueOffsetLen<u32>,
-    largest_sub_key_class_name_size: ValueOffsetLen<u32>,
-    largest_value_name_size: ValueOffsetLen<u32>,
-    largest_value_data_size: ValueOffsetLen<u32>,
-    work_var: ValueOffsetLen<u32>,
-    key_name_size: ValueOffsetLen<u16>,
-    class_name_size: ValueOffsetLen<u16>,
-    slack: ValueOffsetLen<Vec<u8>>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub enum CellKeyNodeDetailEnum {
-    Light(CellKeyNodeDetailLight),
-    Bulky(CellKeyNodeDetailBulky),
-}
-
-impl CellKeyNodeDetailEnum {
-    pub(crate) fn file_offset_absolute(&self) -> usize {
-        match self {
-            Self::Light(detail) => detail.file_offset_absolute,
-            Self::Bulky(detail) => detail.file_offset_absolute,
-        }
-    }
-    fn size(&self) -> i32 {
-        match self {
-            Self::Light(detail) => detail.size.value,
-            Self::Bulky(detail) => detail.size.value,
-        }
-    }
-    pub fn key_node_flags(&self) -> KeyNodeFlags {
-        match self {
-            Self::Light(detail) => detail.key_node_flags.value,
-            Self::Bulky(detail) => detail.key_node_flags.value,
-        }
-    }
-    fn last_key_written_date_and_time_bytes(&self) -> u64 {
-        match self {
-            Self::Light(detail) => detail.last_key_written_date_and_time_bytes.value,
-            Self::Bulky(detail) => detail.last_key_written_date_and_time_bytes.value,
-        }
-    }
-    pub fn access_flags(&self) -> AccessFlags {
-        match self {
-            Self::Light(detail) => detail.access_flags.value,
-            Self::Bulky(detail) => detail.access_flags.value,
-        }
-    }
-    pub(crate) fn parent_key_offset_relative(&self) -> i32 {
-        match self {
-            Self::Light(detail) => detail.parent_key_offset_relative.value,
-            Self::Bulky(detail) => detail.parent_key_offset_relative.value,
-        }
-    }
-    pub fn number_of_sub_keys(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.number_of_sub_keys.value,
-            Self::Bulky(detail) => detail.number_of_sub_keys.value,
-        }
-    }
-    fn number_of_volatile_sub_keys(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.number_of_volatile_sub_keys.value,
-            Self::Bulky(detail) => detail.number_of_volatile_sub_keys.value,
-        }
-    }
-    pub fn number_of_key_values(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.number_of_key_values.value,
-            Self::Bulky(detail) => detail.number_of_key_values.value,
-        }
-    }
-    fn sub_keys_list_offset_relative(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.sub_keys_list_offset_relative.value,
-            Self::Bulky(detail) => detail.sub_keys_list_offset_relative.value,
-        }
-    }
-    fn volatile_sub_keys_list_offset_relative(&self) -> i32 {
-        match self {
-            Self::Light(detail) => detail.volatile_sub_keys_list_offset_relative.value,
-            Self::Bulky(detail) => detail.volatile_sub_keys_list_offset_relative.value,
-        }
-    }
-    fn key_values_list_offset_relative(&self) -> i32 {
-        match self {
-            Self::Light(detail) => detail.key_values_list_offset_relative.value,
-            Self::Bulky(detail) => detail.key_values_list_offset_relative.value,
-        }
-    }
-    fn security_key_offset_relative(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.security_key_offset_relative.value,
-            Self::Bulky(detail) => detail.security_key_offset_relative.value,
-        }
-    }
-    fn class_name_offset_relative(&self) -> i32 {
-        match self {
-            Self::Light(detail) => detail.class_name_offset_relative.value,
-            Self::Bulky(detail) => detail.class_name_offset_relative.value,
-        }
-    }
-    fn largest_sub_key_name_size(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.largest_sub_key_name_size.value,
-            Self::Bulky(detail) => detail.largest_sub_key_name_size.value,
-        }
-    }
-    fn largest_sub_key_class_name_size(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.largest_sub_key_class_name_size.value,
-            Self::Bulky(detail) => detail.largest_sub_key_class_name_size.value,
-        }
-    }
-    fn largest_value_name_size(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.largest_value_name_size.value,
-            Self::Bulky(detail) => detail.largest_value_name_size.value,
-        }
-    }
-    fn largest_value_data_size(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.largest_value_data_size.value,
-            Self::Bulky(detail) => detail.largest_value_data_size.value,
-        }
-    }
-    fn work_var(&self) -> u32 {
-        match self {
-            Self::Light(detail) => detail.work_var.value,
-            Self::Bulky(detail) => detail.work_var.value,
-        }
-    }
-    fn key_name_size(&self) -> u16 {
-        match self {
-            Self::Light(detail) => detail.key_name_size.value,
-            Self::Bulky(detail) => detail.key_name_size.value,
-        }
-    }
-    fn class_name_size(&self) -> u16 {
-        match self {
-            Self::Light(detail) => detail.class_name_size.value,
-            Self::Bulky(detail) => detail.class_name_size.value,
-        }
-    }
-    pub(crate) fn slack(&self) -> Vec<u8> {
-        match self {
-            // todo: remove these clones
-            Self::Light(detail) => detail.slack.value.clone(),
-            Self::Bulky(detail) => detail.slack.value.clone(),
-        }
-    }
-}
+make_file_offset_structs!(
+    CellKeyNodeDetailLight,
+    CellKeyNodeDetailBulky,
+    CellKeyNodeDetailEnum,
+    size: i32,
+    key_node_flags: KeyNodeFlags,
+    last_key_written_date_and_time_bytes: u64,
+    access_flags: AccessFlags,
+    parent_key_offset_relative: i32,
+    number_of_sub_keys: u32,
+    number_of_volatile_sub_keys: u32,
+    number_of_key_values: u32,
+    sub_keys_list_offset_relative: u32,
+    volatile_sub_keys_list_offset_relative: i32,
+    key_values_list_offset_relative: i32,
+    security_key_offset_relative: u32,
+    class_name_offset_relative: i32,
+    largest_sub_key_name_size: u32,
+    largest_sub_key_class_name_size: u32,
+    largest_value_name_size: u32,
+    largest_value_data_size: u32,
+    work_var: u32,
+    key_name_size: u16,
+    class_name_size: u16,
+    slack: Vec<u8>
+);
 
 impl Default for CellKeyNodeDetailEnum {
     fn default() -> Self {
@@ -338,6 +173,7 @@ pub(crate) trait DetailValue<T: Default + 'static> {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetailEnum,
+    pub file_offset_absolute: usize,
     pub key_name: String,
     pub path: String,
     pub cell_state: CellState,
@@ -393,7 +229,7 @@ impl CellKeyNode {
     }
 
     pub(crate) fn slack_offset_absolute(&self) -> usize {
-        self.detail.file_offset_absolute() + self.get_cell_size() - self.detail.slack().len()
+        self.file_offset_absolute + self.get_cell_size() - self.detail.slack().len()
     }
 
     fn from_bytes<'a>(
@@ -494,7 +330,6 @@ impl CellKeyNode {
             let detail: CellKeyNodeDetailEnum;
             if get_offset_info {
                 detail = CellKeyNodeDetailEnum::Bulky(CellKeyNodeDetailBulky {
-                    file_offset_absolute,
                     size: *size.as_any().downcast_ref::<ValueOffsetLen<i32>>().unwrap(),
                     key_node_flags: *key_node_flags
                         .as_any()
@@ -579,7 +414,6 @@ impl CellKeyNode {
                 })
             } else {
                 detail = CellKeyNodeDetailEnum::Light(CellKeyNodeDetailLight {
-                    file_offset_absolute,
                     size: *size.as_any().downcast_ref::<Value<i32>>().unwrap(),
                     key_node_flags: *key_node_flags
                         .as_any()
@@ -666,6 +500,7 @@ impl CellKeyNode {
 
             let cell_key_node = Self {
                 detail,
+                file_offset_absolute,
                 key_name,
                 path,
                 cell_state: CellState::Allocated,
@@ -1150,7 +985,7 @@ impl CellKeyNode {
 
 impl Cell for CellKeyNode {
     fn get_file_offset_absolute(&self) -> usize {
-        self.detail.file_offset_absolute()
+        self.file_offset_absolute
     }
 
     fn get_hash(&self) -> Option<blake3::Hash> {

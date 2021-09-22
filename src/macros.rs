@@ -72,12 +72,18 @@ macro_rules! impl_enum_from_value {
     };
 }
 
-// impl_read_value_offset_length! { size, u32, le_u32 }
+// impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, flags, u16, le_u16 }
 #[macro_export]
 macro_rules! impl_read_value_offset_length {
     ($input: ident, $start_pos: ident, $get_offset_info: ident, $var: ident, $var_type: ident, $nom_fn: ident) => {
         let $var: Box<dyn DetailValue<$var_type>>;
-        let cur_offset = $input.as_ptr() as usize;
+        let cur_offset;
+        if $get_offset_info {
+            cur_offset = $input.as_ptr() as usize;
+        }
+        else {
+            cur_offset = 0; // cur_offset isn't used if !$get_offset_info
+        }
         let ($input, val) = $nom_fn($input)?;
         if $get_offset_info {
             $var = Box::new(ValueOffsetLen::<$var_type>::new(
@@ -88,6 +94,39 @@ macro_rules! impl_read_value_offset_length {
             $var = Box::new(Value::new(val));
         }
     };
+}
+
+#[macro_export]
+macro_rules! make_file_offset_structs {
+    (
+        $class_name_values:ident,
+        $class_name_value_offset_sizes:ident,
+        $enum_name:ident,
+        $($element: ident: $ty: ty),*
+    ) => {
+        #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+        pub struct $class_name_values { $($element: Value<$ty>),* }
+
+        #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+        pub struct $class_name_value_offset_sizes { $($element: ValueOffsetLen<$ty>),* }
+
+        #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+        pub enum $enum_name {
+            Light($class_name_values),
+            Bulky($class_name_value_offset_sizes),
+        }
+
+        impl $enum_name {
+            $(
+                pub fn $element(&self) -> $ty {
+                    match self {
+                        Self::Light(detail) => detail.$element.value.clone(),
+                        Self::Bulky(detail) => detail.$element.value.clone(),
+                    }
+                }
+            )*
+        }
+    }
 }
 
 #[cfg(test)]

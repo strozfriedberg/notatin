@@ -304,7 +304,7 @@ pub fn write_common_export_format<W: Write>(
             &mut writer,
             "key,{},{},{},,,,{}",
             get_alloc_char(&key.cell_state),
-            key.detail.file_offset_absolute(),
+            key.file_offset_absolute,
             escape_string(key_path),
             format_date_time(key.last_key_written_date_and_time())
         )?;
