@@ -20,7 +20,8 @@ use notatin::{
     cell_key_value::CellKeyValue,
     cli_util::parse_paths,
     err::Error,
-    filter::{Filter, RegQueryBuilder},
+    filter::FilterBuilder,
+    parser::ParserIterator,
     parser_builder::ParserBuilder,
     util::{format_date_time, write_common_export_format},
 };
@@ -72,36 +73,44 @@ fn main() -> Result<(), Error> {
 
     let mut parser_builder = ParserBuilder::from_path(input);
     parser_builder.recover_deleted(recover);
-    if let Some(f) = matches.value_of("filter") {
-        parser_builder.with_filter(Filter::from_path(
-            RegQueryBuilder::from_key(f).return_child_keys(true).build(),
-        ));
-    }
     for log in logs.unwrap_or_default() {
         parser_builder.with_transaction_log(log);
     }
-    let mut parser = parser_builder.build()?;
+    let parser = parser_builder.build()?;
+
+    let filter = match matches.value_of("filter") {
+        Some(f) => Some(
+            FilterBuilder::new()
+                .add_key_path(f)
+                .return_child_keys(true)
+                .build()?,
+        ),
+        None => None,
+    };
 
     let write_file = File::create(output)?;
-
     match output_type {
-        OutputType::Tsv => {
-            let mut writer = BufWriter::new(write_file);
-            //write!(writer, "{}", std::str::from_utf8(&vec![0xEF, 0xBB, 0xBF]).expect("known good bytes (utf8 BOM)"))?; // need explicit BOM to keep Excel happy with multibyte UTF8 chars
-            writeln!(writer,"Key Path\tValue Name\tStatus\tKey Original Sequence Number\tKey Modifying Sequence Number\tValue Original Sequence Number\tValue Modifying Sequence Number\tTimestamp\tFlags\tAccess Flags\tValue\tLogs")?;
-            for key in parser.iter() {
-                versions_tsv(&key, &mut writer, "Current", false)?;
-            }
-            writeln!(writer, "\nLogs\n-----------")?;
-            parser.get_parse_logs().write(&mut writer)?;
-        }
         OutputType::Common => {
-            write_common_export_format(&mut parser, write_file)?;
+            write_common_export_format(&parser, filter, write_file)?;
         }
-        OutputType::Jsonl => {
+        OutputType::Tsv | OutputType::Jsonl => {
+            let mut iter = ParserIterator::new(&parser);
+            if let Some(filter) = filter {
+                iter.with_filter(filter);
+            }
             let mut writer = BufWriter::new(write_file);
-            for key in parser.iter() {
-                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
+            if output_type == OutputType::Tsv {
+                //write!(writer, "{}", std::str::from_utf8(&vec![0xEF, 0xBB, 0xBF]).expect("known good bytes (utf8 BOM)"))?; // need explicit BOM to keep Excel happy with multibyte UTF8 chars
+                writeln!(writer,"Key Path\tValue Name\tStatus\tKey Original Sequence Number\tKey Modifying Sequence Number\tValue Original Sequence Number\tValue Modifying Sequence Number\tTimestamp\tFlags\tAccess Flags\tValue\tLogs")?;
+                for key in iter.iter() {
+                    versions_tsv(&key, &mut writer, "Current", false)?;
+                }
+                writeln!(writer, "\nLogs\n-----------")?;
+                parser.get_parse_logs().write(&mut writer)?;
+            } else {
+                for key in iter.iter() {
+                    writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
+                }
             }
         }
     }

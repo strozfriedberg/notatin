@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-use crate::cell::CellState;
+use crate::cell::{Cell, CellState};
 use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
 use crate::file_info::FileInfo;
-use crate::filter::{Filter, FilterFlags, RegQueryBuilder};
+use crate::filter::{Filter, FilterBuilder, FilterFlags};
 use crate::impl_flags_from_bits;
 use crate::impl_serialize_for_bitflags;
 use crate::log::{LogCode, Logs};
@@ -314,36 +314,27 @@ impl CellKeyNode {
     fn update_modified_lists(&mut self, state: &State) {
         let path;
         if self.is_key_root() {
-            path = String::new();
+            path = "";
         } else {
-            path = self.path.clone();
+            path = &self.path;
         }
-        if let Some(sequence_num) = state.sequence_numbers.get(&(path.clone(), None)) {
-            self.sequence_num = Some(*sequence_num);
-        }
-        if let Some(deleted_keys) = state.deleted_keys.get(&path) {
+        if let Some(deleted_keys) = state.deleted_keys.get(path) {
             self.deleted_keys = deleted_keys.to_vec();
             for dk in self.deleted_keys.iter_mut() {
                 dk.update_modified_lists(state);
             }
         }
-        if let Some(updated_keys) = state.updated_keys.get(&path) {
+        if let Some(updated_keys) = state.updated_keys.get(path) {
             self.versions = updated_keys.to_vec();
         }
 
         for val in &mut self.sub_values {
-            if let Some(sequence_num) = state
-                .sequence_numbers
-                .get(&(path.clone(), Some(val.value_name.clone())))
-            {
-                val.sequence_num = Some(*sequence_num);
-            }
-            if let Some(updated_values) = state.updated_values.get(&path, &val.value_name) {
+            if let Some(updated_values) = state.updated_values.get(path, &val.value_name) {
                 val.versions = updated_values.to_vec();
             }
         }
 
-        if let Some(deleted_values) = state.deleted_values.get(&path) {
+        if let Some(deleted_values) = state.deleted_values.get(path) {
             self.sub_values.extend(deleted_values.to_vec());
         }
     }
@@ -366,7 +357,7 @@ impl CellKeyNode {
             || filter_flags.contains(FilterFlags::FILTER_KEY_MATCH)
     }
 
-    /// Reads a key node from file_info.
+    /// Reads a key node from a slice.
     /// Returns a CellKeyNode
     pub(crate) fn read_from_slice(
         file_info: &FileInfo,
@@ -555,11 +546,11 @@ impl CellKeyNode {
         if sub_path.is_empty() {
             Some(self.clone())
         } else {
-            let filter = Filter::from_path(
-                RegQueryBuilder::from_key(&format!("{}\\{}", self.path, sub_path))
-                    .key_path_has_root(true)
-                    .build(),
-            );
+            let filter = FilterBuilder::new()
+                .add_key_path(&format!("{}\\{}", self.path, sub_path))
+                .key_path_has_root(true)
+                .build()
+                .unwrap_or_default();
             self.get_sub_key_internal(&parser.file_info, &mut parser.state, &filter, None)
         }
     }
@@ -759,6 +750,20 @@ impl CellKeyNode {
     }
 }
 
+impl Cell for CellKeyNode {
+    fn get_file_offset_absolute(&self) -> usize {
+        self.detail.file_offset_absolute
+    }
+
+    fn get_hash(&self) -> Option<blake3::Hash> {
+        self.hash
+    }
+
+    fn get_logs(&self) -> &Logs {
+        &self.logs
+    }
+}
+
 pub struct CellKeyNodeValueIterator<'a> {
     inner: &'a CellKeyNode,
     sub_values_iter_index: usize,
@@ -828,36 +833,18 @@ impl_flags_from_bits! { KeyNodeFlags, u16 }
 mod tests {
     use super::*;
     use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
-    use crate::filter::RegQueryBuilder;
+    use crate::filter::FilterBuilder;
+    use crate::parser::{ParserIterator, ParserIteratorContext};
     use crate::parser_builder::ParserBuilder;
     use nom::error::ErrorKind;
 
     #[test]
-    fn test_iterator() {
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key("Control Panel\\Accessibility\\Keyboard Response")
-                .return_child_keys(true)
-                .build(),
-        );
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
-            .build()
-            .unwrap();
-        for key in parser.iter_include_ancestors() {
-            for val in key.value_iter() {
-                println!("{}", val.value_name);
-            }
-        }
-    }
-
-    #[test]
-    fn test_get_sub_key_by_path() {
-        let filter = Filter::from_path(RegQueryBuilder::from_key("Control Panel").build());
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
-            .build()
-            .unwrap();
-        let mut key = parser.next_key_postorder(true).unwrap();
+    fn test_get_sub_key_by_path() -> Result<(), Error> {
+        let filter = FilterBuilder::new().add_key_path("Control Panel").build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let mut iter_context =
+            ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
 
         let sub_key = key
             .get_sub_key_by_path(&mut parser, "Accessibility")
@@ -878,26 +865,25 @@ mod tests {
         let invalid_sub_key = key.get_sub_key_by_path(&mut parser, "Accessibility\\Nope");
         assert_eq!(None, invalid_sub_key);
 
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()
-            .unwrap();
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
         let mut key = parser.get_root_key().unwrap().unwrap();
         let sub_key = key.get_sub_key_by_path(&mut parser, "").unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}",
             sub_key.path
         );
+        Ok(())
     }
 
     #[test]
-    fn test_get_sub_key_by_index() {
-        let filter =
-            Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
-            .build()
-            .unwrap();
-        let mut key = parser.next_key_postorder(true).unwrap();
+    fn test_get_sub_key_by_index() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path("Control Panel\\Accessibility")
+            .build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let mut iter_context =
+            ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
         let sub_key = key.get_sub_key_by_index(&mut parser, 0).unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
@@ -911,17 +897,18 @@ mod tests {
 
         let invalid_sub_key = key.get_sub_key_by_index(&mut parser, 20);
         assert_eq!(None, invalid_sub_key);
+        Ok(())
     }
 
     #[test]
-    fn test_next_sub_key() {
-        let filter =
-            Filter::from_path(RegQueryBuilder::from_key("Control Panel\\Accessibility").build());
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .with_filter(filter)
-            .build()
-            .unwrap();
-        let mut key = parser.next_key_postorder(true).unwrap();
+    fn test_next_sub_key() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path("Control Panel\\Accessibility")
+            .build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let mut iter_context =
+            ParserIteratorContext::from_parser(&parser, true, Some((filter, true)));
+        let mut key = parser.next_key_postorder(&mut iter_context).unwrap();
         let sub_key = key.next_sub_key(&mut parser).unwrap();
         assert_eq!(
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\AudioDescription",
@@ -932,18 +919,20 @@ mod tests {
             r"\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\Control Panel\Accessibility\Blind Access",
             sub_key.path
         );
+        Ok(())
     }
 
     #[test]
-    fn test_get_value() {
-        let filter = Filter::from_path(
-            RegQueryBuilder::from_key("Control Panel\\Accessibility\\Keyboard Response").build(),
-        );
-        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+    fn test_get_value() -> Result<(), Error> {
+        let filter = FilterBuilder::new()
+            .add_key_path("Control Panel\\Accessibility\\Keyboard Response")
+            .build()?;
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let key = ParserIterator::new(&parser)
             .with_filter(filter)
-            .build()
+            .iter()
+            .next()
             .unwrap();
-        let key = parser.iter_postorder_include_ancestors().next().unwrap();
         let val = key.get_value("delayBeforeAcceptance");
         let hash_array: [u8; blake3::OUT_LEN] = [
             0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
@@ -976,6 +965,7 @@ mod tests {
             updated_by_sequence_num: None,
         };
         assert_eq!(Some(expected), val);
+        Ok(())
     }
 
     #[test]

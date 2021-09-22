@@ -35,11 +35,6 @@ pub struct ParserBuilderFromPath {
 }
 
 impl ParserBuilderFromPath {
-    pub fn with_filter(&mut self, filter: Filter) -> &mut Self {
-        self.base.filter = Some(filter);
-        self
-    }
-
     pub fn recover_deleted(&mut self, recover: bool) -> &mut Self {
         self.base.recover_deleted = recover;
         self
@@ -71,28 +66,20 @@ pub struct ParserBuilderFromFile {
 
 impl ParserBuilderFromFile {
     // These methods have consuming and reference versions of each because the consuming versions allow for chaining and are cleaner to use,
-    // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Becuase `build()` consumes members of ParserBuilder.)
-    pub fn with_filter(&mut self, filter: Filter) -> &Self {
+    // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Because `build()` consumes members of ParserBuilder.)
+    pub fn with_filter(mut self, filter: Filter) -> Self {
         self.base.filter = Some(filter);
         self
     }
 
-    pub fn recover_deleted(&mut self, recover: bool) -> &Self {
-        self.recover_deleted_ref(recover);
-        self
-    }
-
-    pub fn recover_deleted_ref(&mut self, recover: bool) {
+    pub fn recover_deleted(mut self, recover: bool) -> Self {
         self.base.recover_deleted = recover;
-    }
-
-    pub fn with_transaction_log<T: ReadSeek + 'static>(&mut self, log: T) -> &Self {
-        self.with_transaction_log_ref(log);
         self
     }
 
-    pub fn with_transaction_log_ref<T: ReadSeek + 'static>(&mut self, log: T) {
+    pub fn with_transaction_log<T: ReadSeek + 'static>(mut self, log: T) -> Self {
         self.transaction_logs.push(Box::new(log));
+        self
     }
 
     pub fn build(self) -> Result<Parser, Error> {
@@ -138,29 +125,17 @@ impl ParserBuilder {
         base: ParserBuilderBase,
         transaction_logs: Vec<Box<T>>,
     ) -> Result<Parser, Error> {
-        let parsed_transaction_logs;
-        let warning_logs;
-        if transaction_logs.is_empty() {
-            parsed_transaction_logs = None;
-            warning_logs = None;
-        } else {
-            let ret = TransactionLog::parse(Some(transaction_logs))?;
-            parsed_transaction_logs = ret.0;
-            warning_logs = ret.1;
-        }
+        let (parsed_transaction_logs, warning_logs) = TransactionLog::parse(transaction_logs)?;
 
         let mut parser = Parser {
             file_info,
-            state: State::from_transaction_logs(parsed_transaction_logs, base.recover_deleted),
-            filter: base.filter.unwrap_or_default(),
+            state: State::default(),
             base_block: None,
             hive_bin_header: None,
             cell_key_node_root: None,
-            stack_to_traverse: Vec::new(),
-            stack_to_return: Vec::new(),
-            get_modified: false,
+            recover_deleted: base.recover_deleted,
         };
-        parser.init(base.recover_deleted)?;
+        parser.init(base.recover_deleted, parsed_transaction_logs)?;
 
         if let Some(warning_logs) = warning_logs {
             parser.state.info.extend(warning_logs);

@@ -95,17 +95,9 @@ impl<'a> ParserRecoverDeleted<'a> {
         Ok(file_offset_absolute)
     }
 
-    // this method will log any errors that are encountered
+    // this method will ignore errors that are encountered
     fn find_cells_in_slack(&mut self, input_orig: &[u8], file_offset_absolute_start: usize) {
-        if let Err(e) = self.find_cells_in_slack_internal(input_orig, file_offset_absolute_start) {
-            self.state.info.add(
-                LogCode::WarningRecovery,
-                &format!(
-                    "\tError recovering cells at starting offset {} ({})",
-                    file_offset_absolute_start, e
-                ),
-            );
-        }
+        let _ = self.find_cells_in_slack_internal(input_orig, file_offset_absolute_start);
     }
 
     fn read_cell_key_value(

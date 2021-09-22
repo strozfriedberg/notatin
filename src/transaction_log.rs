@@ -15,14 +15,15 @@
  */
 
 use crate::base_block::BaseBlockBase;
-use crate::cell::CellState;
+use crate::cell::{Cell, CellState};
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
-use crate::parser::{Parser, RegItems};
+use crate::parser::{Parser, ParserIterator};
+use crate::reg_item_map::{RegItemMap, RegItemMapKey, RegItemMapValue};
 use crate::state::State;
 use crate::util;
 use nom::{
@@ -33,7 +34,7 @@ use nom::{
 use serde::Serialize;
 use std::collections::HashMap;
 
-// Structures based off https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-transaction-log-files
+// Transaction log structures based off https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#format-of-transaction-log-files
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct DirtyPageRef {
@@ -183,48 +184,50 @@ impl TransactionLog {
     }
 
     pub(crate) fn parse<T: ReadSeek>(
-        log_files: Option<Vec<T>>,
-    ) -> Result<(Option<Vec<Self>>, Option<Logs>), Error> {
-        if let Some(log_files) = log_files {
-            let mut error_logs = Logs::default();
-            let mut transaction_logs = Vec::new();
-            for mut log_file in log_files {
-                let mut file_buffer_log = Vec::new();
-                log_file.read_to_end(&mut file_buffer_log)?;
-                if file_buffer_log.is_empty() {
-                    error_logs.add(LogCode::WarningParse, &"Skipping log file; 0 bytes");
-                } else {
-                    match Self::from_bytes(&file_buffer_log[0..]) {
-                        Ok((_, log)) => transaction_logs.push(log),
-                        Err(e) => {
-                            error_logs.add(
-                                LogCode::WarningParse,
-                                &format!("Skipping log file; {}", Error::from(e).to_string()),
-                            );
-                        }
+        log_files: Vec<T>,
+    ) -> Result<(Vec<Self>, Option<Logs>), Error> {
+        let mut transaction_logs = Vec::new();
+        let mut error_logs = Logs::default();
+        for mut log_file in log_files {
+            let mut file_buffer_log = Vec::new();
+            log_file.read_to_end(&mut file_buffer_log)?;
+            if file_buffer_log.is_empty() {
+                error_logs.add(LogCode::WarningParse, &"Skipping log file; 0 bytes");
+            } else {
+                match Self::from_bytes(&file_buffer_log[0..]) {
+                    Ok((_, log)) => transaction_logs.push(log),
+                    Err(e) => {
+                        error_logs.add(
+                            LogCode::WarningParse,
+                            &format!("Skipping log file; {}", Error::from(e).to_string()),
+                        );
                     }
                 }
             }
-            Ok((Some(transaction_logs), error_logs.get_option()))
-        } else {
-            Ok((None, None))
         }
+        // sort oldest to newest
+        transaction_logs.sort_by(|a, b| {
+            a.base_block
+                .primary_sequence_number
+                .cmp(&b.base_block.primary_sequence_number)
+        });
+        Ok((transaction_logs, error_logs.get_option()))
     }
 
-    /// Updates the primary registry with the dirty pages. Returns the last sequence number applied and the updated list of RegItems
-    pub(crate) fn update_bytes(
+    /// Updates the primary registry with the dirty pages in the passed-in log. Returns the last sequence number applied and the updated RegItemMap
+    pub(crate) fn update_parser(
         &self,
         parser: &mut Parser,
-        base_block_base: &BaseBlockBase,
-        mut prior_items: RegItems,
-    ) -> (u32, RegItems) {
+        mut prior_items: RegItemMap,
+    ) -> (u32, RegItemMap) {
         let mut new_sequence_number = 0;
+        let (primary_secondary_seq_num, primary_hive_bins_data_size) = parser.get_base_block_info();
         for log_entry in &self.log_entries {
             if log_entry.has_valid_hashes {
-                if log_entry.sequence_number < base_block_base.secondary_sequence_number {
+                if log_entry.sequence_number < primary_secondary_seq_num {
                     parser.state.info.add(
                         LogCode::WarningTransactionLog,
-                        &format!("Skipping log entry; the log entry sequence number ({}) is less than to the primary file's secondary sequence number ({})", log_entry.sequence_number, base_block_base.secondary_sequence_number)
+                        &format!("Skipping log entry; the log entry sequence number ({}) is less than to the primary file's secondary sequence number ({})", log_entry.sequence_number, primary_secondary_seq_num)
                     );
                 } else if !log_entry.is_valid_hive_bin_data_size() {
                     parser.state.info.add(
@@ -241,11 +244,10 @@ impl TransactionLog {
                     );
                     break;
                 } else {
-                    if base_block_base.hive_bins_data_size < log_entry.hive_bins_data_size {
+                    if primary_hive_bins_data_size < log_entry.hive_bins_data_size {
                         parser.file_info.buffer.resize(
                             parser.file_info.buffer.len()
-                                + (log_entry.hive_bins_data_size
-                                    - base_block_base.hive_bins_data_size)
+                                + (log_entry.hive_bins_data_size - primary_hive_bins_data_size)
                                     as usize,
                             0,
                         );
@@ -254,7 +256,7 @@ impl TransactionLog {
 
                     // save the prior buffer for use
                     let prior_file_info;
-                    if parser.state.recover_deleted {
+                    if parser.recover_deleted {
                         prior_file_info = Some(parser.file_info.clone());
                     } else {
                         prior_file_info = None;
@@ -270,13 +272,13 @@ impl TransactionLog {
                         dst.copy_from_slice(src);
                     }
 
-                    if parser.state.recover_deleted {
+                    if parser.recover_deleted {
                         let mut logs = Logs::default();
                         let transaction_analyzer = TransactionAnalyzer {
                             prior_file_info: &prior_file_info.unwrap(),
                             new_sequence_number,
                         };
-                        match transaction_analyzer.update_cell_key_tree(
+                        match transaction_analyzer.get_latest_reg_items(
                             parser,
                             &mut prior_items,
                             &mut logs,
@@ -306,14 +308,17 @@ impl TransactionLog {
         (new_sequence_number, prior_items)
     }
 
-    pub(crate) fn get_reg_items(parser: &mut Parser, sequence_num: u32) -> Result<RegItems, Error> {
-        let mut reg_items: RegItems = HashMap::new();
-        if parser.state.recover_deleted {
+    pub(crate) fn get_reg_items(
+        parser: &mut Parser,
+        sequence_num: u32,
+    ) -> Result<RegItemMap, Error> {
+        let mut reg_items: RegItemMap = HashMap::new();
+        if parser.recover_deleted {
             parser.init_root()?;
-            for key in parser.iter_postorder_include_ancestors() {
+            for key in ParserIterator::new(parser).iter() {
                 reg_items.insert(
-                    (key.path.clone(), None),
-                    (
+                    RegItemMapKey::new(key.path.clone(), None),
+                    RegItemMapValue::new(
                         key.hash.expect("Must have a hash here"),
                         key.detail.file_offset_absolute,
                         sequence_num,
@@ -321,8 +326,8 @@ impl TransactionLog {
                 );
                 for value in key.sub_values {
                     reg_items.insert(
-                        (key.path.clone(), Some(value.value_name)),
-                        (
+                        RegItemMapKey::new(key.path.clone(), Some(value.value_name)),
+                        RegItemMapValue::new(
                             value.hash.expect("Must have a hash here"),
                             value.detail.file_offset_absolute,
                             sequence_num,
@@ -335,143 +340,136 @@ impl TransactionLog {
     }
 }
 
+struct RegItemNeeded {
+    key_path: String,
+    file_offset_absolute: usize,
+    sequence_num: u32,
+}
+
+impl RegItemNeeded {
+    fn new(key_path: String, file_offset_absolute: usize, sequence_num: u32) -> Self {
+        Self {
+            key_path,
+            file_offset_absolute,
+            sequence_num,
+        }
+    }
+}
+
+struct NewItemInfo<'a> {
+    key_path: &'a str,
+    value_path: Option<String>,
+    updated_item: &'a dyn Cell,
+}
+
 #[derive(Clone, Debug)]
-struct TransactionAnalyzer<'a> {
+pub(crate) struct TransactionAnalyzer<'a> {
     prior_file_info: &'a FileInfo,
     new_sequence_number: u32,
 }
 
 impl TransactionAnalyzer<'_> {
-    pub(crate) fn update_cell_key_tree(
+    pub(crate) fn get_latest_reg_items(
         &self,
         updated_parser: &mut Parser,
-        prior_reg_items: &mut RegItems,
+        prior_reg_items: &mut RegItemMap,
         logs: &mut Logs,
-    ) -> Result<RegItems, Error> {
-        let mut prior_key_needed = Vec::new();
-        let mut prior_value_needed = Vec::new();
-        let mut updated_reg_items = HashMap::with_capacity(prior_reg_items.len());
+    ) -> Result<RegItemMap, Error> {
+        let mut prior_keys_needed = Vec::new(); // vec of keys that are missing or different in the latest version
+        let mut prior_values_needed = Vec::new(); // vec of values that are missing or different in the latest version
+        let mut latest_reg_items = HashMap::with_capacity(prior_reg_items.len());
 
         updated_parser.init_root()?;
 
-        for mut updated_key in updated_parser.iter_skip_modified() {
-            // Is the key in our prior list?
-            let sequence_num;
-            if let Some(prior_key) = prior_reg_items.remove(&(updated_key.path.clone(), None)) {
-                // Existing item; if the hash differs we have a modified item
-                if updated_key.hash == Some(prior_key.0) {
-                    sequence_num = prior_key.2;
-                } else {
-                    sequence_num = self.new_sequence_number;
-                    prior_key_needed.push((updated_key.path.clone(), prior_key.1, prior_key.2));
-                }
-            } else {
-                sequence_num = self.new_sequence_number;
-            }
-            updated_reg_items.insert(
-                (updated_key.path.clone(), None),
-                (
-                    updated_key.hash.expect("Must have a hash here"),
-                    updated_key.detail.file_offset_absolute,
-                    sequence_num,
-                ),
+        for updated_key in ParserIterator::new(updated_parser)
+            .get_modified_items(false)
+            .iter()
+        {
+            self.handle_new_item(
+                prior_reg_items,
+                &mut latest_reg_items,
+                &mut prior_keys_needed,
+                logs,
+                NewItemInfo {
+                    key_path: &updated_key.path,
+                    value_path: None,
+                    updated_item: &updated_key,
+                },
             );
-
-            updated_key
-                .logs
-                .prepend_all(&format!("Sequence number {} - ", self.new_sequence_number));
-            logs.extend(updated_key.logs);
-
             for updated_value in updated_key.sub_values {
-                // Is the value in our prior list?
-                let sequence_num;
-                if let Some(prior_value) = prior_reg_items.remove(&(
-                    updated_key.path.clone(),
-                    Some(updated_value.value_name.clone()),
-                )) {
-                    // Existing item; if the hash differs we have a modified item
-                    if updated_value.hash == Some(prior_value.0) {
-                        sequence_num = prior_value.2;
-                    } else {
-                        sequence_num = self.new_sequence_number;
-                        prior_value_needed.push((
-                            updated_key.path.clone(),
-                            prior_value.1,
-                            prior_value.2,
-                        ));
-                    }
-                } else {
-                    sequence_num = self.new_sequence_number;
-                }
-                updated_reg_items.insert(
-                    (updated_key.path.clone(), Some(updated_value.value_name)),
-                    (
-                        updated_value.hash.expect("Must have a hash here"),
-                        updated_value.detail.file_offset_absolute,
-                        sequence_num,
-                    ),
+                self.handle_new_item(
+                    prior_reg_items,
+                    &mut latest_reg_items,
+                    &mut prior_values_needed,
+                    logs,
+                    NewItemInfo {
+                        key_path: &updated_key.path,
+                        value_path: Some(updated_value.value_name.clone()),
+                        updated_item: &updated_value,
+                    },
                 );
             }
         }
 
-        // go read the full keys for prior keys needed and add them to the list in state
-        for key in prior_key_needed.iter() {
+        // Now read the full keys for prior_keys_needed and add them to the list in state
+        for key_needed in prior_keys_needed.iter() {
             if let Err(e) = self.add_full_key_to_list(
                 &mut updated_parser.state,
-                &key.0,
-                key.1,
-                key.2,
+                &key_needed.key_path,
+                key_needed.file_offset_absolute,
+                key_needed.sequence_num,
                 ModifiedListType::Updated,
             ) {
                 logs.add(
                     LogCode::WarningTransactionLog,
                     &format!(
                         "Error adding {} to updated list for sequence num: {} ({})",
-                        key.0,
-                        key.2,
+                        key_needed.key_path,
+                        key_needed.sequence_num,
                         &e.to_string()
                     ),
                 );
             }
         }
-        // go read the full values for prior values needed and add them to the list in state
-        for key in prior_value_needed.iter() {
+        // Now read the full values for prior_values_needed and add them to the list in state
+        for value_needed in prior_values_needed.iter() {
             if let Err(e) = self.add_full_value_to_list(
                 &mut updated_parser.state,
-                &key.0,
-                key.1,
-                key.2,
+                &value_needed.key_path,
+                value_needed.file_offset_absolute,
+                value_needed.sequence_num,
                 ModifiedListType::Updated,
             ) {
                 logs.add(
                     LogCode::WarningTransactionLog,
                     &format!(
                         "Error adding {} to updated list for sequence num: {} ({})",
-                        key.0,
-                        key.2,
+                        &value_needed.key_path,
+                        value_needed.sequence_num,
                         &e.to_string()
                     ),
                 );
             }
         }
 
-        // if we have any items that are left in reg_items, then we didn't see them in the newly parsed buffer and therefore they're deleted
-        for prior_item in prior_reg_items {
-            match &prior_item.0 .1 {
+        // If we have any items that are left in prior_reg_items, then we didn't see them in the newly parsed buffer and therefore they're deleted.
+        // Move them to the relevant lists in state
+        for (prior_item_map_key, prior_item_map_value) in prior_reg_items {
+            match &prior_item_map_key.value_name {
                 Some(_) => {
                     if let Err(e) = self.add_full_value_to_list(
                         &mut updated_parser.state,
-                        &prior_item.0 .0,
-                        prior_item.1 .1,
-                        prior_item.1 .2,
+                        &prior_item_map_key.key_path,
+                        prior_item_map_value.file_offset_absolute,
+                        prior_item_map_value.sequence_num,
                         ModifiedListType::Deleted,
                     ) {
                         logs.add(
                             LogCode::WarningTransactionLog,
                             &format!(
                                 "Error adding {:?} to updated list for sequence num: {} ({})",
-                                prior_item.0,
-                                prior_item.1 .2,
+                                prior_item_map_key,
+                                prior_item_map_value.sequence_num,
                                 &e.to_string()
                             ),
                         );
@@ -480,17 +478,17 @@ impl TransactionAnalyzer<'_> {
                 None => {
                     if let Err(e) = self.add_full_key_to_list(
                         &mut updated_parser.state,
-                        &prior_item.0 .0,
-                        prior_item.1 .1,
-                        prior_item.1 .2,
+                        &prior_item_map_key.key_path,
+                        prior_item_map_value.file_offset_absolute,
+                        prior_item_map_value.sequence_num,
                         ModifiedListType::Deleted,
                     ) {
                         logs.add(
                             LogCode::WarningTransactionLog,
                             &format!(
                                 "Error adding {} to deleted list for sequence num: {} ({})",
-                                prior_item.0 .0,
-                                prior_item.1 .2,
+                                prior_item_map_key.key_path,
+                                prior_item_map_value.sequence_num,
                                 &e.to_string()
                             ),
                         );
@@ -501,20 +499,69 @@ impl TransactionAnalyzer<'_> {
 
         // Check all new items against the deleted list. If it's in the deleted list, remove it.
         // This is a mitigation against ending up with a bunch of spurious deleted items from unparsable buffers.
-        for item in &updated_reg_items {
-            match &item.0 .1 {
-                Some(_) => updated_parser
-                    .state
-                    .deleted_values
-                    .remove(&item.0 .0, &item.1 .0),
+        for (reg_item_map_key, reg_item_map_value) in &latest_reg_items {
+            match &reg_item_map_key.value_name {
+                Some(value_name) => updated_parser.state.deleted_values.remove(
+                    &reg_item_map_key.key_path,
+                    value_name,
+                    &reg_item_map_value.hash,
+                ),
                 None => updated_parser
                     .state
                     .deleted_keys
-                    .remove(&item.0 .0, &item.1 .0),
+                    .remove(&reg_item_map_key.key_path, &reg_item_map_value.hash),
             }
         }
 
-        Ok(updated_reg_items)
+        Ok(latest_reg_items)
+    }
+
+    fn handle_new_item(
+        &self,
+        prior_reg_items: &mut RegItemMap,
+        latest_reg_items: &mut RegItemMap,
+        reg_items_needed: &mut Vec<RegItemNeeded>,
+        logs: &mut Logs,
+        new_item_info: NewItemInfo,
+    ) {
+        let sequence_num;
+        let updated_item_hash = new_item_info
+            .updated_item
+            .get_hash()
+            .expect("must have hash if here");
+        if let Some(prior_item) = prior_reg_items.remove(&RegItemMapKey::new(
+            new_item_info.key_path.to_string(),
+            new_item_info.value_path.clone(),
+        )) {
+            // We found our item in prior_reg_items. Now we will check the hash.
+            // If the hash is the same then we will just return the sequence number from the original item.
+            // If the hash differs, we have a modified item and we'll add it to the reg_items_needed map
+            if updated_item_hash == prior_item.hash {
+                sequence_num = prior_item.sequence_num
+            } else {
+                sequence_num = self.new_sequence_number;
+                reg_items_needed.push(RegItemNeeded::new(
+                    new_item_info.key_path.to_string(),
+                    prior_item.file_offset_absolute,
+                    prior_item.sequence_num,
+                ));
+            }
+        } else {
+            sequence_num = self.new_sequence_number;
+        }
+
+        latest_reg_items.insert(
+            RegItemMapKey::new(new_item_info.key_path.to_string(), new_item_info.value_path),
+            RegItemMapValue::new(
+                updated_item_hash,
+                new_item_info.updated_item.get_file_offset_absolute(),
+                sequence_num,
+            ),
+        );
+
+        let mut item_logs = new_item_info.updated_item.get_logs().clone();
+        item_logs.prepend_all(&format!("Sequence number {} - ", self.new_sequence_number));
+        logs.extend(item_logs);
     }
 
     fn add_full_key_to_list(

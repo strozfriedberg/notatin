@@ -1,19 +1,19 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use notatin::parser_builder::ParserBuilder;
+use notatin::{parser::ParserIterator, parser_builder::ParserBuilder};
 
 fn test_read_small_reg() {
-    let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+    let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
         .build()
         .unwrap();
-    for _key in parser.iter() {}
+    for _key in ParserIterator::new(&parser).iter() {}
 }
 
 fn test_read_small_reg_with_deleted() {
-    let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
+    let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
         .recover_deleted(true)
         .build()
         .unwrap();
-    for _key in parser.iter() {}
+    for _key in ParserIterator::new(&parser).iter() {}
 }
 
 #[allow(clippy::redundant_closure)] // The documented way of calling Criterion benchmarks uses a redundant closure

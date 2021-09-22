@@ -17,7 +17,6 @@
 use crate::cell_key_node::CellKeyNode;
 use crate::cell_key_value::CellKeyValue;
 use crate::log::Logs;
-use crate::transaction_log::TransactionLog;
 use crate::util;
 use blake3::{Hash, Hasher};
 use std::collections::HashMap;
@@ -82,16 +81,18 @@ impl DeletedValueMap {
         self.map.get(&key_path.to_string())
     }
 
-    pub(crate) fn remove(&mut self, key_path: &str, hash: &Hash) {
+    pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
         if let Some(values) = self.map.get_mut(key_path) {
             for (index, value) in values.iter().enumerate() {
-                if let Some(value_hash) = value.hash {
-                    if hash == &value_hash {
-                        values.remove(index);
-                        if values.is_empty() {
-                            self.map.remove(key_path);
+                if value.value_name == value_name {
+                    if let Some(value_hash) = value.hash {
+                        if hash == &value_hash {
+                            values.remove(index);
+                            if values.is_empty() {
+                                self.map.remove(key_path);
+                            }
+                            break;
                         }
-                        break;
                     }
                 }
             }
@@ -146,12 +147,6 @@ impl ModifiedDeletedKeyMap {
 
 #[derive(Clone, Debug)]
 pub(crate) struct State {
-    pub recover_deleted: bool,
-    pub transaction_logs: Option<Vec<TransactionLog>>,
-
-    // parser iteration
-    pub cell_key_node_stack: Vec<CellKeyNode>,
-
     // Path filters don't include the root name, but the cell key's path does.
     // This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
@@ -160,7 +155,6 @@ pub(crate) struct State {
 
     pub hasher: Hasher,
 
-    pub sequence_numbers: HashMap<(String, Option<String>), u32>,
     pub deleted_keys: ModifiedDeletedKeyMap,
     pub updated_keys: ModifiedDeletedKeyMap,
     pub deleted_values: DeletedValueMap,
@@ -174,29 +168,14 @@ impl State {
         }
         self.root_key_path_offset
     }
-
-    pub(crate) fn from_transaction_logs(
-        logs: Option<Vec<TransactionLog>>,
-        recover_deleted: bool,
-    ) -> Self {
-        State {
-            transaction_logs: logs,
-            recover_deleted,
-            ..Default::default()
-        }
-    }
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            cell_key_node_stack: Vec::new(),
-            recover_deleted: false,
             root_key_path_offset: 0,
-            transaction_logs: None,
             info: Logs::default(),
             hasher: Hasher::new(),
-            sequence_numbers: HashMap::new(),
             deleted_keys: ModifiedDeletedKeyMap::new(),
             updated_keys: ModifiedDeletedKeyMap::new(),
             deleted_values: DeletedValueMap::new(),
