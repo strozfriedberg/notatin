@@ -147,9 +147,13 @@ impl ModifiedDeletedKeyMap {
 
 #[derive(Clone, Debug)]
 pub(crate) struct State {
-    // Path filters don't include the root name, but the cell key's path does.
-    // This is the length of that root name so we can index into the string directly.
+    /// Path filters don't include the root name, but the cell key's path does.
+    /// This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
+
+    /// This indicates if we should generate offset and length info for the structures we are reading.
+    /// Default is `false`
+    pub get_offset_info: bool,
 
     pub info: Logs,
 
@@ -174,6 +178,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             root_key_path_offset: 0,
+            get_offset_info: false,
             info: Logs::default(),
             hasher: Hasher::new(),
             deleted_keys: ModifiedDeletedKeyMap::new(),

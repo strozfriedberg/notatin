@@ -740,7 +740,7 @@ mod tests {
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified(None);
         assert_eq!(
-            (45587, 319, 31, 108178, 139, 240),
+            (45587, 319, 31, 108178, 139, 244),
             (
                 keys,
                 keys_versions,

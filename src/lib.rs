@@ -24,6 +24,7 @@ pub mod cell_value;
 pub mod cli_util;
 pub mod err;
 pub mod file_info;
+pub mod file_offset;
 pub mod filter;
 pub mod hive_bin_cell;
 pub mod hive_bin_header;

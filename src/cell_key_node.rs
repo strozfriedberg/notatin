@@ -19,12 +19,14 @@ use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
 use crate::file_info::FileInfo;
+use crate::file_offset::{DetailValue, ValueFull, ValueLight};
 use crate::filter::{Filter, FilterBuilder, FilterFlags};
 use crate::impl_flags_from_bits;
 use crate::impl_read_value_offset_length;
 use crate::impl_serialize_for_bitflags;
-use crate::make_file_offset_structs;
+use crate::init_value_enum;
 use crate::log::{LogCode, Logs};
+use crate::make_file_offset_structs;
 use crate::parser::Parser;
 use crate::state::State;
 use crate::sub_key_list_lf::SubKeyListLf;
@@ -40,21 +42,17 @@ use nom::{
     bytes::complete::tag,
     multi::count,
     number::complete::{le_i32, le_u16, le_u32, le_u64},
-    take,
-    IResult,
+    take, IResult,
 };
 use serde::Serialize;
-use std::any::Any;
 use winstructs::security::SecurityDescriptor;
 
 make_file_offset_structs!(
-    CellKeyNodeDetailLight,
-    CellKeyNodeDetailBulky,
-    CellKeyNodeDetailEnum,
+    CellKeyNodeDetail,
     size: i32,
-    key_node_flags: KeyNodeFlags,
+    key_node_flag_bits: u16,
     last_key_written_date_and_time_bytes: u64,
-    access_flags: AccessFlags,
+    access_flag_bits: u32,
     parent_key_offset_relative: i32,
     number_of_sub_keys: u32,
     number_of_volatile_sub_keys: u32,
@@ -74,12 +72,6 @@ make_file_offset_structs!(
     slack: Vec<u8>
 );
 
-impl Default for CellKeyNodeDetailEnum {
-    fn default() -> Self {
-        Self::Light(CellKeyNodeDetailLight::default())
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(crate) enum FilterMatchState {
     None,
@@ -95,85 +87,13 @@ pub(crate) struct CellKeyNodeIteration {
     pub(crate) sub_keys_iter_index: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub struct ValueOffsetLen<T: Default> {
-    pub value: T,
-    pub offset: usize,
-    pub len: u32,
-}
-
-impl<T: Default + Clone + 'static> DetailValue<T> for ValueOffsetLen<T> {
-    fn value(&self) -> T {
-        self.value.clone()
-    }
-    fn offset(&self) -> usize {
-        self.offset
-    }
-    fn len(&self) -> u32 {
-        self.len
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl<T: Default> ValueOffsetLen<T> {
-    pub fn new(value: T, offset: usize) -> Self {
-        Self::new_with_len(value, offset, std::mem::size_of::<T>() as u32)
-    }
-
-    pub fn new_with_len(value: T, offset: usize, len: u32) -> Self {
-        Self { value, offset, len }
-    }
-}
-
-impl<T: Default> Default for ValueOffsetLen<T> {
-    fn default() -> Self {
-        Self {
-            value: T::default(),
-            offset: 0,
-            len: 0,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
-struct Value<T: Default> {
-    pub value: T,
-}
-
-impl<T: Default> Value<T> {
-    pub fn new(value: T) -> Self {
-        Value { value }
-    }
-}
-
-impl<T: Default + Clone + 'static> DetailValue<T> for Value<T> {
-    fn value(&self) -> T {
-        self.value.clone()
-    }
-    fn offset(&self) -> usize {
-        0
-    }
-    fn len(&self) -> u32 {
-        0
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-pub(crate) trait DetailValue<T: Default + 'static> {
-    fn value(&self) -> T;
-    fn offset(&self) -> usize;
-    fn len(&self) -> u32;
-    fn as_any(&self) -> &dyn Any;
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
     pub detail: CellKeyNodeDetailEnum,
+
     pub file_offset_absolute: usize,
+    pub key_node_flags: KeyNodeFlags,
+    pub access_flags: AccessFlags,
     pub key_name: String,
     pub path: String,
     pub cell_state: CellState,
@@ -239,10 +159,12 @@ impl CellKeyNode {
         cur_path: &str,
         sequence_num: Option<u32>,
     ) -> IResult<&'a [u8], Self> {
-        let get_offset_info = true;
+        let get_offset_info = state.get_offset_info;
         let start_pos_ptr = input.as_ptr() as usize;
 
-        impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, size, i32, le_i32 }
+        init_value_enum! { CellKeyNodeDetail, detail_enum, get_offset_info };
+
+        impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, size, i32, le_i32 };
 
         if !Self::check_size(size.value(), input.len() + std::mem::size_of::<i32>()) {
             Err(nom::Err::Error(nom::error::Error {
@@ -251,256 +173,67 @@ impl CellKeyNode {
             }))
         } else {
             let (input, _signature) = tag("nk")(input)?;
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, flags, u16, le_u16 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, last_key_written_date_and_time_bytes, u64, le_u64 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, access_bits, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, parent_key_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, number_of_sub_keys, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, number_of_volatile_sub_keys, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, sub_keys_list_offset_relative, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, volatile_sub_keys_list_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, number_of_key_values, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, key_values_list_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, security_key_offset_relative, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, class_name_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, largest_sub_key_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, largest_sub_key_class_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, largest_value_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, largest_value_data_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, work_var, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, key_name_size, u16, le_u16 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, class_name_size, u16, le_u16 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, key_node_flag_bits, u16, le_u16 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, last_key_written_date_and_time_bytes, u64, le_u64 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, access_flag_bits, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, parent_key_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, number_of_sub_keys, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, number_of_volatile_sub_keys, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, sub_keys_list_offset_relative, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, volatile_sub_keys_list_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, number_of_key_values, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, key_values_list_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, security_key_offset_relative, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, class_name_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_sub_key_name_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_sub_key_class_name_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_value_name_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_value_data_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, work_var, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, key_name_size, u16, le_u16 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, class_name_size, u16, le_u16 }
 
-            let key_name_bytes_cur_offset = input.as_ptr() as usize;
             let (input, key_name_bytes) = take!(input, key_name_size.value())?;
 
             let mut logs = Logs::default();
 
-            let key_node_flags: Box<dyn DetailValue<KeyNodeFlags>>;
-            let access_flags: Box<dyn DetailValue<AccessFlags>>;
-            if get_offset_info {
-                key_node_flags = Box::new(ValueOffsetLen::<KeyNodeFlags>::new_with_len(
-                    KeyNodeFlags::from_bits_checked(flags.value(), &mut logs),
-                    flags.offset(),
-                    flags.len(),
-                ));
-                access_flags = Box::new(ValueOffsetLen::<AccessFlags>::new(
-                    AccessFlags::from_bits_checked(access_bits.value(), &mut logs),
-                    access_bits.offset(),
-                ));
-            } else {
-                key_node_flags = Box::new(Value::<KeyNodeFlags>::new(KeyNodeFlags::from_bits_checked(
-                    flags.value(),
-                    &mut logs,
-                )));
-                access_flags = Box::new(Value::<AccessFlags>::new(AccessFlags::from_bits_checked(
-                    access_bits.value(),
-                    &mut logs,
-                )));
-            }
+            let key_node_flags =
+                KeyNodeFlags::from_bits_checked(key_node_flag_bits.value(), &mut logs);
+            let access_flags = AccessFlags::from_bits_checked(access_flag_bits.value(), &mut logs);
 
             let key_name = util::string_from_bytes(
-                key_node_flags.value().contains(KeyNodeFlags::KEY_COMP_NAME),
+                key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME),
                 key_name_bytes,
                 key_name_size.value(),
                 &mut logs,
                 "key_name_bytes",
             );
 
-            let mut path = cur_path.to_owned();
+            let mut path = cur_path.to_string();
             path.push('\\');
             path += &key_name;
 
-            let slack_pos_ptr = input.as_ptr() as usize;
+            let slack_offset = input.as_ptr() as usize - start_pos_ptr;
             let size_abs = size.value().unsigned_abs();
-            let (input, slack_bytes) =
-                util::parser_eat_remaining(input, size_abs, slack_pos_ptr - start_pos_ptr)?;
+            let (input, slack_bytes) = util::parser_eat_remaining(input, size_abs, slack_offset)?;
 
             let slack: Box<dyn DetailValue<Vec<u8>>>;
             if get_offset_info {
-                slack = Box::new(ValueOffsetLen::<Vec<u8>>::new_with_len(
+                slack = Box::new(ValueFull::<Vec<u8>>::new_with_len(
                     slack_bytes.to_vec(),
-                    slack_pos_ptr - start_pos_ptr,
+                    slack_offset,
                     slack_bytes.len() as u32,
                 ));
             } else {
-                slack = Box::new(Value::<Vec<u8>>::new(slack_bytes.to_vec()));
+                slack = Box::new(ValueLight::<Vec<u8>>::new(slack_bytes.to_vec()));
             }
-
-            let detail: CellKeyNodeDetailEnum;
-            if get_offset_info {
-                detail = CellKeyNodeDetailEnum::Bulky(CellKeyNodeDetailBulky {
-                    size: *size.as_any().downcast_ref::<ValueOffsetLen<i32>>().unwrap(),
-                    key_node_flags: *key_node_flags
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<KeyNodeFlags>>()
-                        .unwrap(),
-                    last_key_written_date_and_time_bytes: *last_key_written_date_and_time_bytes
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u64>>()
-                        .unwrap(),
-                    access_flags: *access_flags
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<AccessFlags>>()
-                        .unwrap(),
-                    parent_key_offset_relative: *parent_key_offset_relative
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<i32>>()
-                        .unwrap(),
-                    number_of_sub_keys: *number_of_sub_keys
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    number_of_volatile_sub_keys: *number_of_volatile_sub_keys
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    number_of_key_values: *number_of_key_values
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    sub_keys_list_offset_relative: *sub_keys_list_offset_relative
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    volatile_sub_keys_list_offset_relative: *volatile_sub_keys_list_offset_relative
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<i32>>()
-                        .unwrap(),
-                    key_values_list_offset_relative: *key_values_list_offset_relative
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<i32>>()
-                        .unwrap(),
-                    security_key_offset_relative: *security_key_offset_relative
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    class_name_offset_relative: *class_name_offset_relative
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<i32>>()
-                        .unwrap(),
-                    largest_sub_key_name_size: *largest_sub_key_name_size
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    largest_sub_key_class_name_size: *largest_sub_key_class_name_size
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    largest_value_name_size: *largest_value_name_size
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    largest_value_data_size: *largest_value_data_size
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    work_var: *work_var
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u32>>()
-                        .unwrap(),
-                    key_name_size: *key_name_size
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u16>>()
-                        .unwrap(),
-                    class_name_size: *class_name_size
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<u16>>()
-                        .unwrap(),
-                    slack: slack
-                        .as_any()
-                        .downcast_ref::<ValueOffsetLen<Vec<u8>>>()
-                        .unwrap().clone(),
-                })
-            } else {
-                detail = CellKeyNodeDetailEnum::Light(CellKeyNodeDetailLight {
-                    size: *size.as_any().downcast_ref::<Value<i32>>().unwrap(),
-                    key_node_flags: *key_node_flags
-                        .as_any()
-                        .downcast_ref::<Value<KeyNodeFlags>>()
-                        .unwrap(),
-                    last_key_written_date_and_time_bytes: *last_key_written_date_and_time_bytes
-                        .as_any()
-                        .downcast_ref::<Value<u64>>()
-                        .unwrap(),
-                    access_flags: *access_flags
-                        .as_any()
-                        .downcast_ref::<Value<AccessFlags>>()
-                        .unwrap(),
-                    parent_key_offset_relative: *parent_key_offset_relative
-                        .as_any()
-                        .downcast_ref::<Value<i32>>()
-                        .unwrap(),
-                    number_of_sub_keys: *number_of_sub_keys
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    number_of_volatile_sub_keys: *number_of_volatile_sub_keys
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    number_of_key_values: *number_of_key_values
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    sub_keys_list_offset_relative: *sub_keys_list_offset_relative
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    volatile_sub_keys_list_offset_relative: *volatile_sub_keys_list_offset_relative
-                        .as_any()
-                        .downcast_ref::<Value<i32>>()
-                        .unwrap(),
-                    key_values_list_offset_relative: *key_values_list_offset_relative
-                        .as_any()
-                        .downcast_ref::<Value<i32>>()
-                        .unwrap(),
-                    security_key_offset_relative: *security_key_offset_relative
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    class_name_offset_relative: *class_name_offset_relative
-                        .as_any()
-                        .downcast_ref::<Value<i32>>()
-                        .unwrap(),
-                    largest_sub_key_name_size: *largest_sub_key_name_size
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    largest_sub_key_class_name_size: *largest_sub_key_class_name_size
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    largest_value_name_size: *largest_value_name_size
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    largest_value_data_size: *largest_value_data_size
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    work_var: *work_var
-                        .as_any()
-                        .downcast_ref::<Value<u32>>()
-                        .unwrap(),
-                    key_name_size: *key_name_size
-                        .as_any()
-                        .downcast_ref::<Value<u16>>()
-                        .unwrap(),
-                    class_name_size: *class_name_size
-                        .as_any()
-                        .downcast_ref::<Value<u16>>()
-                        .unwrap(),
-                    slack: slack
-                        .as_any()
-                        .downcast_ref::<Value<Vec<u8>>>()
-                        .unwrap().clone(),
-                })
-            }
+            detail_enum.set_slack(&*slack);
 
             let cell_key_node = Self {
-                detail,
+                detail: detail_enum,
                 file_offset_absolute,
+                key_node_flags,
+                access_flags,
                 key_name,
                 path,
                 cell_state: CellState::Allocated,
@@ -517,9 +250,9 @@ impl CellKeyNode {
                 deleted_keys: Vec::new(),
                 hash: Some(Self::hash(
                     state,
-                    flags.value(),
+                    key_node_flag_bits.value(),
                     last_key_written_date_and_time_bytes.value(),
-                    access_bits.value(),
+                    access_flag_bits.value(),
                 )),
                 sequence_num,
                 updated_by_sequence_num: None,
@@ -972,9 +705,7 @@ impl CellKeyNode {
     }
 
     pub(crate) fn is_key_root(&self) -> bool {
-        self.detail
-            .key_node_flags()
-            .contains(KeyNodeFlags::KEY_HIVE_ENTRY)
+        self.key_node_flags.contains(KeyNodeFlags::KEY_HIVE_ENTRY)
     }
 
     /// Returns path without root key
@@ -1203,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_parse_cell_key_node() {
-        /*let buffer = [
+        let buffer = [
             0x70, 0xFF, 0xFF, 0xFF, 0x6E, 0x6B, 0x2C, 0x00, 0x99, 0x66, 0xDF, 0x7A, 0x32, 0x4A,
             0xD0, 0x01, 0x02, 0x00, 0x00, 0x00, 0x20, 0x08, 0x00, 0x00, 0x0A, 0x00, 0x00, 0x00,
             0x01, 0x00, 0x00, 0x00, 0x80, 0x07, 0x00, 0x00, 0x68, 0x02, 0x00, 0x80, 0x00, 0x00,
@@ -1230,33 +961,39 @@ mod tests {
             0x18, 0x12, 0x85, 0xf7,
         ];
 
-        let expected_output = CellKeyNode {
-            detail: CellKeyNodeDetail {
-                file_offset_absolute: 0,
-                size: -144,
-                number_of_volatile_sub_keys: 1,
-                sub_keys_list_offset_relative: 1920,
-                volatile_sub_keys_list_offset_relative: -2147483032,
-                key_values_list_offset_relative: -1,
-                security_key_offset_relative: 139856,
-                class_name_offset_relative: -1,
-                largest_sub_key_name_size: 40,
-                largest_sub_key_class_name_size: 0,
-                largest_value_name_size: 0,
-                largest_value_data_size: 0,
-                work_var: 4390980,
-                key_name_size: 57,
-                class_name_size: 0,
-                slack: vec![0, 99, 0, 111, 0, 109, 0],
-            },
+        let expected_light_output = CellKeyNode {
+            detail: CellKeyNodeDetailEnum::Light(Box::new(CellKeyNodeDetailLight {
+                size: ValueLight { value: -144 },
+                access_flag_bits: ValueLight { value: 2 },
+                key_node_flag_bits: ValueLight { value: 44 },
+                parent_key_offset_relative: ValueLight { value: 2080 },
+                last_key_written_date_and_time_bytes: ValueLight {
+                    value: 130685969864025753,
+                },
+                number_of_sub_keys: ValueLight { value: 10 },
+                number_of_key_values: ValueLight { value: 0 },
+                number_of_volatile_sub_keys: ValueLight { value: 1 },
+                sub_keys_list_offset_relative: ValueLight { value: 1920 },
+                volatile_sub_keys_list_offset_relative: ValueLight { value: -2147483032 },
+                key_values_list_offset_relative: ValueLight { value: -1 },
+                security_key_offset_relative: ValueLight { value: 139856 },
+                class_name_offset_relative: ValueLight { value: -1 },
+                largest_sub_key_name_size: ValueLight { value: 40 },
+                largest_sub_key_class_name_size: ValueLight { value: 0 },
+                largest_value_name_size: ValueLight { value: 0 },
+                largest_value_data_size: ValueLight { value: 0 },
+                work_var: ValueLight { value: 4390980 },
+                key_name_size: ValueLight { value: 57 },
+                class_name_size: ValueLight { value: 0 },
+                slack: ValueLight {
+                    value: vec![0, 99, 0, 111, 0, 109, 0],
+                },
+            })),
+            file_offset_absolute: 0,
             key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY
                 | KeyNodeFlags::KEY_NO_DELETE
                 | KeyNodeFlags::KEY_COMP_NAME,
-            last_key_written_date_and_time: util::get_date_time_from_filetime(130685969864025753),
             access_flags: AccessFlags::ACCESSED_AFTER_INIT,
-            parent_key_offset_relative: 2080,
-            number_of_sub_keys: 10,
-            number_of_key_values: 0,
             key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
             path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
             cell_state: CellState::Allocated,
@@ -1275,7 +1012,144 @@ mod tests {
             sequence_num: None,
             updated_by_sequence_num: None,
         };
-        assert_eq!(expected_output, key_node);
+        assert_eq!(expected_light_output, key_node);
+
+        state.get_offset_info = true;
+        let (_, key_node) =
+            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, &String::new(), None)
+                .unwrap();
+        let expected_full_output = CellKeyNode {
+            detail: CellKeyNodeDetailEnum::Full(Box::new(CellKeyNodeDetailFull {
+                size: ValueFull {
+                    value: -144,
+                    offset: 0,
+                    len: 4,
+                },
+                access_flag_bits: ValueFull {
+                    value: 2,
+                    offset: 16,
+                    len: 4,
+                },
+                key_node_flag_bits: ValueFull {
+                    value: 44,
+                    offset: 6,
+                    len: 2,
+                },
+                parent_key_offset_relative: ValueFull {
+                    value: 2080,
+                    offset: 20,
+                    len: 4,
+                },
+                last_key_written_date_and_time_bytes: ValueFull {
+                    value: 130685969864025753,
+                    offset: 8,
+                    len: 8,
+                },
+                number_of_sub_keys: ValueFull {
+                    value: 10,
+                    offset: 24,
+                    len: 4,
+                },
+                number_of_key_values: ValueFull {
+                    value: 0,
+                    offset: 40,
+                    len: 4,
+                },
+                number_of_volatile_sub_keys: ValueFull {
+                    value: 1,
+                    offset: 28,
+                    len: 4,
+                },
+                sub_keys_list_offset_relative: ValueFull {
+                    value: 1920,
+                    offset: 32,
+                    len: 4,
+                },
+                volatile_sub_keys_list_offset_relative: ValueFull {
+                    value: -2147483032,
+                    offset: 36,
+                    len: 4,
+                },
+                key_values_list_offset_relative: ValueFull {
+                    value: -1,
+                    offset: 44,
+                    len: 4,
+                },
+                security_key_offset_relative: ValueFull {
+                    value: 139856,
+                    offset: 48,
+                    len: 4,
+                },
+                class_name_offset_relative: ValueFull {
+                    value: -1,
+                    offset: 52,
+                    len: 4,
+                },
+                largest_sub_key_name_size: ValueFull {
+                    value: 40,
+                    offset: 56,
+                    len: 4,
+                },
+                largest_sub_key_class_name_size: ValueFull {
+                    value: 0,
+                    offset: 60,
+                    len: 4,
+                },
+                largest_value_name_size: ValueFull {
+                    value: 0,
+                    offset: 64,
+                    len: 4,
+                },
+                largest_value_data_size: ValueFull {
+                    value: 0,
+                    offset: 68,
+                    len: 4,
+                },
+                work_var: ValueFull {
+                    value: 4390980,
+                    offset: 72,
+                    len: 4,
+                },
+                key_name_size: ValueFull {
+                    value: 57,
+                    offset: 76,
+                    len: 2,
+                },
+                class_name_size: ValueFull {
+                    value: 0,
+                    offset: 78,
+                    len: 2,
+                },
+                slack: ValueFull {
+                    value: vec![0, 99, 0, 111, 0, 109, 0],
+                    offset: 137,
+                    len: 7,
+                },
+            })),
+            file_offset_absolute: 0,
+            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY
+                | KeyNodeFlags::KEY_NO_DELETE
+                | KeyNodeFlags::KEY_COMP_NAME,
+            access_flags: AccessFlags::ACCESSED_AFTER_INIT,
+            key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
+            path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
+            cell_state: CellState::Allocated,
+            sub_values: Vec::new(),
+            logs: Logs::default(),
+            cell_sub_key_offsets_absolute: Vec::new(),
+            iteration_state: CellKeyNodeIteration {
+                to_return: 0,
+                track_returned: 0,
+                filter_state: None,
+                sub_keys_iter_index: 0,
+            },
+            versions: Vec::new(),
+            deleted_keys: Vec::new(),
+            hash: Some(hash_array.into()),
+            sequence_num: None,
+            updated_by_sequence_num: None,
+        };
+        assert_eq!(expected_full_output, key_node);
 
         let slice = &file_info.buffer[0..10];
         let ret = CellKeyNode::from_bytes(&mut state, slice, 0, &String::new(), None);
@@ -1284,7 +1158,7 @@ mod tests {
             input: remaining,
             code: ErrorKind::Eof,
         }));
-        assert_eq!(expected_error, ret);*/
+        assert_eq!(expected_error, ret);
     }
 
     #[test]

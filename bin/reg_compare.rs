@@ -259,8 +259,8 @@ fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
         "{}\t{}\t{:?}\t{:?}",
         cell_key_node.path,
         format_date_time(cell_key_node.last_key_written_date_and_time()),
-        cell_key_node.detail.key_node_flags(),
-        cell_key_node.detail.access_flags()
+        cell_key_node.key_node_flags,
+        cell_key_node.access_flags
     )
     .unwrap();
 }
