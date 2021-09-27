@@ -37,7 +37,7 @@ impl PyNotatinValue {
     pub fn value(&self, py: Python) -> PyObject {
         pyo3::types::PyBytes::new(
             py,
-            &self.inner.detail.value_bytes.clone().unwrap_or_default(),
+            &self.inner.detail.value_bytes().clone().unwrap_or_default(),
         )
         .to_object(py)
     }
@@ -55,7 +55,7 @@ impl PyNotatinValue {
     #[getter]
     /// Returns the data type as an integer
     pub fn raw_data_type(&self, py: Python) -> PyObject {
-        self.inner.detail.data_type_raw.to_object(py)
+        self.inner.detail.data_type_raw().to_object(py)
     }
 
     #[getter]
@@ -155,7 +155,7 @@ mod tests {
     use super::*;
     use notatin::{
         cell::CellState,
-        cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags},
+        cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetailEnum, CellKeyValueFlags},
         log::Logs,
     };
     use std::fs::File;
@@ -208,8 +208,8 @@ mod tests {
         lznt1_file.read_to_end(&mut lznt1_buffer).unwrap();
         let py_notatin_value = PyNotatinValue {
             inner: CellKeyValue {
+                file_offset_absolute: 0,
                 detail: CellKeyValueDetail {
-                    file_offset_absolute: 0,
                     size: 48,
                     value_name_size: 4,
                     data_size_raw: lznt1_buffer.len() as u32,

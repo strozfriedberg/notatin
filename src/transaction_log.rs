@@ -329,7 +329,7 @@ impl TransactionLog {
                         RegItemMapKey::new(key.path.clone(), Some(value.value_name)),
                         RegItemMapValue::new(
                             value.hash.expect("Must have a hash here"),
-                            value.detail.file_offset_absolute,
+                            value.file_offset_absolute,
                             sequence_num,
                         ),
                     );
@@ -615,6 +615,7 @@ impl TransactionAnalyzer<'_> {
             &self.prior_file_info.buffer[file_offset_absolute..],
             file_offset_absolute,
             Some(old_sequence_number),
+            state.get_full_field_info,
         )?;
         full_value.read_value_bytes(self.prior_file_info, state);
         full_value.updated_by_sequence_num = Some(self.new_sequence_number);

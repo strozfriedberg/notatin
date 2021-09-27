@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+pub mod field_offset_len;
+pub(crate) mod macros;
 
 pub mod base_block;
 pub mod cell;
@@ -24,12 +26,10 @@ pub mod cell_value;
 pub mod cli_util;
 pub mod err;
 pub mod file_info;
-pub mod file_offset;
 pub mod filter;
 pub mod hive_bin_cell;
 pub mod hive_bin_header;
 pub mod log;
-pub(crate) mod macros;
 pub mod marvin_hash;
 pub mod parser;
 pub mod parser_builder;

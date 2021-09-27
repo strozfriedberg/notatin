@@ -108,10 +108,10 @@ impl<'a> ParserRecoverDeleted<'a> {
         force_add: bool,
     ) -> usize {
         let mut offset_ret = 1; // Return bytes to increment offset. If we encounter a parseable cell, we will increment by the size of the cell; if we don't, we inc by one.
-        match CellKeyValue::from_bytes(input_orig, file_offset_absolute, None) {
+        match CellKeyValue::from_bytes(input_orig, file_offset_absolute, None, false) {
             Ok((_, mut cell_key_value)) => {
                 self.find_cells_in_slack(
-                    &cell_key_value.detail.slack,
+                    &cell_key_value.detail.slack(),
                     cell_key_value.slack_offset_absolute(),
                 );
                 if force_add || cell_key_value.is_free() {

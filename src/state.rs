@@ -153,7 +153,7 @@ pub(crate) struct State {
 
     /// This indicates if we should generate offset and length info for the structures we are reading.
     /// Default is `false`
-    pub get_offset_info: bool,
+    pub get_full_field_info: bool,
 
     pub info: Logs,
 
@@ -178,7 +178,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             root_key_path_offset: 0,
-            get_offset_info: false,
+            get_full_field_info: false,
             info: Logs::default(),
             hasher: Hasher::new(),
             deleted_keys: ModifiedDeletedKeyMap::new(),

@@ -332,11 +332,11 @@ pub fn write_common_export_format<W: Write>(
                 &mut writer,
                 "value,{},{},{},{},{:?},{},",
                 get_alloc_char(&value.cell_state),
-                value.detail.file_offset_absolute,
+                value.file_offset_absolute,
                 escape_string(key_name),
                 escape_string(&value.get_pretty_name()),
                 value.data_type as u32,
-                to_hex_string(&value.detail.value_bytes.unwrap_or_default()[..])
+                to_hex_string(&value.detail.value_bytes().unwrap_or_default()[..])
             )?;
         }
     }

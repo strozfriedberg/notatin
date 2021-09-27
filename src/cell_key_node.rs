@@ -13,19 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 use crate::cell::{Cell, CellState};
 use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
+use crate::field_offset_len::{FieldFull, FieldLight};
 use crate::file_info::FileInfo;
-use crate::file_offset::{DetailValue, ValueFull, ValueLight};
 use crate::filter::{Filter, FilterBuilder, FilterFlags};
+use crate::impl_enum;
 use crate::impl_flags_from_bits;
 use crate::impl_read_value_offset_length;
 use crate::impl_serialize_for_bitflags;
 use crate::init_value_enum;
 use crate::log::{LogCode, Logs};
+use crate::make_field_struct;
 use crate::make_file_offset_structs;
 use crate::parser::Parser;
 use crate::state::State;
@@ -48,28 +49,29 @@ use serde::Serialize;
 use winstructs::security::SecurityDescriptor;
 
 make_file_offset_structs!(
-    CellKeyNodeDetail,
-    size: i32,
-    key_node_flag_bits: u16,
-    last_key_written_date_and_time_bytes: u64,
-    access_flag_bits: u32,
-    parent_key_offset_relative: i32,
-    number_of_sub_keys: u32,
-    number_of_volatile_sub_keys: u32,
-    number_of_key_values: u32,
-    sub_keys_list_offset_relative: u32,
-    volatile_sub_keys_list_offset_relative: i32,
-    key_values_list_offset_relative: i32,
-    security_key_offset_relative: u32,
-    class_name_offset_relative: i32,
-    largest_sub_key_name_size: u32,
-    largest_sub_key_class_name_size: u32,
-    largest_value_name_size: u32,
-    largest_value_data_size: u32,
-    work_var: u32,
-    key_name_size: u16,
-    class_name_size: u16,
-    slack: Vec<u8>
+    CellKeyNodeDetail {
+        size: i32,
+        key_node_flag_bits: u16,
+        last_key_written_date_and_time_bytes: u64,
+        access_flag_bits: u32,
+        parent_key_offset_relative: i32,
+        number_of_sub_keys: u32,
+        number_of_volatile_sub_keys: u32,
+        number_of_key_values: u32,
+        sub_keys_list_offset_relative: u32,
+        volatile_sub_keys_list_offset_relative: i32,
+        key_values_list_offset_relative: i32,
+        security_key_offset_relative: u32,
+        class_name_offset_relative: i32,
+        largest_sub_key_name_size: u32,
+        largest_sub_key_class_name_size: u32,
+        largest_value_name_size: u32,
+        largest_value_data_size: u32,
+        work_var: u32,
+        key_name_size: u16,
+        class_name_size: u16,
+        slack: Vec<u8>,
+    }
 );
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -89,18 +91,17 @@ pub(crate) struct CellKeyNodeIteration {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
-    pub detail: CellKeyNodeDetailEnum,
-
     pub file_offset_absolute: usize,
-    pub key_node_flags: KeyNodeFlags,
-    pub access_flags: AccessFlags,
+    pub detail: CellKeyNodeDetailEnum,
     pub key_name: String,
     pub path: String,
     pub cell_state: CellState,
-    pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
-    pub logs: Logs,
+    pub key_node_flags: KeyNodeFlags,
+    pub access_flags: AccessFlags,
     pub sequence_num: Option<u32>,
     pub updated_by_sequence_num: Option<u32>,
+    pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
+    pub logs: Logs,
 
     #[serde(skip_serializing)]
     pub hash: Option<Hash>,
@@ -159,52 +160,50 @@ impl CellKeyNode {
         cur_path: &str,
         sequence_num: Option<u32>,
     ) -> IResult<&'a [u8], Self> {
-        let get_offset_info = state.get_offset_info;
+        let get_full_field_info = state.get_full_field_info;
         let start_pos_ptr = input.as_ptr() as usize;
 
-        init_value_enum! { CellKeyNodeDetail, detail_enum, get_offset_info };
+        init_value_enum! { CellKeyNodeDetail, detail_enum, get_full_field_info };
 
-        impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, size, i32, le_i32 };
-
-        if !Self::check_size(size.value(), input.len() + std::mem::size_of::<i32>()) {
+        impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, size, i32, le_i32 };
+        if !Self::check_size(size, input.len() + std::mem::size_of::<i32>()) {
             Err(nom::Err::Error(nom::error::Error {
                 input,
                 code: nom::error::ErrorKind::Eof,
             }))
         } else {
             let (input, _signature) = tag("nk")(input)?;
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, key_node_flag_bits, u16, le_u16 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, last_key_written_date_and_time_bytes, u64, le_u64 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, access_flag_bits, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, parent_key_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, number_of_sub_keys, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, number_of_volatile_sub_keys, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, sub_keys_list_offset_relative, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, volatile_sub_keys_list_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, number_of_key_values, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, key_values_list_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, security_key_offset_relative, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, class_name_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_sub_key_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_sub_key_class_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_value_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, largest_value_data_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, work_var, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, key_name_size, u16, le_u16 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_offset_info, detail_enum, class_name_size, u16, le_u16 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_node_flag_bits, u16, le_u16 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, last_key_written_date_and_time_bytes, u64, le_u64 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, access_flag_bits, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, parent_key_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_sub_keys, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_volatile_sub_keys, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, sub_keys_list_offset_relative, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, volatile_sub_keys_list_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_key_values, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_values_list_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, security_key_offset_relative, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_offset_relative, i32, le_i32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_name_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_class_name_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_name_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_data_size, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, work_var, u32, le_u32 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_name_size, u16, le_u16 }
+            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_size, u16, le_u16 }
 
-            let (input, key_name_bytes) = take!(input, key_name_size.value())?;
+            let (input, key_name_bytes) = take!(input, key_name_size)?;
 
             let mut logs = Logs::default();
 
-            let key_node_flags =
-                KeyNodeFlags::from_bits_checked(key_node_flag_bits.value(), &mut logs);
-            let access_flags = AccessFlags::from_bits_checked(access_flag_bits.value(), &mut logs);
+            let key_node_flags = KeyNodeFlags::from_bits_checked(key_node_flag_bits, &mut logs);
+            let access_flags = AccessFlags::from_bits_checked(access_flag_bits, &mut logs);
 
             let key_name = util::string_from_bytes(
                 key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME),
                 key_name_bytes,
-                key_name_size.value(),
+                key_name_size,
                 &mut logs,
                 "key_name_bytes",
             );
@@ -214,20 +213,13 @@ impl CellKeyNode {
             path += &key_name;
 
             let slack_offset = input.as_ptr() as usize - start_pos_ptr;
-            let size_abs = size.value().unsigned_abs();
+            let size_abs = size.unsigned_abs();
             let (input, slack_bytes) = util::parser_eat_remaining(input, size_abs, slack_offset)?;
-
-            let slack: Box<dyn DetailValue<Vec<u8>>>;
-            if get_offset_info {
-                slack = Box::new(ValueFull::<Vec<u8>>::new_with_len(
-                    slack_bytes.to_vec(),
-                    slack_offset,
-                    slack_bytes.len() as u32,
-                ));
-            } else {
-                slack = Box::new(ValueLight::<Vec<u8>>::new(slack_bytes.to_vec()));
-            }
-            detail_enum.set_slack(&*slack);
+            detail_enum.set_slack_full(
+                &slack_bytes.to_vec(),
+                slack_offset,
+                slack_bytes.len() as u32,
+            );
 
             let cell_key_node = Self {
                 detail: detail_enum,
@@ -240,19 +232,14 @@ impl CellKeyNode {
                 sub_values: Vec::new(),
                 logs,
                 cell_sub_key_offsets_absolute: Vec::new(),
-                iteration_state: CellKeyNodeIteration {
-                    to_return: 0,
-                    track_returned: 0,
-                    filter_state: None,
-                    sub_keys_iter_index: 0,
-                },
+                iteration_state: CellKeyNodeIteration::default(),
                 versions: Vec::new(),
                 deleted_keys: Vec::new(),
                 hash: Some(Self::hash(
                     state,
-                    key_node_flag_bits.value(),
-                    last_key_written_date_and_time_bytes.value(),
-                    access_flag_bits.value(),
+                    key_node_flag_bits,
+                    last_key_written_date_and_time_bytes,
+                    access_flag_bits,
                 )),
                 sequence_num,
                 updated_by_sequence_num: None,
@@ -601,8 +588,12 @@ impl CellKeyNode {
                     return Ok(());
                 }
                 let offset = *val as usize + file_info.hbin_offset_absolute;
-                let (_, mut cell_key_value) =
-                    CellKeyValue::from_bytes(&file_info.buffer[offset..], offset, sequence_num)?;
+                let (_, mut cell_key_value) = CellKeyValue::from_bytes(
+                    &file_info.buffer[offset..],
+                    offset,
+                    sequence_num,
+                    state.get_full_field_info,
+                )?;
 
                 cell_key_value.read_value_bytes(file_info, state);
                 self.sub_values.push(cell_key_value);
@@ -796,7 +787,10 @@ impl_flags_from_bits! { KeyNodeFlags, u16 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
+    use crate::cell_key_value::{
+        CellKeyValueDataTypes, CellKeyValueDetailEnum, CellKeyValueDetailFull,
+        CellKeyValueDetailLight, CellKeyValueFlags,
+    };
     use crate::filter::FilterBuilder;
     use crate::parser::{ParserIterator, ParserIteratorContext};
     use crate::parser_builder::ParserBuilder;
@@ -891,32 +885,104 @@ mod tests {
         let filter = FilterBuilder::new()
             .add_key_path("Control Panel\\Accessibility\\Keyboard Response")
             .build()?;
-        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let hash_array: [u8; blake3::OUT_LEN] = [
+            0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
+            0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
+            0xb5, 0xa3, 0xb2, 0xef,
+        ];
+        let key = ParserIterator::new(&parser)
+            .with_filter(filter.clone())
+            .iter()
+            .next()
+            .unwrap();
+        let val = key.get_value("delayBeforeAcceptance");
+        let expected = CellKeyValue {
+            file_offset_absolute: 117656,
+            detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
+                size: FieldLight { value: -48 },
+                value_name_size: FieldLight { value: 21 },
+                data_size_raw: FieldLight { value: 10 },
+                data_offset_relative: FieldLight { value: 113608 },
+                data_type_raw: FieldLight { value: 1 },
+                flags_raw: FieldLight { value: 1 },
+                padding: FieldLight { value: 0 },
+                value_bytes: FieldLight {
+                    value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                },
+                slack: FieldLight {
+                    value: vec![0, 0, 0],
+                },
+            })),
+            data_type: CellKeyValueDataTypes::REG_SZ,
+            flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
+            data_offsets_absolute: vec![117708],
+            value_name: "DelayBeforeAcceptance".to_string(),
+            logs: Logs::default(),
+            versions: Vec::new(),
+            cell_state: CellState::Allocated,
+            hash: Some(hash_array.into()),
+            sequence_num: None,
+            updated_by_sequence_num: None,
+        };
+        assert_eq!(Some(expected), val);
+
+        parser.state.get_full_field_info = true;
         let key = ParserIterator::new(&parser)
             .with_filter(filter)
             .iter()
             .next()
             .unwrap();
         let val = key.get_value("delayBeforeAcceptance");
-        let hash_array: [u8; blake3::OUT_LEN] = [
-            0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
-            0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
-            0xb5, 0xa3, 0xb2, 0xef,
-        ];
-
         let expected = CellKeyValue {
-            detail: CellKeyValueDetail {
-                file_offset_absolute: 117656,
-                size: -48,
-                value_name_size: 21,
-                data_size_raw: 10,
-                data_offset_relative: 113608,
-                data_type_raw: 1,
-                flags_raw: 1,
-                padding: 0,
-                value_bytes: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
-                slack: vec![0, 0, 0],
-            },
+            file_offset_absolute: 117656,
+            detail: CellKeyValueDetailEnum::Full(Box::new(CellKeyValueDetailFull {
+                size: FieldFull {
+                    value: -48,
+                    offset: 0,
+                    len: 4,
+                },
+                value_name_size: FieldFull {
+                    value: 21,
+                    offset: 6,
+                    len: 2,
+                },
+                data_size_raw: FieldFull {
+                    value: 10,
+                    offset: 8,
+                    len: 4,
+                },
+                data_offset_relative: FieldFull {
+                    value: 113608,
+                    offset: 12,
+                    len: 4,
+                },
+                data_type_raw: FieldFull {
+                    value: 1,
+                    offset: 16,
+                    len: 4,
+                },
+                flags_raw: FieldFull {
+                    value: 1,
+                    offset: 20,
+                    len: 2,
+                },
+                padding: FieldFull {
+                    value: 0,
+                    offset: 22,
+                    len: 2,
+                },
+                value_bytes: FieldFull {
+                    value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                    offset: 117656,
+                    len: 10,
+                },
+                slack: FieldFull {
+                    value: vec![0, 0, 0],
+                    offset: 45,
+                    len: 3,
+                },
+            })),
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_offsets_absolute: vec![117708],
@@ -963,29 +1029,29 @@ mod tests {
 
         let expected_light_output = CellKeyNode {
             detail: CellKeyNodeDetailEnum::Light(Box::new(CellKeyNodeDetailLight {
-                size: ValueLight { value: -144 },
-                access_flag_bits: ValueLight { value: 2 },
-                key_node_flag_bits: ValueLight { value: 44 },
-                parent_key_offset_relative: ValueLight { value: 2080 },
-                last_key_written_date_and_time_bytes: ValueLight {
+                size: FieldLight { value: -144 },
+                access_flag_bits: FieldLight { value: 2 },
+                key_node_flag_bits: FieldLight { value: 44 },
+                parent_key_offset_relative: FieldLight { value: 2080 },
+                last_key_written_date_and_time_bytes: FieldLight {
                     value: 130685969864025753,
                 },
-                number_of_sub_keys: ValueLight { value: 10 },
-                number_of_key_values: ValueLight { value: 0 },
-                number_of_volatile_sub_keys: ValueLight { value: 1 },
-                sub_keys_list_offset_relative: ValueLight { value: 1920 },
-                volatile_sub_keys_list_offset_relative: ValueLight { value: -2147483032 },
-                key_values_list_offset_relative: ValueLight { value: -1 },
-                security_key_offset_relative: ValueLight { value: 139856 },
-                class_name_offset_relative: ValueLight { value: -1 },
-                largest_sub_key_name_size: ValueLight { value: 40 },
-                largest_sub_key_class_name_size: ValueLight { value: 0 },
-                largest_value_name_size: ValueLight { value: 0 },
-                largest_value_data_size: ValueLight { value: 0 },
-                work_var: ValueLight { value: 4390980 },
-                key_name_size: ValueLight { value: 57 },
-                class_name_size: ValueLight { value: 0 },
-                slack: ValueLight {
+                number_of_sub_keys: FieldLight { value: 10 },
+                number_of_key_values: FieldLight { value: 0 },
+                number_of_volatile_sub_keys: FieldLight { value: 1 },
+                sub_keys_list_offset_relative: FieldLight { value: 1920 },
+                volatile_sub_keys_list_offset_relative: FieldLight { value: -2147483032 },
+                key_values_list_offset_relative: FieldLight { value: -1 },
+                security_key_offset_relative: FieldLight { value: 139856 },
+                class_name_offset_relative: FieldLight { value: -1 },
+                largest_sub_key_name_size: FieldLight { value: 40 },
+                largest_sub_key_class_name_size: FieldLight { value: 0 },
+                largest_value_name_size: FieldLight { value: 0 },
+                largest_value_data_size: FieldLight { value: 0 },
+                work_var: FieldLight { value: 4390980 },
+                key_name_size: FieldLight { value: 57 },
+                class_name_size: FieldLight { value: 0 },
+                slack: FieldLight {
                     value: vec![0, 99, 0, 111, 0, 109, 0],
                 },
             })),
@@ -1014,113 +1080,113 @@ mod tests {
         };
         assert_eq!(expected_light_output, key_node);
 
-        state.get_offset_info = true;
+        state.get_full_field_info = true;
         let (_, key_node) =
             CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, &String::new(), None)
                 .unwrap();
         let expected_full_output = CellKeyNode {
             detail: CellKeyNodeDetailEnum::Full(Box::new(CellKeyNodeDetailFull {
-                size: ValueFull {
+                size: FieldFull {
                     value: -144,
                     offset: 0,
                     len: 4,
                 },
-                access_flag_bits: ValueFull {
+                access_flag_bits: FieldFull {
                     value: 2,
                     offset: 16,
                     len: 4,
                 },
-                key_node_flag_bits: ValueFull {
+                key_node_flag_bits: FieldFull {
                     value: 44,
                     offset: 6,
                     len: 2,
                 },
-                parent_key_offset_relative: ValueFull {
+                parent_key_offset_relative: FieldFull {
                     value: 2080,
                     offset: 20,
                     len: 4,
                 },
-                last_key_written_date_and_time_bytes: ValueFull {
+                last_key_written_date_and_time_bytes: FieldFull {
                     value: 130685969864025753,
                     offset: 8,
                     len: 8,
                 },
-                number_of_sub_keys: ValueFull {
+                number_of_sub_keys: FieldFull {
                     value: 10,
                     offset: 24,
                     len: 4,
                 },
-                number_of_key_values: ValueFull {
+                number_of_key_values: FieldFull {
                     value: 0,
                     offset: 40,
                     len: 4,
                 },
-                number_of_volatile_sub_keys: ValueFull {
+                number_of_volatile_sub_keys: FieldFull {
                     value: 1,
                     offset: 28,
                     len: 4,
                 },
-                sub_keys_list_offset_relative: ValueFull {
+                sub_keys_list_offset_relative: FieldFull {
                     value: 1920,
                     offset: 32,
                     len: 4,
                 },
-                volatile_sub_keys_list_offset_relative: ValueFull {
+                volatile_sub_keys_list_offset_relative: FieldFull {
                     value: -2147483032,
                     offset: 36,
                     len: 4,
                 },
-                key_values_list_offset_relative: ValueFull {
+                key_values_list_offset_relative: FieldFull {
                     value: -1,
                     offset: 44,
                     len: 4,
                 },
-                security_key_offset_relative: ValueFull {
+                security_key_offset_relative: FieldFull {
                     value: 139856,
                     offset: 48,
                     len: 4,
                 },
-                class_name_offset_relative: ValueFull {
+                class_name_offset_relative: FieldFull {
                     value: -1,
                     offset: 52,
                     len: 4,
                 },
-                largest_sub_key_name_size: ValueFull {
+                largest_sub_key_name_size: FieldFull {
                     value: 40,
                     offset: 56,
                     len: 4,
                 },
-                largest_sub_key_class_name_size: ValueFull {
+                largest_sub_key_class_name_size: FieldFull {
                     value: 0,
                     offset: 60,
                     len: 4,
                 },
-                largest_value_name_size: ValueFull {
+                largest_value_name_size: FieldFull {
                     value: 0,
                     offset: 64,
                     len: 4,
                 },
-                largest_value_data_size: ValueFull {
+                largest_value_data_size: FieldFull {
                     value: 0,
                     offset: 68,
                     len: 4,
                 },
-                work_var: ValueFull {
+                work_var: FieldFull {
                     value: 4390980,
                     offset: 72,
                     len: 4,
                 },
-                key_name_size: ValueFull {
+                key_name_size: FieldFull {
                     value: 57,
                     offset: 76,
                     len: 2,
                 },
-                class_name_size: ValueFull {
+                class_name_size: FieldFull {
                     value: 0,
                     offset: 78,
                     len: 2,
                 },
-                slack: ValueFull {
+                slack: FieldFull {
                     value: vec![0, 99, 0, 111, 0, 109, 0],
                     offset: 137,
                     len: 7,

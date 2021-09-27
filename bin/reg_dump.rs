@@ -37,6 +37,9 @@ fn main() -> Result<(), Error> {
             "-r --recover 'Recover deleted and versioned keys and values'",
         ))
         .arg(Arg::from_usage(
+            "-h --full-field-info 'Get the offset and length for each key/value field'",
+        ))
+        .arg(Arg::from_usage(
             "-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'",
         ))
         .arg(
@@ -69,10 +72,12 @@ fn main() -> Result<(), Error> {
     let (input, logs) = parse_paths(matches.value_of("input").expect("Required value"));
     let output = matches.value_of("output").expect("Required value");
     let recover = matches.is_present("recover");
+    let get_full_field_info = matches.is_present("full-field-info");
     let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
     let mut parser_builder = ParserBuilder::from_path(input);
     parser_builder.recover_deleted(recover);
+    parser_builder.get_full_field_info(get_full_field_info);
     for log in logs.unwrap_or_default() {
         parser_builder.with_transaction_log(log);
     }
