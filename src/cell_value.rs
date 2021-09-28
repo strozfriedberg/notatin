@@ -21,7 +21,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum CellValue {
     ValueNone,
-    #[serde(serialize_with = "util::data_as_hex")]
+    #[serde(serialize_with = "util::field_data_as_hex")]
     ValueBinary(Vec<u8>),
     ValueString(String),
     ValueMultiString(Vec<String>),

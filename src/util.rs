@@ -15,13 +15,16 @@
  */
 
 use crate::cell::CellState;
+use crate::cell_key_node::{AccessFlags, KeyNodeFlags};
 use crate::err::Error;
+use crate::field_offset_len::FieldTrait;
 use crate::filter::Filter;
 use crate::log::{LogCode, Logs};
 use crate::parser::{Parser, ParserIterator};
 use chrono::{DateTime, Utc};
 use nom::{take, IResult};
 use serde::ser;
+use serde::ser::{Serialize, SerializeStruct};
 use std::{
     char::REPLACEMENT_CHARACTER,
     convert::TryInto,
@@ -198,11 +201,114 @@ pub(crate) fn get_guid_from_buffer(buffer: &[u8], logs: &mut Logs) -> Guid {
         .expect("Error handled in or_else")
 }
 
-pub(crate) fn data_as_hex<S: ser::Serializer>(
+pub(crate) fn field_data_as_hex<S: ser::Serializer>(
     x: &[u8],
     s: S,
 ) -> std::result::Result<S::Ok, S::Error> {
     s.serialize_str(&to_hex_string(x))
+}
+
+pub(crate) fn get_pretty_name(name: &str) -> String {
+    if name.is_empty() {
+        "(default)".to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+pub(crate) fn field_last_key_written_date_and_time_interpreted<S: ser::Serializer>(
+    x: &dyn FieldTrait<u64>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    let field_count;
+    if x.get_field_full().is_some() {
+        field_count = 4;
+    } else {
+        field_count = 2;
+    }
+    let mut ser = s.serialize_struct("last_key_written_date_and_time", field_count)?;
+    serialize_base_field(x, &mut ser)?;
+    ser.serialize_field(
+        "interpreted",
+        &format_date_time(get_date_time_from_filetime(x.value())),
+    )?;
+    ser.end()
+}
+
+pub(crate) fn field_key_node_flag_bits_interpreted<S: ser::Serializer>(
+    x: &dyn FieldTrait<u16>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    let mut logs = Logs::default();
+    let flags = KeyNodeFlags::from_bits_checked(x.value(), &mut logs);
+
+    let mut field_count = logs.has_logs() as usize; // if we have logs then we need an additional field to display them
+    if x.get_field_full().is_some() {
+        field_count += 4;
+    } else {
+        field_count += 2;
+    }
+    let mut ser = s.serialize_struct("key_node_flag_bits", field_count)?;
+    serialize_base_field(x, &mut ser)?;
+    ser.serialize_field("interpreted", &format!("{:?}", flags))?;
+    if logs.has_logs() {
+        ser.serialize_field("logs", &logs.get_string())?;
+    }
+    ser.end()
+}
+
+pub(crate) fn field_acccess_flag_bits_interpreted<S: ser::Serializer>(
+    x: &dyn FieldTrait<u32>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    let mut logs = Logs::default();
+    let flags = AccessFlags::from_bits_checked(x.value(), &mut logs);
+
+    let mut field_count = logs.has_logs() as usize; // if we have logs then we need an additional field to display them
+    if x.get_field_full().is_some() {
+        field_count += 4;
+    } else {
+        field_count += 2;
+    }
+    let mut ser = s.serialize_struct("access_flag_bits", field_count)?;
+    serialize_base_field(x, &mut ser)?;
+    ser.serialize_field("interpreted", &format!("{:?}", flags))?;
+    if logs.has_logs() {
+        ser.serialize_field("logs", &logs.get_string())?;
+    }
+    ser.end()
+}
+
+pub(crate) fn field_value_name_interpreted<S: ser::Serializer>(
+    x: &dyn FieldTrait<String>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    let field_count;
+    if x.get_field_full().is_some() {
+        field_count = 4;
+    } else {
+        field_count = 2;
+    }
+    let mut ser = s.serialize_struct("value_name", field_count)?;
+    serialize_base_field(x, &mut ser)?;
+    ser.serialize_field("interpreted", &get_pretty_name(&x.value()))?;
+    ser.end()
+}
+
+fn serialize_base_field<
+    S: ser::SerializeStruct,
+    T: Default + Clone + Serialize + 'static,
+>(
+    x: &dyn FieldTrait<T>,
+    ser: &mut S,
+) -> Result<(), S::Error> {
+    if let Some(full) = x.get_field_full() {
+        ser.serialize_field("value", &full.value())?;
+        ser.serialize_field("offset", &full.offset())?;
+        ser.serialize_field("len", &full.len())
+    } else {
+        ser.serialize_field("value", &x.value())
+    }
 }
 
 /// Adapted from https://github.com/omerbenamram/mft

@@ -14,7 +14,7 @@ pub(crate) trait FieldTrait<T: Default + 'static> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct FieldFull<T: Default> {
+pub struct FieldFull<T: Default> {
     pub value: T,
     pub offset: usize,
     pub len: u32,
@@ -64,7 +64,7 @@ impl<T: Default> Default for FieldFull<T> {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
-pub(crate) struct FieldLight<T: Default> {
+pub struct FieldLight<T: Default> {
     pub value: T,
 }
 
@@ -108,15 +108,15 @@ mod macros {
         ( @$field_type:ident, $name:ident { $field:ident : $type:ty, $($tail:tt)* } -> ($($result:tt)*) ) => (
             make_field_struct!(@$field_type, $name { $($tail)* } -> (
                 $($result)*
-                pub(crate) $field : $field_type<$type>,
+                pub $field : $field_type<$type>,
             ));
         );
 
-        ( @$field_type:ident, $name:ident { $field:ident : $type:ty ; skip_serialize, $($tail:tt)* } -> ($($result:tt)*) ) => (
+        ( @$field_type:ident, $name:ident { $field:ident : $type:ty ; $field_macro:meta, $($tail:tt)* } -> ($($result:tt)*) ) => (
             make_field_struct!(@$field_type, $name { $($tail)* } -> (
                 $($result)*
-                #[serde(skip_serializing)]
-                pub(crate) $field : $field_type<$type>,
+                #[$field_macro]
+                pub $field : $field_type<$type>,
             ));
         );
 
@@ -148,7 +148,7 @@ mod macros {
                     // set_field vs. set_field_full.
                     #[allow(dead_code)]
                     #[allow(clippy::ptr_arg)]
-                    pub(crate) fn [< set_ $field >] (&mut self, val: &$type, offset: usize) {
+                    pub fn [< set_ $field >] (&mut self, val: &$type, offset: usize) {
                         match self {
                             Self::Light(detail) => detail.$field = FieldLight::<$type>::new(val.to_owned()),
                             Self::Full(detail) => detail.$field = FieldFull::<$type>::new(val.to_owned(), offset)
@@ -157,7 +157,7 @@ mod macros {
 
                     #[allow(dead_code)]
                     #[allow(clippy::ptr_arg)]
-                    pub(crate) fn [< set_ $field _full >] (&mut self, val: &$type, offset: usize, len: u32) {
+                    pub fn [< set_ $field _full >] (&mut self, val: &$type, offset: usize, len: u32) {
                         match self {
                             Self::Light(detail) => detail.$field = FieldLight::<$type>::new(val.to_owned()),
                             Self::Full(detail) => detail.$field = FieldFull::<$type>::new_with_len(val.to_owned(), offset, len)
@@ -168,7 +168,7 @@ mod macros {
         );
 
         // same body, but need to be able to match a skip_serialize field as well
-        ( @$name:ident { $field:ident : $type:ty; skip_serialize, $($tail:tt)* } -> ($($result:tt)*) ) => (
+        ( @$name:ident { $field:ident : $type:ty; $field_macro:meta, $($tail:tt)* } -> ($($result:tt)*) ) => (
             impl_enum!(@$name { $($tail)* } -> (
                 $($result)*
                 pub fn $field(&self) -> $type {
@@ -183,7 +183,7 @@ mod macros {
                     // set_field vs. set_field_full.
                     #[allow(dead_code)]
                     #[allow(clippy::ptr_arg)]
-                    pub(crate) fn [< set_ $field >] (&mut self, val: &$type, offset: usize) {
+                    pub fn [< set_ $field >] (&mut self, val: &$type, offset: usize) {
                         match self {
                             Self::Light(detail) => detail.$field = FieldLight::<$type>::new(val.to_owned()),
                             Self::Full(detail) => detail.$field = FieldFull::<$type>::new(val.to_owned(), offset)
@@ -192,7 +192,7 @@ mod macros {
 
                     #[allow(dead_code)]
                     #[allow(clippy::ptr_arg)]
-                    pub(crate) fn [< set_ $field _full >] (&mut self, val: &$type, offset: usize, len: u32) {
+                    pub fn [< set_ $field _full >] (&mut self, val: &$type, offset: usize, len: u32) {
                         match self {
                             Self::Light(detail) => detail.$field = FieldLight::<$type>::new(val.to_owned()),
                             Self::Full(detail) => detail.$field = FieldFull::<$type>::new_with_len(val.to_owned(), offset, len)
@@ -247,9 +247,9 @@ mod macros {
     /// Finally it will set the field in $struct_enum.
     /// Note that the value is made available outside of the macro in $var to ensure that the
     /// calling code has access to it for additional processing.
-    /// Ex: impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_node_flag_bits, u16, le_u16 }
+    /// Ex: read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_node_flag_bits, u16, le_u16 }
     #[macro_export]
-    macro_rules! impl_read_value_offset_length {
+    macro_rules! read_value_offset_length {
         (
             $input: ident,
             $start_pos: ident,

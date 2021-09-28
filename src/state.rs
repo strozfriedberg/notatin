@@ -84,7 +84,7 @@ impl DeletedValueMap {
     pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
         if let Some(values) = self.map.get_mut(key_path) {
             for (index, value) in values.iter().enumerate() {
-                if value.value_name == value_name {
+                if value.detail.value_name() == value_name {
                     if let Some(value_hash) = value.hash {
                         if hash == &value_hash {
                             values.remove(index);

@@ -21,12 +21,12 @@ use crate::err::Error;
 use crate::field_offset_len::{FieldFull, FieldLight};
 use crate::file_info::FileInfo;
 use crate::impl_enum;
-use crate::impl_read_value_offset_length;
 use crate::impl_serialize_for_bitflags;
 use crate::init_value_enum;
 use crate::log::{LogCode, Logs};
 use crate::make_field_struct;
 use crate::make_file_offset_structs;
+use crate::read_value_offset_length;
 use crate::state::State;
 use crate::util;
 use bitflags::bitflags;
@@ -195,14 +195,18 @@ impl_serialize_for_bitflags! {CellKeyValueFlags}
 make_file_offset_structs!(
     CellKeyValueDetail {
         size: i32,
+        signature: String,
         value_name_size: u16, // If the value name size is 0 the value name is "(default)"
         data_size_raw: u32, // In bytes, can be 0 (value isn't set); the most significant bit has a special meaning
         data_offset_relative: u32,
         data_type_raw: u32,
         flags_raw: u16,
         padding: u16,
-        value_bytes: Option<Vec<u8>>; skip_serialize,
+        // value_name is an empty string for an unnamed value. This is displayed as __(Default)__ in Windows Registry Editor;
+        // use `CellKeyValue::get_pretty_name()` to get __(default)__ rather than empty string for the name (lowercase to be compatible with `python-registry`)
+        value_name: String; serde(serialize_with = "util::field_value_name_interpreted"),
         slack: Vec<u8>,
+        value_bytes: Option<Vec<u8>>; serde(skip),
     }
 );
 
@@ -213,9 +217,6 @@ pub struct CellKeyValue {
     pub data_type: CellKeyValueDataTypes,
     pub flags: CellKeyValueFlags,
     pub data_offsets_absolute: Vec<usize>,
-    /// value_name is an empty string for an unnamed value. This is displayed as __(Default)__ in Windows Registry Editor;
-    /// use `CellKeyValue::get_pretty_name()` to get __(default)__ rather than empty string for the name (lowercase to be compatible with `python-registry`)
-    pub value_name: String,
     pub cell_state: CellState,
     pub logs: Logs,
 
@@ -237,6 +238,7 @@ impl Serialize for CellKeyValue {
 impl CellKeyValue {
     pub(crate) const BIG_DATA_SIZE_THRESHOLD: u32 = 16344;
     const MIN_CELL_VALUE_SIZE: usize = 24;
+    const SIGNATURE: &'static str = "vk";
 
     fn check_size(size: i32, input: &[u8]) -> bool {
         let size_abs = size.abs() as usize;
@@ -267,20 +269,28 @@ impl CellKeyValue {
         init_value_enum! { CellKeyValueDetail, detail_enum, get_full_field_info };
 
         let input = input_orig;
-        impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, size, i32, le_i32 };
+        read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, size, i32, le_i32 };
         if !Self::check_size(size, input_orig) {
             Err(nom::Err::Error(nom::error::Error {
                 input,
                 code: nom::error::ErrorKind::Eof,
             }))
         } else {
-            let (input, _signature) = tag("vk")(input)?;
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, value_name_size, u16, le_u16 };
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, data_size_raw, u32, le_u32 };
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, data_offset_relative, u32, le_u32 };
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, data_type_raw, u32, le_u32 };
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, flags_raw, u16, le_u16 };
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, padding, u16, le_u16 };
+            let signature_offset = input.as_ptr() as usize - start_pos_ptr;
+            let (input, _signature) = tag(Self::SIGNATURE)(input)?;
+            detail_enum.set_signature_full(
+                &Self::SIGNATURE.to_owned(),
+                signature_offset,
+                Self::SIGNATURE.len() as u32,
+            );
+
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, value_name_size, u16, le_u16 };
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, data_size_raw, u32, le_u32 };
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, data_offset_relative, u32, le_u32 };
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, data_type_raw, u32, le_u32 };
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, flags_raw, u16, le_u16 };
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, padding, u16, le_u16 };
+            let value_name_offset = input.as_ptr() as usize - start_pos_ptr;
             let (input, value_name_bytes) = take!(input, value_name_size)?;
 
             let flags = CellKeyValueFlags::from_bits(flags_raw).unwrap_or_default();
@@ -293,6 +303,7 @@ impl CellKeyValue {
             };
 
             let mut logs = Logs::default();
+
             let value_name;
             if value_name_size == 0 {
                 value_name = String::new();
@@ -302,9 +313,10 @@ impl CellKeyValue {
                     value_name_bytes,
                     value_name_size,
                     &mut logs,
-                    "value_name_bytes",
+                    "value_name",
                 );
             }
+            detail_enum.set_value_name_full(&value_name, value_name_offset, value_name_size as u32);
 
             let slack_offset = input.as_ptr() as usize - start_pos_ptr;
             let size_abs = size.unsigned_abs();
@@ -318,11 +330,10 @@ impl CellKeyValue {
             Ok((
                 input,
                 CellKeyValue {
-                    detail: detail_enum,
                     file_offset_absolute,
+                    detail: detail_enum,
                     data_type,
                     flags,
-                    value_name,
                     cell_state: CellState::Allocated,
                     data_offsets_absolute: Vec::new(),
                     logs,
@@ -430,11 +441,7 @@ impl CellKeyValue {
     }
 
     pub fn get_pretty_name(&self) -> String {
-        if self.value_name.is_empty() {
-            "(default)".to_string()
-        } else {
-            self.value_name.clone()
-        }
+        util::get_pretty_name(&self.detail.value_name())
     }
 }
 
@@ -459,9 +466,12 @@ impl Cell for CellKeyValue {
     }
 }
 
-/// Wrapper class to dynamically convert value_bytes into a parsed CellValue when serde serialize is called
+/// Wrapper class to dynamically convert value_bytes into a parsed CellValue when serde serialize is called.
+// Why do we have the fields of CellKeyValue duplicated rather than just including a `CellKeyValue` ref?
+// Because a ref creates a circular call when serializing!
 #[derive(Debug, Serialize)]
 struct CellKeyValueForSerialization<'a> {
+    file_offset_absolute: usize,
     detail: &'a CellKeyValueDetailEnum,
     data_type: &'a CellKeyValueDataTypes,
     flags: &'a CellKeyValueFlags,
@@ -480,6 +490,7 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
     fn from(other: &'a CellKeyValue) -> Self {
         let (value, value_parse_warnings) = other.get_content();
         Self {
+            file_offset_absolute: other.file_offset_absolute,
             detail: &other.detail,
             data_type: &other.data_type,
             flags: &other.flags,
@@ -526,6 +537,9 @@ mod tests {
             file_offset_absolute: 0,
             detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
                 size: FieldLight { value: -48 },
+                signature: FieldLight {
+                    value: "vk".to_string(),
+                },
                 value_name_size: FieldLight { value: 18 },
                 data_size_raw: FieldLight { value: 8 },
                 data_offset_relative: FieldLight { value: 3864 },
@@ -533,13 +547,15 @@ mod tests {
                 flags_raw: FieldLight { value: 1 },
                 padding: FieldLight { value: 0 },
                 value_bytes: FieldLight { value: None },
+                value_name: FieldLight {
+                    value: "IE5_UA_Backup_Flag".to_string(),
+                },
                 slack: FieldLight {
                     value: vec![0, 0, 1, 0, 0, 0],
                 },
             })),
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-            value_name: "IE5_UA_Backup_Flag".to_string(),
             cell_state: CellState::Allocated,
             data_offsets_absolute: Vec::new(),
             logs: Logs::default(),
@@ -559,6 +575,11 @@ mod tests {
                     value: -48,
                     offset: 0,
                     len: 4,
+                },
+                signature: FieldFull {
+                    value: "vk".to_string(),
+                    offset: 4,
+                    len: 2,
                 },
                 value_name_size: FieldFull {
                     value: 18,
@@ -595,6 +616,11 @@ mod tests {
                     offset: 0,
                     len: 0,
                 },
+                value_name: FieldFull {
+                    value: "IE5_UA_Backup_Flag".to_string(),
+                    offset: 24,
+                    len: 18,
+                },
                 slack: FieldFull {
                     value: vec![0, 0, 1, 0, 0, 0],
                     offset: 42,
@@ -603,7 +629,6 @@ mod tests {
             })),
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-            value_name: "IE5_UA_Backup_Flag".to_string(),
             cell_state: CellState::Allocated,
             data_offsets_absolute: Vec::new(),
             logs: Logs::default(),
@@ -631,6 +656,9 @@ mod tests {
         let mut cell_key_value = CellKeyValue {
             detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
                 size: FieldLight { value: 48 },
+                signature: FieldLight {
+                    value: "vk".to_string(),
+                },
                 value_name_size: FieldLight { value: 4 },
                 data_size_raw: FieldLight {
                     value: lznt1_buffer.len() as u32,
@@ -639,6 +667,9 @@ mod tests {
                 data_type_raw: FieldLight { value: 1 },
                 flags_raw: FieldLight { value: 1 },
                 padding: FieldLight { value: 0 },
+                value_name: FieldLight {
+                    value: "test".to_string(),
+                },
                 value_bytes: FieldLight {
                     value: Some(lznt1_buffer.clone()),
                 },
@@ -647,7 +678,6 @@ mod tests {
             file_offset_absolute: 0,
             data_type: CellKeyValueDataTypes::REG_BIN,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-            value_name: "test".to_string(),
             cell_state: CellState::Allocated,
             data_offsets_absolute: Vec::new(),
             logs: Logs::default(),
@@ -787,7 +817,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             "Binary_81725".to_string(),
-            key_node.sub_values[1].value_name
+            key_node.sub_values[1].detail.value_name()
         );
         let (cell_value, _) = key_node.sub_values[1].get_content();
         if let CellValue::ValueBinary(content) = cell_value {

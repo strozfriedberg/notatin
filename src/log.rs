@@ -39,6 +39,15 @@ impl Logs {
         }
     }
 
+    pub fn has_logs(&self) -> bool {
+        self.logs.is_some()
+            && !self
+                .logs
+                .as_ref()
+                .expect("just checked is_some()")
+                .is_empty()
+    }
+
     pub fn get(&self) -> Option<&Vec<Log>> {
         self.logs.as_ref()
     }
@@ -76,14 +85,14 @@ impl Logs {
         Ok(())
     }
 
-    pub fn get_string(&self) -> Result<String, Error> {
+    pub fn get_string(&self) -> String {
         let mut ret = String::new();
         if let Some(logs) = &self.logs {
             for log in logs {
                 ret += &format!("{:?} {};", log.code, log.text);
             }
         }
-        Ok(ret)
+        ret
     }
 }
 

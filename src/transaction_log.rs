@@ -326,7 +326,7 @@ impl TransactionLog {
                 );
                 for value in key.sub_values {
                     reg_items.insert(
-                        RegItemMapKey::new(key.path.clone(), Some(value.value_name)),
+                        RegItemMapKey::new(key.path.clone(), Some(value.detail.value_name())),
                         RegItemMapValue::new(
                             value.hash.expect("Must have a hash here"),
                             value.file_offset_absolute,
@@ -404,7 +404,7 @@ impl TransactionAnalyzer<'_> {
                     logs,
                     NewItemInfo {
                         key_path: &updated_key.path,
-                        value_path: Some(updated_value.value_name.clone()),
+                        value_path: Some(updated_value.detail.value_name().clone()),
                         updated_item: &updated_value,
                     },
                 );
@@ -619,7 +619,7 @@ impl TransactionAnalyzer<'_> {
         )?;
         full_value.read_value_bytes(self.prior_file_info, state);
         full_value.updated_by_sequence_num = Some(self.new_sequence_number);
-        let name = full_value.value_name.clone();
+        let name = full_value.detail.value_name();
         match modified_list_type {
             ModifiedListType::Updated => {
                 full_value.cell_state = CellState::ModifiedTransactionLog;

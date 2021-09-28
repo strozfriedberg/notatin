@@ -170,7 +170,8 @@ impl PyNotatinParserBuilder {
     }
 
     pub fn build(&self) -> PyResult<PyNotatinParser> {
-        let mut builder = ParserBuilder::from_file(FileOrFileLike::to_read_seek(&self.primary_file)?);
+        let mut builder =
+            ParserBuilder::from_file(FileOrFileLike::to_read_seek(&self.primary_file)?);
         builder.recover_deleted(self.recover_deleted);
         for transaction_log in &self.transaction_logs {
             builder.with_transaction_log(FileOrFileLike::to_read_seek(transaction_log)?);

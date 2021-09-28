@@ -22,13 +22,13 @@ use crate::file_info::FileInfo;
 use crate::filter::{Filter, FilterBuilder, FilterFlags};
 use crate::impl_enum;
 use crate::impl_flags_from_bits;
-use crate::impl_read_value_offset_length;
 use crate::impl_serialize_for_bitflags;
 use crate::init_value_enum;
 use crate::log::{LogCode, Logs};
 use crate::make_field_struct;
 use crate::make_file_offset_structs;
 use crate::parser::Parser;
+use crate::read_value_offset_length;
 use crate::state::State;
 use crate::sub_key_list_lf::SubKeyListLf;
 use crate::sub_key_list_lh::SubKeyListLh;
@@ -51,15 +51,16 @@ use winstructs::security::SecurityDescriptor;
 make_file_offset_structs!(
     CellKeyNodeDetail {
         size: i32,
-        key_node_flag_bits: u16,
-        last_key_written_date_and_time_bytes: u64,
-        access_flag_bits: u32,
+        signature: String,
+        key_node_flag_bits: u16; serde(serialize_with = "util::field_key_node_flag_bits_interpreted"),
+        last_key_written_date_and_time: u64; serde(serialize_with = "util::field_last_key_written_date_and_time_interpreted"),
+        access_flag_bits: u32; serde(serialize_with = "util::field_acccess_flag_bits_interpreted"),
         parent_key_offset_relative: i32,
         number_of_sub_keys: u32,
         number_of_volatile_sub_keys: u32,
-        number_of_key_values: u32,
         sub_keys_list_offset_relative: u32,
         volatile_sub_keys_list_offset_relative: i32,
+        number_of_key_values: u32,
         key_values_list_offset_relative: i32,
         security_key_offset_relative: u32,
         class_name_offset_relative: i32,
@@ -96,26 +97,26 @@ pub struct CellKeyNode {
     pub key_name: String,
     pub path: String,
     pub cell_state: CellState,
-    pub key_node_flags: KeyNodeFlags,
-    pub access_flags: AccessFlags,
+    //pub key_node_flags: KeyNodeFlags,
+    //pub access_flags: AccessFlags,
     pub sequence_num: Option<u32>,
     pub updated_by_sequence_num: Option<u32>,
     pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
     pub logs: Logs,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub hash: Option<Hash>,
 
     /// Absolute offsets of any sub key cells
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub versions: Vec<Self>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub deleted_keys: Vec<Self>,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub(crate) iteration_state: CellKeyNodeIteration,
 }
 
@@ -130,6 +131,15 @@ pub(crate) struct CellKeyNodeReadOptions<'a> {
 
 impl CellKeyNode {
     const MIN_CELL_KEY_SIZE: usize = 72;
+    const SIGNATURE: &'static str = "nk";
+
+    pub fn key_node_flags(&self, logs: &mut Logs) -> KeyNodeFlags {
+        KeyNodeFlags::from_bits_checked(self.detail.key_node_flag_bits(), logs)
+    }
+
+    pub fn access_flags(&self, logs: &mut Logs) -> AccessFlags {
+        AccessFlags::from_bits_checked(self.detail.access_flag_bits(), logs)
+    }
 
     fn check_size(size: i32, input_len: usize) -> bool {
         let size_abs = size.abs() as usize;
@@ -142,7 +152,7 @@ impl CellKeyNode {
     }
 
     pub fn last_key_written_date_and_time(&self) -> DateTime<Utc> {
-        util::get_date_time_from_filetime(self.detail.last_key_written_date_and_time_bytes())
+        util::get_date_time_from_filetime(self.detail.last_key_written_date_and_time())
     }
 
     pub(crate) fn is_free(&self) -> bool {
@@ -165,40 +175,46 @@ impl CellKeyNode {
 
         init_value_enum! { CellKeyNodeDetail, detail_enum, get_full_field_info };
 
-        impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, size, i32, le_i32 };
+        read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, size, i32, le_i32 };
         if !Self::check_size(size, input.len() + std::mem::size_of::<i32>()) {
             Err(nom::Err::Error(nom::error::Error {
                 input,
                 code: nom::error::ErrorKind::Eof,
             }))
         } else {
-            let (input, _signature) = tag("nk")(input)?;
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_node_flag_bits, u16, le_u16 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, last_key_written_date_and_time_bytes, u64, le_u64 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, access_flag_bits, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, parent_key_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_sub_keys, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_volatile_sub_keys, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, sub_keys_list_offset_relative, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, volatile_sub_keys_list_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_key_values, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_values_list_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, security_key_offset_relative, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_offset_relative, i32, le_i32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_class_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_name_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_data_size, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, work_var, u32, le_u32 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_name_size, u16, le_u16 }
-            impl_read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_size, u16, le_u16 }
+            let signature_offset = input.as_ptr() as usize - start_pos_ptr;
+            let (input, _signature) = tag(Self::SIGNATURE)(input)?;
+            detail_enum.set_signature_full(
+                &Self::SIGNATURE.to_owned(),
+                signature_offset,
+                Self::SIGNATURE.len() as u32,
+            );
 
-            let (input, key_name_bytes) = take!(input, key_name_size)?;
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_node_flag_bits, u16, le_u16 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, last_key_written_date_and_time, u64, le_u64 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, access_flag_bits, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, parent_key_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_sub_keys, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_volatile_sub_keys, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, sub_keys_list_offset_relative, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, volatile_sub_keys_list_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_key_values, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_values_list_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, security_key_offset_relative, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_name_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_class_name_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_name_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_data_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, work_var, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_name_size, u16, le_u16 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_size, u16, le_u16 }
 
             let mut logs = Logs::default();
 
+            let (input, key_name_bytes) = take!(input, key_name_size)?;
             let key_node_flags = KeyNodeFlags::from_bits_checked(key_node_flag_bits, &mut logs);
-            let access_flags = AccessFlags::from_bits_checked(access_flag_bits, &mut logs);
+            //let access_flags = AccessFlags::from_bits_checked(access_flag_bits, &mut logs);
 
             let key_name = util::string_from_bytes(
                 key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME),
@@ -208,7 +224,7 @@ impl CellKeyNode {
                 "key_name_bytes",
             );
 
-            let mut path = cur_path.to_string();
+            let mut path = cur_path.to_owned();
             path.push('\\');
             path += &key_name;
 
@@ -224,8 +240,8 @@ impl CellKeyNode {
             let cell_key_node = Self {
                 detail: detail_enum,
                 file_offset_absolute,
-                key_node_flags,
-                access_flags,
+                //key_node_flags,
+                //access_flags,
                 key_name,
                 path,
                 cell_state: CellState::Allocated,
@@ -238,7 +254,7 @@ impl CellKeyNode {
                 hash: Some(Self::hash(
                     state,
                     key_node_flag_bits,
-                    last_key_written_date_and_time_bytes,
+                    last_key_written_date_and_time,
                     access_flag_bits,
                 )),
                 sequence_num,
@@ -280,7 +296,7 @@ impl CellKeyNode {
         }
 
         for val in &mut self.sub_values {
-            if let Some(updated_values) = state.updated_values.get(path, &val.value_name) {
+            if let Some(updated_values) = state.updated_values.get(path, &val.detail.value_name()) {
                 val.versions = updated_values.to_vec();
             }
         }
@@ -620,7 +636,7 @@ impl CellKeyNode {
         let val = self
             .sub_values
             .iter()
-            .find(|v| v.value_name.to_ascii_lowercase() == find_value_name);
+            .find(|v| v.detail.value_name().to_ascii_lowercase() == find_value_name);
         val.cloned()
     }
 
@@ -696,7 +712,9 @@ impl CellKeyNode {
     }
 
     pub(crate) fn is_key_root(&self) -> bool {
-        self.key_node_flags.contains(KeyNodeFlags::KEY_HIVE_ENTRY)
+        let mut logs = Logs::default();
+        self.key_node_flags(&mut logs)
+            .contains(KeyNodeFlags::KEY_HIVE_ENTRY)
     }
 
     /// Returns path without root key
@@ -901,12 +919,18 @@ mod tests {
             file_offset_absolute: 117656,
             detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
                 size: FieldLight { value: -48 },
+                signature: FieldLight {
+                    value: "vk".to_string(),
+                },
                 value_name_size: FieldLight { value: 21 },
                 data_size_raw: FieldLight { value: 10 },
                 data_offset_relative: FieldLight { value: 113608 },
                 data_type_raw: FieldLight { value: 1 },
                 flags_raw: FieldLight { value: 1 },
                 padding: FieldLight { value: 0 },
+                value_name: FieldLight {
+                    value: "DelayBeforeAcceptance".to_string(),
+                },
                 value_bytes: FieldLight {
                     value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
                 },
@@ -917,7 +941,6 @@ mod tests {
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_offsets_absolute: vec![117708],
-            value_name: "DelayBeforeAcceptance".to_string(),
             logs: Logs::default(),
             versions: Vec::new(),
             cell_state: CellState::Allocated,
@@ -941,6 +964,11 @@ mod tests {
                     value: -48,
                     offset: 0,
                     len: 4,
+                },
+                signature: FieldFull {
+                    value: "vk".to_string(),
+                    offset: 4,
+                    len: 2,
                 },
                 value_name_size: FieldFull {
                     value: 21,
@@ -972,21 +1000,25 @@ mod tests {
                     offset: 22,
                     len: 2,
                 },
-                value_bytes: FieldFull {
-                    value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
-                    offset: 117656,
-                    len: 10,
+                value_name: FieldFull {
+                    value: "DelayBeforeAcceptance".to_string(),
+                    offset: 24,
+                    len: 21,
                 },
                 slack: FieldFull {
                     value: vec![0, 0, 0],
                     offset: 45,
                     len: 3,
                 },
+                value_bytes: FieldFull {
+                    value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                    offset: 117656,
+                    len: 10,
+                },
             })),
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_offsets_absolute: vec![117708],
-            value_name: "DelayBeforeAcceptance".to_string(),
             logs: Logs::default(),
             versions: Vec::new(),
             cell_state: CellState::Allocated,
@@ -1030,10 +1062,13 @@ mod tests {
         let expected_light_output = CellKeyNode {
             detail: CellKeyNodeDetailEnum::Light(Box::new(CellKeyNodeDetailLight {
                 size: FieldLight { value: -144 },
+                signature: FieldLight {
+                    value: "nk".to_string(),
+                },
                 access_flag_bits: FieldLight { value: 2 },
                 key_node_flag_bits: FieldLight { value: 44 },
                 parent_key_offset_relative: FieldLight { value: 2080 },
-                last_key_written_date_and_time_bytes: FieldLight {
+                last_key_written_date_and_time: FieldLight {
                     value: 130685969864025753,
                 },
                 number_of_sub_keys: FieldLight { value: 10 },
@@ -1056,10 +1091,6 @@ mod tests {
                 },
             })),
             file_offset_absolute: 0,
-            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY
-                | KeyNodeFlags::KEY_NO_DELETE
-                | KeyNodeFlags::KEY_COMP_NAME,
-            access_flags: AccessFlags::ACCESSED_AFTER_INIT,
             key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
             path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
             cell_state: CellState::Allocated,
@@ -1091,6 +1122,11 @@ mod tests {
                     offset: 0,
                     len: 4,
                 },
+                signature: FieldFull {
+                    value: "nk".to_string(),
+                    offset: 4,
+                    len: 2,
+                },
                 access_flag_bits: FieldFull {
                     value: 2,
                     offset: 16,
@@ -1106,7 +1142,7 @@ mod tests {
                     offset: 20,
                     len: 4,
                 },
-                last_key_written_date_and_time_bytes: FieldFull {
+                last_key_written_date_and_time: FieldFull {
                     value: 130685969864025753,
                     offset: 8,
                     len: 8,
@@ -1193,10 +1229,6 @@ mod tests {
                 },
             })),
             file_offset_absolute: 0,
-            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY
-                | KeyNodeFlags::KEY_NO_DELETE
-                | KeyNodeFlags::KEY_COMP_NAME,
-            access_flags: AccessFlags::ACCESSED_AFTER_INIT,
             key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
             path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
             cell_state: CellState::Allocated,
@@ -1216,6 +1248,18 @@ mod tests {
             updated_by_sequence_num: None,
         };
         assert_eq!(expected_full_output, key_node);
+
+        let mut logs = Logs::default();
+        assert_eq!(
+            KeyNodeFlags::KEY_HIVE_ENTRY
+                | KeyNodeFlags::KEY_NO_DELETE
+                | KeyNodeFlags::KEY_COMP_NAME,
+            key_node.key_node_flags(&mut logs)
+        );
+        assert_eq!(
+            AccessFlags::ACCESSED_AFTER_INIT,
+            key_node.access_flags(&mut logs)
+        );
 
         let slice = &file_info.buffer[0..10];
         let ret = CellKeyNode::from_bytes(&mut state, slice, 0, &String::new(), None);

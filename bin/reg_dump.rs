@@ -173,6 +173,7 @@ fn versions_tsv(
     } else {
         write_status = status;
     }
+    let mut logs = cell_key_node.logs.clone();
     writeln!(
         writer,
         "{}\t\t{}\t{:?}\t{:?}\t\t\t{}\t{:?}\t{:?}\t\t{}",
@@ -181,8 +182,8 @@ fn versions_tsv(
         cell_key_node.sequence_num,
         cell_key_node.updated_by_sequence_num,
         format_date_time(cell_key_node.last_key_written_date_and_time()),
-        cell_key_node.key_node_flags,
-        cell_key_node.access_flags,
+        cell_key_node.key_node_flags(&mut logs),
+        cell_key_node.access_flags(&mut logs),
         cell_key_node.logs
     )?;
 

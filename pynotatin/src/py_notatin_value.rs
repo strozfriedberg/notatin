@@ -35,11 +35,8 @@ impl PyNotatinValue {
     #[getter]
     /// Returns the value as bytes
     pub fn value(&self, py: Python) -> PyObject {
-        pyo3::types::PyBytes::new(
-            py,
-            &self.inner.detail.value_bytes().clone().unwrap_or_default(),
-        )
-        .to_object(py)
+        pyo3::types::PyBytes::new(py, &self.inner.detail.value_bytes().unwrap_or_default())
+            .to_object(py)
     }
 
     #[getter]
@@ -49,7 +46,7 @@ impl PyNotatinValue {
 
     #[getter]
     pub fn name(&self, py: Python) -> PyObject {
-        self.inner.value_name.to_object(py)
+        self.inner.detail.value_name().to_object(py)
     }
 
     #[getter]
@@ -155,7 +152,11 @@ mod tests {
     use super::*;
     use notatin::{
         cell::CellState,
-        cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetailEnum, CellKeyValueFlags},
+        cell_key_value::{
+            CellKeyValue, CellKeyValueDataTypes, CellKeyValueDetailEnum, CellKeyValueDetailLight,
+            CellKeyValueFlags,
+        },
+        field_offset_len::FieldLight,
         log::Logs,
     };
     use std::fs::File;
@@ -165,21 +166,28 @@ mod tests {
     fn test_get_content() {
         let mut py_reg_value = PyNotatinValue {
             inner: CellKeyValue {
-                detail: CellKeyValueDetail {
-                    file_offset_absolute: 0,
-                    size: 48,
-                    value_name_size: 18,
-                    data_size_raw: 8,
-                    data_offset_relative: 3864,
-                    data_type_raw: 1,
-                    flags_raw: 1,
-                    padding: 0,
-                    value_bytes: None,
-                    slack: vec![0, 0, 1, 0, 0, 0],
-                },
+                file_offset_absolute: 0,
+                detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
+                    size: FieldLight { value: -48 },
+                    signature: FieldLight {
+                        value: "vk".to_string(),
+                    },
+                    value_name_size: FieldLight { value: 18 },
+                    data_size_raw: FieldLight { value: 8 },
+                    data_offset_relative: FieldLight { value: 3864 },
+                    data_type_raw: FieldLight { value: 1 },
+                    flags_raw: FieldLight { value: 1 },
+                    padding: FieldLight { value: 0 },
+                    value_bytes: FieldLight { value: None },
+                    value_name: FieldLight {
+                        value: "IE5_UA_Backup_Flag".to_string(),
+                    },
+                    slack: FieldLight {
+                        value: vec![0, 0, 1, 0, 0, 0],
+                    },
+                })),
                 data_type: CellKeyValueDataTypes::REG_SZ,
                 flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-                value_name: "IE5_UA_Backup_Flag".to_string(),
                 cell_state: CellState::Allocated,
                 data_offsets_absolute: Vec::new(),
                 logs: Logs::default(),
@@ -189,7 +197,10 @@ mod tests {
                 updated_by_sequence_num: None,
             },
         };
-        py_reg_value.inner.detail.value_bytes = Some(vec![53, 0, 46, 0, 48, 0, 0, 0]);
+        py_reg_value
+            .inner
+            .detail
+            .set_value_bytes(&Some(vec![53, 0, 46, 0, 48, 0, 0, 0]), 0);
         let gil = Python::acquire_gil();
         let py = gil.python();
 
@@ -208,21 +219,30 @@ mod tests {
         lznt1_file.read_to_end(&mut lznt1_buffer).unwrap();
         let py_notatin_value = PyNotatinValue {
             inner: CellKeyValue {
+                detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
+                    size: FieldLight { value: 48 },
+                    signature: FieldLight {
+                        value: "vk".to_string(),
+                    },
+                    value_name_size: FieldLight { value: 4 },
+                    data_size_raw: FieldLight {
+                        value: lznt1_buffer.len() as u32,
+                    },
+                    data_offset_relative: FieldLight { value: 3864 },
+                    data_type_raw: FieldLight { value: 1 },
+                    flags_raw: FieldLight { value: 1 },
+                    padding: FieldLight { value: 0 },
+                    value_name: FieldLight {
+                        value: "test".to_string(),
+                    },
+                    value_bytes: FieldLight {
+                        value: Some(lznt1_buffer.clone()),
+                    },
+                    slack: FieldLight { value: vec![] },
+                })),
                 file_offset_absolute: 0,
-                detail: CellKeyValueDetail {
-                    size: 48,
-                    value_name_size: 4,
-                    data_size_raw: lznt1_buffer.len() as u32,
-                    data_offset_relative: 3864,
-                    data_type_raw: 1,
-                    flags_raw: 1,
-                    padding: 0,
-                    value_bytes: Some(lznt1_buffer.clone()),
-                    slack: vec![],
-                },
                 data_type: CellKeyValueDataTypes::REG_BIN,
                 flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-                value_name: "test".to_string(),
                 cell_state: CellState::Allocated,
                 data_offsets_absolute: Vec::new(),
                 logs: Logs::default(),
