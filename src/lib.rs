@@ -25,6 +25,7 @@ pub mod cell_key_value;
 pub mod cell_value;
 pub mod cli_util;
 pub mod err;
+pub mod field_serializers;
 pub mod file_info;
 pub mod filter;
 pub mod hive_bin_cell;

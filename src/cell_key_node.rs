@@ -18,6 +18,7 @@ use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
 use crate::field_offset_len::{FieldFull, FieldLight};
+use crate::field_serializers;
 use crate::file_info::FileInfo;
 use crate::filter::{Filter, FilterBuilder, FilterFlags};
 use crate::impl_enum;
@@ -52,9 +53,9 @@ make_file_offset_structs!(
     CellKeyNodeDetail {
         size: i32,
         signature: String,
-        key_node_flag_bits: u16; serde(serialize_with = "util::field_key_node_flag_bits_interpreted"),
-        last_key_written_date_and_time: u64; serde(serialize_with = "util::field_last_key_written_date_and_time_interpreted"),
-        access_flag_bits: u32; serde(serialize_with = "util::field_acccess_flag_bits_interpreted"),
+        key_node_flag_bits: u16; serde(serialize_with = "field_serializers::field_key_node_flag_bits_interpreted"),
+        last_key_written_date_and_time: u64; serde(serialize_with = "field_serializers::field_last_key_written_date_and_time_interpreted"),
+        access_flag_bits: u32; serde(serialize_with = "field_serializers::field_acccess_flag_bits_interpreted"),
         parent_key_offset_relative: i32,
         number_of_sub_keys: u32,
         number_of_volatile_sub_keys: u32,

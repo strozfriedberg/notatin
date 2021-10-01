@@ -112,13 +112,20 @@ mod macros {
             ));
         );
 
-        ( @$field_type:ident, $name:ident { $field:ident : $type:ty ; $field_macro:meta, $($tail:tt)* } -> ($($result:tt)*) ) => (
+        ( @$field_type:ident, $name:ident { $field:ident : $type:ty ; $attribute_macro:meta, $($tail:tt)* } -> ($($result:tt)*) ) => (
             make_field_struct!(@$field_type, $name { $($tail)* } -> (
                 $($result)*
-                #[$field_macro]
+                #[$attribute_macro]
                 pub $field : $field_type<$type>,
             ));
         );
+
+        /*( @$field_type:ident, $name:ident { $field:ident : $type:ty } -> ($($result:tt)*) ) => (
+            make_field_struct!(@$field_type, $name {  } -> (
+                $($result)*
+                pub $field : $field_type<$type>,
+            ));
+        );*/
 
         ( $field_type:ident, $name:ident { $($tail:tt)* } ) => (
             make_field_struct!(@$field_type, $name { $($tail)* } -> ());
@@ -167,39 +174,8 @@ mod macros {
             ));
         );
 
-        // same body, but need to be able to match a skip_serialize field as well
-        ( @$name:ident { $field:ident : $type:ty; $field_macro:meta, $($tail:tt)* } -> ($($result:tt)*) ) => (
-            impl_enum!(@$name { $($tail)* } -> (
-                $($result)*
-                pub fn $field(&self) -> $type {
-                    match self {
-                        Self::Light(detail) => detail.$field.value.clone(),
-                        Self::Full(detail) => detail.$field.value.clone(),
-                    }
-                }
-
-                paste::item! {
-                    // Would love if there was some way to tell if $type was a primitive or not, and therefore whether we should generate
-                    // set_field vs. set_field_full.
-                    #[allow(dead_code)]
-                    #[allow(clippy::ptr_arg)]
-                    pub fn [< set_ $field >] (&mut self, val: &$type, offset: usize) {
-                        match self {
-                            Self::Light(detail) => detail.$field = FieldLight::<$type>::new(val.to_owned()),
-                            Self::Full(detail) => detail.$field = FieldFull::<$type>::new(val.to_owned(), offset)
-                        }
-                    }
-
-                    #[allow(dead_code)]
-                    #[allow(clippy::ptr_arg)]
-                    pub fn [< set_ $field _full >] (&mut self, val: &$type, offset: usize, len: u32) {
-                        match self {
-                            Self::Light(detail) => detail.$field = FieldLight::<$type>::new(val.to_owned()),
-                            Self::Full(detail) => detail.$field = FieldFull::<$type>::new_with_len(val.to_owned(), offset, len)
-                        }
-                    }
-                }
-            ));
+        ( @$name:ident { $field:ident : $type:ty; $attribute_macro:meta, $($tail:tt)* } -> ($($result:tt)*) ) => (
+            impl_enum!(@$name { $field : $type, $($tail)* } -> ($($result)*));
         );
 
         ( $name:ident { $($tail:tt)* } ) => (
@@ -221,8 +197,8 @@ mod macros {
             }
         ) => {
             paste::item!{
-                make_field_struct! ( FieldLight, [<$class_name_prefix Light>] { $($tail)*  } );
-                make_field_struct! ( FieldFull, [<$class_name_prefix Full>] { $($tail)*  } );
+                make_field_struct! ( FieldLight, [<$class_name_prefix Light>] { $($tail)* } );
+                make_field_struct! ( FieldFull, [<$class_name_prefix Full>] { $($tail)* } );
 
                 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
                 pub enum [<$class_name_prefix Enum>]  {

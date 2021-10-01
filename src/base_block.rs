@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use crate::field_serializers;
 use crate::impl_enum_from_value;
 use crate::log::{LogCode, Logs};
 use crate::util;
@@ -86,7 +87,7 @@ pub struct BaseBlockBase {
     pub clustering_factor: u32,
     /// UTF-16LE string (contains a partial file path to the primary file, or a file name of the primary file).
     pub filename: String,
-    #[serde(serialize_with = "util::field_data_as_hex")]
+    #[serde(serialize_with = "field_serializers::field_data_as_hex")]
     pub unk2: Vec<u8>,
     /// XOR-32 checksum of the previous 508 bytes
     pub checksum: u32,
@@ -193,7 +194,7 @@ pub struct FileBaseBlockReserved {
     pub tm_id: Guid,
     pub signature: u32,
     pub last_reorganized_timestamp: DateTime<Utc>,
-    #[serde(serialize_with = "util::field_data_as_hex")]
+    #[serde(serialize_with = "field_serializers::field_data_as_hex")]
     pub remaining: Vec<u8>,
     pub logs: Logs,
 }

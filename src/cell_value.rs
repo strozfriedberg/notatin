@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use crate::field_serializers;
 use crate::log::{LogCode, Logs};
 use crate::util;
 use serde::Serialize;
@@ -21,7 +22,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum CellValue {
     ValueNone,
-    #[serde(serialize_with = "util::field_data_as_hex")]
+    #[serde(serialize_with = "field_serializers::field_data_as_hex")]
     ValueBinary(Vec<u8>),
     ValueString(String),
     ValueMultiString(Vec<String>),

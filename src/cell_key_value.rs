@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 use crate::cell::{Cell, CellState};
 use crate::cell_big_data::CellBigData;
 use crate::cell_value::{CellValue, DecodableValue, DecodeFormat};
 use crate::err::Error;
 use crate::field_offset_len::{FieldFull, FieldLight};
+use crate::field_serializers;
 use crate::file_info::FileInfo;
 use crate::impl_enum;
 use crate::impl_serialize_for_bitflags;
@@ -204,7 +204,7 @@ make_file_offset_structs!(
         padding: u16,
         // value_name is an empty string for an unnamed value. This is displayed as __(Default)__ in Windows Registry Editor;
         // use `CellKeyValue::get_pretty_name()` to get __(default)__ rather than empty string for the name (lowercase to be compatible with `python-registry`)
-        value_name: String; serde(serialize_with = "util::field_value_name_interpreted"),
+        value_name: String; serde(serialize_with = "field_serializers::field_value_name_interpreted"),
         slack: Vec<u8>,
         value_bytes: Option<Vec<u8>>; serde(skip),
     }
