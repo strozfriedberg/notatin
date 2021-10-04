@@ -92,3 +92,17 @@ class PyNotatinDecodeFormat(object):
 
     utf16: PyNotatinDecodeFormat
     """ Returns a utf16 decoder """
+
+class PyNotatinParserBuilder(object):
+    """ Create and return a new object. """
+    @staticmethod # known case of __new__
+    def __new__(FileOrFileLike) -> PyNotatinParserBuilder: ...
+
+    """ Set to true to search for deleted and modified items """
+    def recover_deleted(self, recover: bool): ...
+
+    """ Add a transaction log file """
+    def with_transaction_log(self, FileOrFileLike): ...
+
+    """ Returns a PyNotatinParser """
+    def build(self) -> PyNotatinParser: ...
