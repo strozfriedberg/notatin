@@ -21,7 +21,6 @@ use crate::log::{LogCode, Logs};
 use crate::parser::{Parser, ParserIterator};
 use chrono::{DateTime, Utc};
 use nom::{take, IResult};
-use serde::ser;
 use std::{
     char::REPLACEMENT_CHARACTER,
     convert::TryInto,
@@ -198,11 +197,12 @@ pub(crate) fn get_guid_from_buffer(buffer: &[u8], logs: &mut Logs) -> Guid {
         .expect("Error handled in or_else")
 }
 
-pub(crate) fn data_as_hex<S: ser::Serializer>(
-    x: &[u8],
-    s: S,
-) -> std::result::Result<S::Ok, S::Error> {
-    s.serialize_str(&to_hex_string(x))
+pub(crate) fn get_pretty_name(name: &str) -> String {
+    if name.is_empty() {
+        "(default)".to_string()
+    } else {
+        name.to_string()
+    }
 }
 
 /// Adapted from https://github.com/omerbenamram/mft
@@ -304,9 +304,9 @@ pub fn write_common_export_format<W: Write>(
             &mut writer,
             "key,{},{},{},,,,{}",
             get_alloc_char(&key.cell_state),
-            key.detail.file_offset_absolute,
+            key.file_offset_absolute,
             escape_string(key_path),
-            format_date_time(key.last_key_written_date_and_time)
+            format_date_time(key.last_key_written_date_and_time())
         )?;
 
         for value in key.value_iter() {
@@ -332,11 +332,11 @@ pub fn write_common_export_format<W: Write>(
                 &mut writer,
                 "value,{},{},{},{},{:?},{},",
                 get_alloc_char(&value.cell_state),
-                value.detail.file_offset_absolute,
+                value.file_offset_absolute,
                 escape_string(key_name),
                 escape_string(&value.get_pretty_name()),
                 value.data_type as u32,
-                to_hex_string(&value.detail.value_bytes.unwrap_or_default()[..])
+                to_hex_string(&value.detail.value_bytes().unwrap_or_default()[..])
             )?;
         }
     }

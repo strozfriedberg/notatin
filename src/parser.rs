@@ -395,7 +395,7 @@ impl Parser {
                 .stack_to_traverse
                 .pop()
                 .expect("Just checked that stack_to_traverse wasn't empty");
-            if node.number_of_sub_keys > 0 {
+            if node.detail.number_of_sub_keys() > 0 {
                 let (children, _) = node.read_sub_keys_internal(
                     &self.file_info,
                     &mut iter_context.state,
@@ -442,7 +442,7 @@ impl Parser {
                 .stack_to_traverse
                 .pop()
                 .expect("Just checked that stack_to_traverse wasn't empty");
-            if node.number_of_sub_keys > 0 {
+            if node.detail.number_of_sub_keys() > 0 {
                 let (children, _) = node.read_sub_keys_internal(
                     &self.file_info,
                     &mut iter_context.state,
@@ -554,7 +554,7 @@ impl Parser {
             &self.file_info,
             &mut self.state,
             CellKeyNodeReadOptions {
-                offset: cell_key_node.parent_key_offset_relative as usize
+                offset: cell_key_node.detail.parent_key_offset_relative() as usize
                     + self.file_info.hbin_offset_absolute,
                 cur_path: &parent_path,
                 filter: None,
@@ -740,7 +740,7 @@ mod tests {
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified(None);
         assert_eq!(
-            (45587, 319, 31, 108178, 139, 240),
+            (45587, 319, 31, 108178, 139, 244),
             (
                 keys,
                 keys_versions,

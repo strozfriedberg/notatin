@@ -84,7 +84,7 @@ impl DeletedValueMap {
     pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
         if let Some(values) = self.map.get_mut(key_path) {
             for (index, value) in values.iter().enumerate() {
-                if value.value_name == value_name {
+                if value.detail.value_name() == value_name {
                     if let Some(value_hash) = value.hash {
                         if hash == &value_hash {
                             values.remove(index);
@@ -147,9 +147,13 @@ impl ModifiedDeletedKeyMap {
 
 #[derive(Clone, Debug)]
 pub(crate) struct State {
-    // Path filters don't include the root name, but the cell key's path does.
-    // This is the length of that root name so we can index into the string directly.
+    /// Path filters don't include the root name, but the cell key's path does.
+    /// This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
+
+    /// This indicates if we should generate offset and length info for the structures we are reading.
+    /// Default is `false`
+    pub get_full_field_info: bool,
 
     pub info: Logs,
 
@@ -174,6 +178,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             root_key_path_offset: 0,
+            get_full_field_info: false,
             info: Logs::default(),
             hasher: Hasher::new(),
             deleted_keys: ModifiedDeletedKeyMap::new(),

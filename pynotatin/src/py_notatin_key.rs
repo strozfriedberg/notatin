@@ -111,7 +111,7 @@ impl PyNotatinKey {
     /// Returns the number of sub keys
     #[getter]
     pub fn number_of_sub_keys(&self, py: Python) -> PyObject {
-        self.inner.number_of_sub_keys.to_object(py)
+        self.inner.detail.number_of_sub_keys().to_object(py)
     }
 
     /// number_of_key_values(self, /)
@@ -120,7 +120,7 @@ impl PyNotatinKey {
     /// Returns the number of key values
     #[getter]
     pub fn number_of_key_values(&self, py: Python) -> PyObject {
-        self.inner.number_of_key_values.to_object(py)
+        self.inner.detail.number_of_key_values().to_object(py)
     }
 }
 
@@ -133,7 +133,7 @@ impl PyNotatinKey {
             py,
             PyNotatinKey {
                 last_key_written_date_and_time: date_to_pyobject(
-                    &cell_key_node.last_key_written_date_and_time,
+                    &cell_key_node.last_key_written_date_and_time(),
                 )?,
                 inner: cell_key_node,
             },

@@ -21,6 +21,7 @@ use notatin::{
     cell_key_value::CellKeyValue,
     err::Error,
     filter::FilterBuilder,
+    log::Logs,
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
     util::format_date_time,
@@ -91,7 +92,7 @@ fn main() -> Result<(), Error> {
         let path = &key.path;
         original_map.insert((path.clone(), None), key.hash);
         for value in key.value_iter() {
-            original_map.insert((path.clone(), Some(value.value_name)), value.hash);
+            original_map.insert((path.clone(), Some(value.detail.value_name())), value.hash);
         }
         k_added += 1;
         if k_added % 1000 == 0 {
@@ -134,11 +135,12 @@ fn main() -> Result<(), Error> {
         }
 
         for value in key.value_iter() {
-            match original_map.remove(&(path.clone(), Some(value.value_name.clone()))) {
+            match original_map.remove(&(path.clone(), Some(value.detail.value_name().clone()))) {
                 Some(val) => {
                     if val != value.hash {
                         let original_key = parser1.get_key(&key.path, true).unwrap().unwrap();
-                        let original_value = original_key.get_value(&value.value_name).unwrap();
+                        let original_value =
+                            original_key.get_value(&value.detail.value_name()).unwrap();
                         values_modified.push((path.clone(), original_value, value));
                     }
                 }
@@ -254,13 +256,14 @@ fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &C
 }
 
 fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
+    let mut logs = Logs::default();
     writeln!(
         writer,
         "{}\t{}\t{:?}\t{:?}",
         cell_key_node.path,
-        format_date_time(cell_key_node.last_key_written_date_and_time),
-        cell_key_node.key_node_flags,
-        cell_key_node.access_flags
+        format_date_time(cell_key_node.last_key_written_date_and_time()),
+        cell_key_node.key_node_flags(&mut logs),
+        cell_key_node.access_flags(&mut logs)
     )
     .unwrap();
 }

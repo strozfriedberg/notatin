@@ -37,6 +37,9 @@ fn main() -> Result<(), Error> {
             "-r --recover 'Recover deleted and versioned keys and values'",
         ))
         .arg(Arg::from_usage(
+            "-h --full-field-info 'Get the offset and length for each key/value field'",
+        ))
+        .arg(Arg::from_usage(
             "-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'",
         ))
         .arg(
@@ -69,10 +72,12 @@ fn main() -> Result<(), Error> {
     let (input, logs) = parse_paths(matches.value_of("input").expect("Required value"));
     let output = matches.value_of("output").expect("Required value");
     let recover = matches.is_present("recover");
+    let get_full_field_info = matches.is_present("full-field-info");
     let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
     let mut parser_builder = ParserBuilder::from_path(input);
     parser_builder.recover_deleted(recover);
+    parser_builder.get_full_field_info(get_full_field_info);
     for log in logs.unwrap_or_default() {
         parser_builder.with_transaction_log(log);
     }
@@ -168,6 +173,7 @@ fn versions_tsv(
     } else {
         write_status = status;
     }
+    let mut logs = cell_key_node.logs.clone();
     writeln!(
         writer,
         "{}\t\t{}\t{:?}\t{:?}\t\t\t{}\t{:?}\t{:?}\t\t{}",
@@ -175,9 +181,9 @@ fn versions_tsv(
         write_status,
         cell_key_node.sequence_num,
         cell_key_node.updated_by_sequence_num,
-        format_date_time(cell_key_node.last_key_written_date_and_time),
-        cell_key_node.key_node_flags,
-        cell_key_node.access_flags,
+        format_date_time(cell_key_node.last_key_written_date_and_time()),
+        cell_key_node.key_node_flags(&mut logs),
+        cell_key_node.access_flags(&mut logs),
         cell_key_node.logs
     )?;
 

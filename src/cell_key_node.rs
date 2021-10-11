@@ -13,17 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 use crate::cell::{Cell, CellState};
 use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
+use crate::field_offset_len::{FieldFull, FieldLight};
+use crate::field_serializers;
 use crate::file_info::FileInfo;
 use crate::filter::{Filter, FilterBuilder, FilterFlags};
+use crate::impl_enum;
 use crate::impl_flags_from_bits;
 use crate::impl_serialize_for_bitflags;
+use crate::init_value_enum;
 use crate::log::{LogCode, Logs};
+use crate::make_field_struct;
+use crate::make_file_offset_structs;
 use crate::parser::Parser;
+use crate::read_value_offset_length;
 use crate::state::State;
 use crate::sub_key_list_lf::SubKeyListLf;
 use crate::sub_key_list_lh::SubKeyListLh;
@@ -41,36 +47,34 @@ use nom::{
     take, IResult,
 };
 use serde::Serialize;
-use std::time::SystemTime;
 use winstructs::security::SecurityDescriptor;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
-pub struct CellKeyNodeDetail {
-    pub file_offset_absolute: usize,
-    pub size: i32,
-    pub number_of_volatile_sub_keys: u32, // The offset value is in bytes and relative from the start of the hive bin data / Refers to a sub keys list or contains -1 (0xffffffff) if empty.
-    pub sub_keys_list_offset_relative: u32, // In bytes, relative from the start of the hive bins data (also, this field may point to an Index root)
-    pub volatile_sub_keys_list_offset_relative: i32, // This field has no meaning on a disk (volatile keys are not written to a file)
-    pub key_values_list_offset_relative: i32,
-    pub security_key_offset_relative: u32,
-    pub class_name_offset_relative: i32,
-    /*  Starting from Windows Vista, Windows Server 2003 SP2, and Windows XP SP3, the Largest subkey name length field has been split
-    into 4 bit fields (the offsets below are relative from the beginning of the old Largest subkey name length field,
-    i.e. the first bit field starts within the byte at the lowest address):
-    Offset (bits)	Length (bits)	Field	                     Description
-    0	            16	            Largest subkey name length
-    16	            4	            Virtualization control flags Bit mask, see below
-    20	            4	            User flags (Wow64 flags)     Bit mask, see below
-    24              8	            Debug                        See below */
-    pub largest_sub_key_name_size: u32, // In bytes, a subkey name is treated as a UTF-16LE string (see below)
-    pub largest_sub_key_class_name_size: u32,
-    pub largest_value_name_size: u32, // In bytes, a value name is treated as a UTF-16LE string
-    pub largest_value_data_size: u32,
-    pub work_var: u32, // Unused as of WinXP
-    pub key_name_size: u16,
-    pub class_name_size: u16,
-    pub slack: Vec<u8>,
-}
+make_file_offset_structs!(
+    CellKeyNodeDetail {
+        size: i32,
+        signature: String,
+        key_node_flag_bits: u16; serde(serialize_with = "field_serializers::field_key_node_flag_bits_interpreted"),
+        last_key_written_date_and_time: u64; serde(serialize_with = "field_serializers::field_last_key_written_date_and_time_interpreted"),
+        access_flag_bits: u32; serde(serialize_with = "field_serializers::field_acccess_flag_bits_interpreted"),
+        parent_key_offset_relative: i32,
+        number_of_sub_keys: u32,
+        number_of_volatile_sub_keys: u32,
+        sub_keys_list_offset_relative: u32,
+        volatile_sub_keys_list_offset_relative: i32,
+        number_of_key_values: u32,
+        key_values_list_offset_relative: i32,
+        security_key_offset_relative: u32,
+        class_name_offset_relative: i32,
+        largest_sub_key_name_size: u32,
+        largest_sub_key_class_name_size: u32,
+        largest_value_name_size: u32,
+        largest_value_data_size: u32,
+        work_var: u32,
+        key_name_size: u16,
+        class_name_size: u16,
+        slack: Vec<u8>,
+    }
+);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(crate) enum FilterMatchState {
@@ -79,7 +83,7 @@ pub(crate) enum FilterMatchState {
     Exact,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct CellKeyNodeIteration {
     pub(crate) to_return: u32,
     pub(crate) track_returned: u32,
@@ -87,70 +91,34 @@ pub(crate) struct CellKeyNodeIteration {
     pub(crate) sub_keys_iter_index: usize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct CellKeyNode {
-    pub detail: CellKeyNodeDetail,
-    pub key_node_flags: KeyNodeFlags,
-    pub last_key_written_date_and_time: DateTime<Utc>,
-    /// Bit mask (this field is used as of Windows 8 and Windows Server 2012; in previous versions of Windows, this field is reserved and called Spare)
-    pub access_flags: AccessFlags,
-    /// Offset of the parent key node in bytes, relative from the start of the hive bin's data (this field has no meaning on a disk for a root key node)
-    pub parent_key_offset_relative: i32,
-    pub number_of_sub_keys: u32,
-    pub number_of_key_values: u32,
+    pub file_offset_absolute: usize,
+    pub detail: CellKeyNodeDetailEnum,
     pub key_name: String,
-
     pub path: String,
     pub cell_state: CellState,
-    pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
-    pub logs: Logs,
+    //pub key_node_flags: KeyNodeFlags,
+    //pub access_flags: AccessFlags,
     pub sequence_num: Option<u32>,
     pub updated_by_sequence_num: Option<u32>,
-    #[serde(skip_serializing)]
+    pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
+    pub logs: Logs,
+
+    #[serde(skip)]
     pub hash: Option<Hash>,
 
     /// Absolute offsets of any sub key cells
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub versions: Vec<Self>,
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub deleted_keys: Vec<Self>,
 
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub(crate) iteration_state: CellKeyNodeIteration,
-}
-
-impl Default for CellKeyNode {
-    fn default() -> Self {
-        Self {
-            detail: CellKeyNodeDetail::default(),
-            key_node_flags: KeyNodeFlags::default(),
-            last_key_written_date_and_time: DateTime::from(SystemTime::UNIX_EPOCH),
-            access_flags: AccessFlags::default(),
-            parent_key_offset_relative: i32::default(),
-            number_of_sub_keys: u32::default(),
-            number_of_key_values: u32::default(),
-            key_name: String::default(),
-            path: String::default(),
-            cell_state: CellState::Allocated,
-            sub_values: Vec::new(),
-            logs: Logs::default(),
-            cell_sub_key_offsets_absolute: Vec::new(),
-            iteration_state: CellKeyNodeIteration {
-                to_return: 0,
-                track_returned: 0,
-                filter_state: None,
-                sub_keys_iter_index: 0,
-            },
-            versions: Vec::new(),
-            deleted_keys: Vec::new(),
-            hash: None,
-            sequence_num: None,
-            updated_by_sequence_num: None,
-        }
-    }
 }
 
 pub(crate) struct CellKeyNodeReadOptions<'a> {
@@ -164,6 +132,15 @@ pub(crate) struct CellKeyNodeReadOptions<'a> {
 
 impl CellKeyNode {
     const MIN_CELL_KEY_SIZE: usize = 72;
+    const SIGNATURE: &'static str = "nk";
+
+    pub fn key_node_flags(&self, logs: &mut Logs) -> KeyNodeFlags {
+        KeyNodeFlags::from_bits_checked(self.detail.key_node_flag_bits(), logs)
+    }
+
+    pub fn access_flags(&self, logs: &mut Logs) -> AccessFlags {
+        AccessFlags::from_bits_checked(self.detail.access_flag_bits(), logs)
+    }
 
     fn check_size(size: i32, input_len: usize) -> bool {
         let size_abs = size.abs() as usize;
@@ -172,15 +149,19 @@ impl CellKeyNode {
 
     /// Returns the byte length of the cell (regardless of if it's allocated or free)
     pub(crate) fn get_cell_size(&self) -> usize {
-        self.detail.size.abs() as usize
+        self.detail.size().abs() as usize
+    }
+
+    pub fn last_key_written_date_and_time(&self) -> DateTime<Utc> {
+        util::get_date_time_from_filetime(self.detail.last_key_written_date_and_time())
     }
 
     pub(crate) fn is_free(&self) -> bool {
-        self.detail.size > 0
+        self.detail.size() > 0
     }
 
     pub(crate) fn slack_offset_absolute(&self) -> usize {
-        self.detail.file_offset_absolute + self.get_cell_size() - self.detail.slack.len()
+        self.file_offset_absolute + self.get_cell_size() - self.detail.slack().len()
     }
 
     fn from_bytes<'a>(
@@ -190,39 +171,51 @@ impl CellKeyNode {
         cur_path: &str,
         sequence_num: Option<u32>,
     ) -> IResult<&'a [u8], Self> {
+        let get_full_field_info = state.get_full_field_info;
         let start_pos_ptr = input.as_ptr() as usize;
 
-        let (input, size) = le_i32(input)?;
+        init_value_enum! { CellKeyNodeDetail, detail_enum, get_full_field_info };
+
+        read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, size, i32, le_i32 };
         if !Self::check_size(size, input.len() + std::mem::size_of::<i32>()) {
             Err(nom::Err::Error(nom::error::Error {
                 input,
                 code: nom::error::ErrorKind::Eof,
             }))
         } else {
-            let (input, _signature) = tag("nk")(input)?;
-            let (input, flags) = le_u16(input)?;
-            let (input, last_key_written_date_and_time) = le_u64(input)?;
-            let (input, access_bits) = le_u32(input)?;
-            let (input, parent_key_offset_relative) = le_i32(input)?;
-            let (input, number_of_sub_keys) = le_u32(input)?;
-            let (input, number_of_volatile_sub_keys) = le_u32(input)?;
-            let (input, sub_keys_list_offset_relative) = le_u32(input)?;
-            let (input, volatile_sub_keys_list_offset_relative) = le_i32(input)?;
-            let (input, number_of_key_values) = le_u32(input)?;
-            let (input, key_values_list_offset_relative) = le_i32(input)?;
-            let (input, security_key_offset_relative) = le_u32(input)?;
-            let (input, class_name_offset_relative) = le_i32(input)?;
-            let (input, largest_sub_key_name_size) = le_u32(input)?;
-            let (input, largest_sub_key_class_name_size) = le_u32(input)?;
-            let (input, largest_value_name_size) = le_u32(input)?;
-            let (input, largest_value_data_size) = le_u32(input)?;
-            let (input, work_var) = le_u32(input)?;
-            let (input, key_name_size) = le_u16(input)?;
-            let (input, class_name_size) = le_u16(input)?;
-            let (input, key_name_bytes) = take!(input, key_name_size)?;
+            let signature_offset = input.as_ptr() as usize - start_pos_ptr;
+            let (input, _signature) = tag(Self::SIGNATURE)(input)?;
+            detail_enum.set_signature_full(
+                &Self::SIGNATURE.to_owned(),
+                signature_offset,
+                Self::SIGNATURE.len() as u32,
+            );
+
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_node_flag_bits, u16, le_u16 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, last_key_written_date_and_time, u64, le_u64 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, access_flag_bits, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, parent_key_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_sub_keys, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_volatile_sub_keys, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, sub_keys_list_offset_relative, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, volatile_sub_keys_list_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, number_of_key_values, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_values_list_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, security_key_offset_relative, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_offset_relative, i32, le_i32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_name_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_sub_key_class_name_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_name_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, largest_value_data_size, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, work_var, u32, le_u32 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, key_name_size, u16, le_u16 }
+            read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, class_name_size, u16, le_u16 }
 
             let mut logs = Logs::default();
-            let key_node_flags = KeyNodeFlags::from_bits_checked(flags, &mut logs);
+
+            let (input, key_name_bytes) = take!(input, key_name_size)?;
+            let key_node_flags = KeyNodeFlags::from_bits_checked(key_node_flag_bits, &mut logs);
+            //let access_flags = AccessFlags::from_bits_checked(access_flag_bits, &mut logs);
 
             let key_name = util::string_from_bytes(
                 key_node_flags.contains(KeyNodeFlags::KEY_COMP_NAME),
@@ -236,59 +229,34 @@ impl CellKeyNode {
             path.push('\\');
             path += &key_name;
 
+            let slack_offset = input.as_ptr() as usize - start_pos_ptr;
             let size_abs = size.unsigned_abs();
-            let (input, slack) = util::parser_eat_remaining(
-                input,
-                size_abs,
-                input.as_ptr() as usize - start_pos_ptr,
-            )?;
+            let (input, slack_bytes) = util::parser_eat_remaining(input, size_abs, slack_offset)?;
+            detail_enum.set_slack_full(
+                &slack_bytes.to_vec(),
+                slack_offset,
+                slack_bytes.len() as u32,
+            );
 
             let cell_key_node = Self {
-                detail: CellKeyNodeDetail {
-                    file_offset_absolute,
-                    size,
-                    number_of_volatile_sub_keys,
-                    sub_keys_list_offset_relative,
-                    volatile_sub_keys_list_offset_relative,
-                    key_values_list_offset_relative,
-                    security_key_offset_relative,
-                    class_name_offset_relative,
-                    largest_sub_key_name_size,
-                    largest_sub_key_class_name_size,
-                    largest_value_name_size,
-                    largest_value_data_size,
-                    work_var,
-                    key_name_size,
-                    class_name_size,
-                    slack: slack.to_vec(),
-                },
-                key_node_flags,
-                last_key_written_date_and_time: util::get_date_time_from_filetime(
-                    last_key_written_date_and_time,
-                ),
-                access_flags: AccessFlags::from_bits_checked(access_bits, &mut logs),
-                parent_key_offset_relative,
-                number_of_sub_keys,
-                number_of_key_values,
+                detail: detail_enum,
+                file_offset_absolute,
+                //key_node_flags,
+                //access_flags,
                 key_name,
                 path,
                 cell_state: CellState::Allocated,
                 sub_values: Vec::new(),
                 logs,
                 cell_sub_key_offsets_absolute: Vec::new(),
-                iteration_state: CellKeyNodeIteration {
-                    to_return: 0,
-                    track_returned: 0,
-                    filter_state: None,
-                    sub_keys_iter_index: 0,
-                },
+                iteration_state: CellKeyNodeIteration::default(),
                 versions: Vec::new(),
                 deleted_keys: Vec::new(),
                 hash: Some(Self::hash(
                     state,
-                    flags,
+                    key_node_flag_bits,
                     last_key_written_date_and_time,
-                    access_bits,
+                    access_flag_bits,
                 )),
                 sequence_num,
                 updated_by_sequence_num: None,
@@ -329,7 +297,7 @@ impl CellKeyNode {
         }
 
         for val in &mut self.sub_values {
-            if let Some(updated_values) = state.updated_values.get(path, &val.value_name) {
+            if let Some(updated_values) = state.updated_values.get(path, &val.detail.value_name()) {
                 val.versions = updated_values.to_vec();
             }
         }
@@ -381,7 +349,7 @@ impl CellKeyNode {
             return Ok(None);
         }
 
-        if cell_key_node.number_of_key_values > 0
+        if cell_key_node.detail.number_of_key_values() > 0
             && Self::should_read_values(
                 options.filter,
                 filter_flags,
@@ -442,13 +410,13 @@ impl CellKeyNode {
         get_deleted_and_modified: bool,
     ) -> (Vec<Self>, bool) {
         if self.cell_state == CellState::Allocated {
-            let mut children = Vec::with_capacity(self.number_of_sub_keys as usize);
+            let mut children = Vec::with_capacity(self.detail.number_of_sub_keys() as usize);
             let mut found_key = false;
-            if self.number_of_sub_keys > 0 {
+            if self.detail.number_of_sub_keys() > 0 {
                 match Self::parse_sub_key_list(
                     file_info,
                     state,
-                    self.detail.sub_keys_list_offset_relative,
+                    self.detail.sub_keys_list_offset_relative(),
                 ) {
                     Ok(cell_sub_key_offsets_absolute) => {
                         let self_is_filter_match_or_descendent =
@@ -507,7 +475,7 @@ impl CellKeyNode {
                         &format!(
                             "{}: Unable to parse sub_key_list at offset {}",
                             self.path,
-                            (self.detail.sub_keys_list_offset_relative as usize
+                            (self.detail.sub_keys_list_offset_relative() as usize
                                 + file_info.hbin_offset_absolute)
                         ),
                     ),
@@ -556,11 +524,11 @@ impl CellKeyNode {
     }
 
     pub fn get_sub_key_by_index(&mut self, parser: &mut Parser, index: usize) -> Option<Self> {
-        if self.number_of_sub_keys > 0 {
+        if self.detail.number_of_sub_keys() > 0 {
             match Self::parse_sub_key_list(
                 &parser.file_info,
                 &mut parser.state,
-                self.detail.sub_keys_list_offset_relative,
+                self.detail.sub_keys_list_offset_relative(),
             ) {
                 Ok(cell_sub_key_offsets_absolute) => {
                     if let Some(offset) = cell_sub_key_offsets_absolute.get(index) {
@@ -598,7 +566,7 @@ impl CellKeyNode {
                     &format!(
                         "{}: Unable to parse sub_key_list at offset {}",
                         self.path,
-                        (self.detail.sub_keys_list_offset_relative as usize
+                        (self.detail.sub_keys_list_offset_relative() as usize
                             + parser.file_info.hbin_offset_absolute)
                     ),
                 ),
@@ -613,14 +581,14 @@ impl CellKeyNode {
         state: &mut State,
         sequence_num: Option<u32>,
     ) -> Result<(), Error> {
-        if self.detail.key_values_list_offset_relative > 0
-            && (self.detail.key_values_list_offset_relative as usize) < file_info.buffer.len()
+        if self.detail.key_values_list_offset_relative() > 0
+            && (self.detail.key_values_list_offset_relative() as usize) < file_info.buffer.len()
         {
-            self.sub_values = Vec::with_capacity(self.number_of_key_values as usize);
+            self.sub_values = Vec::with_capacity(self.detail.number_of_key_values() as usize);
             let (_, key_values) = Self::parse_key_values(
                 file_info,
-                self.number_of_key_values,
-                self.detail.key_values_list_offset_relative,
+                self.detail.number_of_key_values(),
+                self.detail.key_values_list_offset_relative(),
             )?;
             for val in key_values.iter() {
                 let input = file_info
@@ -637,8 +605,12 @@ impl CellKeyNode {
                     return Ok(());
                 }
                 let offset = *val as usize + file_info.hbin_offset_absolute;
-                let (_, mut cell_key_value) =
-                    CellKeyValue::from_bytes(&file_info.buffer[offset..], offset, sequence_num)?;
+                let (_, mut cell_key_value) = CellKeyValue::from_bytes(
+                    &file_info.buffer[offset..],
+                    offset,
+                    sequence_num,
+                    state.get_full_field_info,
+                )?;
 
                 cell_key_value.read_value_bytes(file_info, state);
                 self.sub_values.push(cell_key_value);
@@ -655,7 +627,7 @@ impl CellKeyNode {
         let file_info = parser.get_file_info();
         cell_key_security::read_cell_key_security(
             &file_info.buffer[..],
-            self.detail.security_key_offset_relative,
+            self.detail.security_key_offset_relative(),
             file_info.hbin_offset_absolute,
         )
     }
@@ -665,7 +637,7 @@ impl CellKeyNode {
         let val = self
             .sub_values
             .iter()
-            .find(|v| v.value_name.to_ascii_lowercase() == find_value_name);
+            .find(|v| v.detail.value_name().to_ascii_lowercase() == find_value_name);
         val.cloned()
     }
 
@@ -741,7 +713,9 @@ impl CellKeyNode {
     }
 
     pub(crate) fn is_key_root(&self) -> bool {
-        self.key_node_flags.contains(KeyNodeFlags::KEY_HIVE_ENTRY)
+        let mut logs = Logs::default();
+        self.key_node_flags(&mut logs)
+            .contains(KeyNodeFlags::KEY_HIVE_ENTRY)
     }
 
     /// Returns path without root key
@@ -752,7 +726,7 @@ impl CellKeyNode {
 
 impl Cell for CellKeyNode {
     fn get_file_offset_absolute(&self) -> usize {
-        self.detail.file_offset_absolute
+        self.file_offset_absolute
     }
 
     fn get_hash(&self) -> Option<blake3::Hash> {
@@ -832,7 +806,10 @@ impl_flags_from_bits! { KeyNodeFlags, u16 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell_key_value::{CellKeyValueDataTypes, CellKeyValueDetail, CellKeyValueFlags};
+    use crate::cell_key_value::{
+        CellKeyValueDataTypes, CellKeyValueDetailEnum, CellKeyValueDetailFull,
+        CellKeyValueDetailLight, CellKeyValueFlags,
+    };
     use crate::filter::FilterBuilder;
     use crate::parser::{ParserIterator, ParserIteratorContext};
     use crate::parser_builder::ParserBuilder;
@@ -927,36 +904,122 @@ mod tests {
         let filter = FilterBuilder::new()
             .add_key_path("Control Panel\\Accessibility\\Keyboard Response")
             .build()?;
-        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let mut parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+        let hash_array: [u8; blake3::OUT_LEN] = [
+            0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
+            0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
+            0xb5, 0xa3, 0xb2, 0xef,
+        ];
+        let key = ParserIterator::new(&parser)
+            .with_filter(filter.clone())
+            .iter()
+            .next()
+            .unwrap();
+        let val = key.get_value("delayBeforeAcceptance");
+        let expected = CellKeyValue {
+            file_offset_absolute: 117656,
+            detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
+                size: FieldLight { value: -48 },
+                signature: FieldLight {
+                    value: "vk".to_string(),
+                },
+                value_name_size: FieldLight { value: 21 },
+                data_size_raw: FieldLight { value: 10 },
+                data_offset_relative: FieldLight { value: 113608 },
+                data_type_raw: FieldLight { value: 1 },
+                flags_raw: FieldLight { value: 1 },
+                padding: FieldLight { value: 0 },
+                value_name: FieldLight {
+                    value: "DelayBeforeAcceptance".to_string(),
+                },
+                value_bytes: FieldLight {
+                    value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                },
+                slack: FieldLight {
+                    value: vec![0, 0, 0],
+                },
+            })),
+            data_type: CellKeyValueDataTypes::REG_SZ,
+            flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
+            data_offsets_absolute: vec![117708],
+            logs: Logs::default(),
+            versions: Vec::new(),
+            cell_state: CellState::Allocated,
+            hash: Some(hash_array.into()),
+            sequence_num: None,
+            updated_by_sequence_num: None,
+        };
+        assert_eq!(Some(expected), val);
+
+        parser.state.get_full_field_info = true;
         let key = ParserIterator::new(&parser)
             .with_filter(filter)
             .iter()
             .next()
             .unwrap();
         let val = key.get_value("delayBeforeAcceptance");
-        let hash_array: [u8; blake3::OUT_LEN] = [
-            0x37, 0x5c, 0xce, 0x20, 0x66, 0xc3, 0x70, 0x09, 0x20, 0xc6, 0xe0, 0xe2, 0x4a, 0xe3,
-            0x88, 0xaf, 0xa3, 0x15, 0x8d, 0x04, 0xb9, 0x1d, 0x86, 0xa9, 0xc6, 0xd7, 0xb9, 0xe0,
-            0xb5, 0xa3, 0xb2, 0xef,
-        ];
-
         let expected = CellKeyValue {
-            detail: CellKeyValueDetail {
-                file_offset_absolute: 117656,
-                size: -48,
-                value_name_size: 21,
-                data_size_raw: 10,
-                data_offset_relative: 113608,
-                data_type_raw: 1,
-                flags_raw: 1,
-                padding: 0,
-                value_bytes: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
-                slack: vec![0, 0, 0],
-            },
+            file_offset_absolute: 117656,
+            detail: CellKeyValueDetailEnum::Full(Box::new(CellKeyValueDetailFull {
+                size: FieldFull {
+                    value: -48,
+                    offset: 0,
+                    len: 4,
+                },
+                signature: FieldFull {
+                    value: "vk".to_string(),
+                    offset: 4,
+                    len: 2,
+                },
+                value_name_size: FieldFull {
+                    value: 21,
+                    offset: 6,
+                    len: 2,
+                },
+                data_size_raw: FieldFull {
+                    value: 10,
+                    offset: 8,
+                    len: 4,
+                },
+                data_offset_relative: FieldFull {
+                    value: 113608,
+                    offset: 12,
+                    len: 4,
+                },
+                data_type_raw: FieldFull {
+                    value: 1,
+                    offset: 16,
+                    len: 4,
+                },
+                flags_raw: FieldFull {
+                    value: 1,
+                    offset: 20,
+                    len: 2,
+                },
+                padding: FieldFull {
+                    value: 0,
+                    offset: 22,
+                    len: 2,
+                },
+                value_name: FieldFull {
+                    value: "DelayBeforeAcceptance".to_string(),
+                    offset: 24,
+                    len: 21,
+                },
+                slack: FieldFull {
+                    value: vec![0, 0, 0],
+                    offset: 45,
+                    len: 3,
+                },
+                value_bytes: FieldFull {
+                    value: Some(vec![49, 0, 48, 0, 48, 0, 48, 0, 0, 0]),
+                    offset: 117656,
+                    len: 10,
+                },
+            })),
             data_type: CellKeyValueDataTypes::REG_SZ,
             flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
             data_offsets_absolute: vec![117708],
-            value_name: "DelayBeforeAcceptance".to_string(),
             logs: Logs::default(),
             versions: Vec::new(),
             cell_state: CellState::Allocated,
@@ -997,33 +1060,38 @@ mod tests {
             0x18, 0x12, 0x85, 0xf7,
         ];
 
-        let expected_output = CellKeyNode {
-            detail: CellKeyNodeDetail {
-                file_offset_absolute: 0,
-                size: -144,
-                number_of_volatile_sub_keys: 1,
-                sub_keys_list_offset_relative: 1920,
-                volatile_sub_keys_list_offset_relative: -2147483032,
-                key_values_list_offset_relative: -1,
-                security_key_offset_relative: 139856,
-                class_name_offset_relative: -1,
-                largest_sub_key_name_size: 40,
-                largest_sub_key_class_name_size: 0,
-                largest_value_name_size: 0,
-                largest_value_data_size: 0,
-                work_var: 4390980,
-                key_name_size: 57,
-                class_name_size: 0,
-                slack: vec![0, 99, 0, 111, 0, 109, 0],
-            },
-            key_node_flags: KeyNodeFlags::KEY_HIVE_ENTRY
-                | KeyNodeFlags::KEY_NO_DELETE
-                | KeyNodeFlags::KEY_COMP_NAME,
-            last_key_written_date_and_time: util::get_date_time_from_filetime(130685969864025753),
-            access_flags: AccessFlags::ACCESSED_AFTER_INIT,
-            parent_key_offset_relative: 2080,
-            number_of_sub_keys: 10,
-            number_of_key_values: 0,
+        let expected_light_output = CellKeyNode {
+            detail: CellKeyNodeDetailEnum::Light(Box::new(CellKeyNodeDetailLight {
+                size: FieldLight { value: -144 },
+                signature: FieldLight {
+                    value: "nk".to_string(),
+                },
+                access_flag_bits: FieldLight { value: 2 },
+                key_node_flag_bits: FieldLight { value: 44 },
+                parent_key_offset_relative: FieldLight { value: 2080 },
+                last_key_written_date_and_time: FieldLight {
+                    value: 130685969864025753,
+                },
+                number_of_sub_keys: FieldLight { value: 10 },
+                number_of_key_values: FieldLight { value: 0 },
+                number_of_volatile_sub_keys: FieldLight { value: 1 },
+                sub_keys_list_offset_relative: FieldLight { value: 1920 },
+                volatile_sub_keys_list_offset_relative: FieldLight { value: -2147483032 },
+                key_values_list_offset_relative: FieldLight { value: -1 },
+                security_key_offset_relative: FieldLight { value: 139856 },
+                class_name_offset_relative: FieldLight { value: -1 },
+                largest_sub_key_name_size: FieldLight { value: 40 },
+                largest_sub_key_class_name_size: FieldLight { value: 0 },
+                largest_value_name_size: FieldLight { value: 0 },
+                largest_value_data_size: FieldLight { value: 0 },
+                work_var: FieldLight { value: 4390980 },
+                key_name_size: FieldLight { value: 57 },
+                class_name_size: FieldLight { value: 0 },
+                slack: FieldLight {
+                    value: vec![0, 99, 0, 111, 0, 109, 0],
+                },
+            })),
+            file_offset_absolute: 0,
             key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
             path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
             cell_state: CellState::Allocated,
@@ -1042,7 +1110,157 @@ mod tests {
             sequence_num: None,
             updated_by_sequence_num: None,
         };
-        assert_eq!(expected_output, key_node);
+        assert_eq!(expected_light_output, key_node);
+
+        state.get_full_field_info = true;
+        let (_, key_node) =
+            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, &String::new(), None)
+                .unwrap();
+        let expected_full_output = CellKeyNode {
+            detail: CellKeyNodeDetailEnum::Full(Box::new(CellKeyNodeDetailFull {
+                size: FieldFull {
+                    value: -144,
+                    offset: 0,
+                    len: 4,
+                },
+                signature: FieldFull {
+                    value: "nk".to_string(),
+                    offset: 4,
+                    len: 2,
+                },
+                access_flag_bits: FieldFull {
+                    value: 2,
+                    offset: 16,
+                    len: 4,
+                },
+                key_node_flag_bits: FieldFull {
+                    value: 44,
+                    offset: 6,
+                    len: 2,
+                },
+                parent_key_offset_relative: FieldFull {
+                    value: 2080,
+                    offset: 20,
+                    len: 4,
+                },
+                last_key_written_date_and_time: FieldFull {
+                    value: 130685969864025753,
+                    offset: 8,
+                    len: 8,
+                },
+                number_of_sub_keys: FieldFull {
+                    value: 10,
+                    offset: 24,
+                    len: 4,
+                },
+                number_of_key_values: FieldFull {
+                    value: 0,
+                    offset: 40,
+                    len: 4,
+                },
+                number_of_volatile_sub_keys: FieldFull {
+                    value: 1,
+                    offset: 28,
+                    len: 4,
+                },
+                sub_keys_list_offset_relative: FieldFull {
+                    value: 1920,
+                    offset: 32,
+                    len: 4,
+                },
+                volatile_sub_keys_list_offset_relative: FieldFull {
+                    value: -2147483032,
+                    offset: 36,
+                    len: 4,
+                },
+                key_values_list_offset_relative: FieldFull {
+                    value: -1,
+                    offset: 44,
+                    len: 4,
+                },
+                security_key_offset_relative: FieldFull {
+                    value: 139856,
+                    offset: 48,
+                    len: 4,
+                },
+                class_name_offset_relative: FieldFull {
+                    value: -1,
+                    offset: 52,
+                    len: 4,
+                },
+                largest_sub_key_name_size: FieldFull {
+                    value: 40,
+                    offset: 56,
+                    len: 4,
+                },
+                largest_sub_key_class_name_size: FieldFull {
+                    value: 0,
+                    offset: 60,
+                    len: 4,
+                },
+                largest_value_name_size: FieldFull {
+                    value: 0,
+                    offset: 64,
+                    len: 4,
+                },
+                largest_value_data_size: FieldFull {
+                    value: 0,
+                    offset: 68,
+                    len: 4,
+                },
+                work_var: FieldFull {
+                    value: 4390980,
+                    offset: 72,
+                    len: 4,
+                },
+                key_name_size: FieldFull {
+                    value: 57,
+                    offset: 76,
+                    len: 2,
+                },
+                class_name_size: FieldFull {
+                    value: 0,
+                    offset: 78,
+                    len: 2,
+                },
+                slack: FieldFull {
+                    value: vec![0, 99, 0, 111, 0, 109, 0],
+                    offset: 137,
+                    len: 7,
+                },
+            })),
+            file_offset_absolute: 0,
+            key_name: "CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}".to_string(),
+            path: String::from("\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}"),
+            cell_state: CellState::Allocated,
+            sub_values: Vec::new(),
+            logs: Logs::default(),
+            cell_sub_key_offsets_absolute: Vec::new(),
+            iteration_state: CellKeyNodeIteration {
+                to_return: 0,
+                track_returned: 0,
+                filter_state: None,
+                sub_keys_iter_index: 0,
+            },
+            versions: Vec::new(),
+            deleted_keys: Vec::new(),
+            hash: Some(hash_array.into()),
+            sequence_num: None,
+            updated_by_sequence_num: None,
+        };
+        assert_eq!(expected_full_output, key_node);
+
+        let mut logs = Logs::default();
+        assert_eq!(
+            KeyNodeFlags::KEY_HIVE_ENTRY
+                | KeyNodeFlags::KEY_NO_DELETE
+                | KeyNodeFlags::KEY_COMP_NAME,
+            key_node.key_node_flags(&mut logs)
+        );
+        assert_eq!(
+            AccessFlags::ACCESSED_AFTER_INIT,
+            key_node.access_flags(&mut logs)
+        );
 
         let slice = &file_info.buffer[0..10];
         let ret = CellKeyNode::from_bytes(&mut state, slice, 0, &String::new(), None);

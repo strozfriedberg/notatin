@@ -320,16 +320,16 @@ impl TransactionLog {
                     RegItemMapKey::new(key.path.clone(), None),
                     RegItemMapValue::new(
                         key.hash.expect("Must have a hash here"),
-                        key.detail.file_offset_absolute,
+                        key.file_offset_absolute,
                         sequence_num,
                     ),
                 );
                 for value in key.sub_values {
                     reg_items.insert(
-                        RegItemMapKey::new(key.path.clone(), Some(value.value_name)),
+                        RegItemMapKey::new(key.path.clone(), Some(value.detail.value_name())),
                         RegItemMapValue::new(
                             value.hash.expect("Must have a hash here"),
-                            value.detail.file_offset_absolute,
+                            value.file_offset_absolute,
                             sequence_num,
                         ),
                     );
@@ -404,7 +404,7 @@ impl TransactionAnalyzer<'_> {
                     logs,
                     NewItemInfo {
                         key_path: &updated_key.path,
-                        value_path: Some(updated_value.value_name.clone()),
+                        value_path: Some(updated_value.detail.value_name().clone()),
                         updated_item: &updated_value,
                     },
                 );
@@ -615,10 +615,11 @@ impl TransactionAnalyzer<'_> {
             &self.prior_file_info.buffer[file_offset_absolute..],
             file_offset_absolute,
             Some(old_sequence_number),
+            state.get_full_field_info,
         )?;
         full_value.read_value_bytes(self.prior_file_info, state);
         full_value.updated_by_sequence_num = Some(self.new_sequence_number);
-        let name = full_value.value_name.clone();
+        let name = full_value.detail.value_name();
         match modified_list_type {
             ModifiedListType::Updated => {
                 full_value.cell_state = CellState::ModifiedTransactionLog;

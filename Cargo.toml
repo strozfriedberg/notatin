@@ -18,6 +18,7 @@ winstructs = "0.3.0"
 blake3 = "0.3.8"
 regex = "1.5.4"
 clap = "~2.33"
+paste = "1.0"
 
 [dependencies.chrono]
 version = "0.4.10"

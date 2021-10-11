@@ -26,6 +26,7 @@ use std::path::Path;
 pub struct ParserBuilderBase {
     filter: Option<Filter>,
     recover_deleted: bool,
+    get_full_field_info: bool,
 }
 
 pub struct ParserBuilderFromPath {
@@ -37,6 +38,11 @@ pub struct ParserBuilderFromPath {
 impl ParserBuilderFromPath {
     pub fn recover_deleted(&mut self, recover: bool) -> &mut Self {
         self.base.recover_deleted = recover;
+        self
+    }
+
+    pub fn get_full_field_info(&mut self, get_full_field_info: bool) -> &mut Self {
+        self.base.get_full_field_info = get_full_field_info;
         self
     }
 
@@ -65,19 +71,22 @@ pub struct ParserBuilderFromFile {
 }
 
 impl ParserBuilderFromFile {
-    // These methods have consuming and reference versions of each because the consuming versions allow for chaining and are cleaner to use,
-    // but the python bindings require the reference versions. (Why not a mut ref that returns a reference? Because `build()` consumes members of ParserBuilder.)
-    pub fn with_filter(mut self, filter: Filter) -> Self {
+    pub fn with_filter(&mut self, filter: Filter) -> &mut Self {
         self.base.filter = Some(filter);
         self
     }
 
-    pub fn recover_deleted(mut self, recover: bool) -> Self {
+    pub fn recover_deleted(&mut self, recover: bool) -> &mut Self {
         self.base.recover_deleted = recover;
         self
     }
 
-    pub fn with_transaction_log<T: ReadSeek + 'static>(mut self, log: T) -> Self {
+    pub fn get_full_field_info(&mut self, get_full_field_info: bool) -> &mut Self {
+        self.base.get_full_field_info = get_full_field_info;
+        self
+    }
+
+    pub fn with_transaction_log<T: ReadSeek + 'static>(&mut self, log: T) -> &mut Self {
         self.transaction_logs.push(Box::new(log));
         self
     }
@@ -105,6 +114,7 @@ impl ParserBuilder {
             base: ParserBuilderBase {
                 filter: None,
                 recover_deleted: false,
+                get_full_field_info: false,
             },
         }
     }
@@ -116,6 +126,7 @@ impl ParserBuilder {
             base: ParserBuilderBase {
                 filter: None,
                 recover_deleted: false,
+                get_full_field_info: false,
             },
         }
     }
@@ -129,7 +140,10 @@ impl ParserBuilder {
 
         let mut parser = Parser {
             file_info,
-            state: State::default(),
+            state: State {
+                get_full_field_info: base.get_full_field_info,
+                ..State::default()
+            },
             base_block: None,
             hive_bin_header: None,
             cell_key_node_root: None,
