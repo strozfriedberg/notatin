@@ -592,7 +592,7 @@ impl TransactionAnalyzer<'_> {
             match modified_list_type {
                 ModifiedListType::Updated => {
                     full_key.cell_state = CellState::ModifiedTransactionLog;
-                    state.updated_keys.add(path, full_key)
+                    state.modified_keys.add(path, full_key)
                 }
                 ModifiedListType::Deleted => {
                     full_key.cell_state = CellState::DeletedTransactionLog;
@@ -623,7 +623,7 @@ impl TransactionAnalyzer<'_> {
         match modified_list_type {
             ModifiedListType::Updated => {
                 full_value.cell_state = CellState::ModifiedTransactionLog;
-                state.updated_values.add(path, &name, full_value)
+                state.modified_values.add(path, &name, full_value)
             }
             ModifiedListType::Deleted => {
                 full_value.cell_state = CellState::DeletedTransactionLog;

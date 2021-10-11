@@ -481,9 +481,9 @@ struct CellKeyValueForSerialization<'a> {
     updated_by_sequence_num: &'a Option<u32>,
     data_offsets_absolute: &'a Vec<usize>,
     state: &'a CellState,
-
     value: CellValue,
     value_parse_warnings: Option<Logs>,
+    versions: &'a Vec<CellKeyValue>,
 }
 
 impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
@@ -502,6 +502,7 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
             state: &other.cell_state,
             value,
             value_parse_warnings,
+            versions: &other.versions,
         }
     }
 }

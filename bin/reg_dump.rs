@@ -108,7 +108,7 @@ fn main() -> Result<(), Error> {
                 //write!(writer, "{}", std::str::from_utf8(&vec![0xEF, 0xBB, 0xBF]).expect("known good bytes (utf8 BOM)"))?; // need explicit BOM to keep Excel happy with multibyte UTF8 chars
                 writeln!(writer,"Key Path\tValue Name\tStatus\tKey Original Sequence Number\tKey Modifying Sequence Number\tValue Original Sequence Number\tValue Modifying Sequence Number\tTimestamp\tFlags\tAccess Flags\tValue\tLogs")?;
                 for key in iter.iter() {
-                    versions_tsv(&key, &mut writer, "Current", false)?;
+                    write_key_tsv(&key, &mut writer, false)?;
                 }
                 writeln!(writer, "\nLogs\n-----------")?;
                 parser.get_parse_logs().write(&mut writer)?;
@@ -123,13 +123,10 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn get_value_status(value: &CellKeyValue, modified: bool) -> String {
-    if value.cell_state.is_deleted() {
-        "Deleted".to_string()
-    } else if modified {
-        "Modified".to_string()
-    } else {
-        "Current".to_string()
+fn interpret_sequence_num(seq_num: Option<u32>) -> String {
+    match seq_num {
+        None => "None".to_string(),
+        Some(val) => format!("{}", val)
     }
 }
 
@@ -137,50 +134,36 @@ fn write_value_tsv(
     cell_key_node: &CellKeyNode,
     value: &CellKeyValue,
     writer: &mut BufWriter<File>,
-    status: &str,
 ) -> Result<(), Error> {
-    let write_status;
-    if value.cell_state.is_deleted() {
-        write_status = "Deleted";
-    } else {
-        write_status = status;
-    }
     writeln!(
         writer,
-        "{}\t{}\t{}\t{:?}\t{:?}\t{:?}\t{:?}\t\t\t\t{:?}\t{}",
+        "{}\t{}\t{:?}\t{:?}\t{:?}\t{:?}\t{:?}\t\t\t\t{:?}\t{}",
         cell_key_node.path,
         value.get_pretty_name(),
-        write_status,
-        cell_key_node.sequence_num,
-        cell_key_node.updated_by_sequence_num,
-        value.sequence_num,
-        value.updated_by_sequence_num,
+        value.cell_state,
+        interpret_sequence_num(cell_key_node.sequence_num),
+        interpret_sequence_num(cell_key_node.updated_by_sequence_num),
+        interpret_sequence_num(value.sequence_num),
+        interpret_sequence_num(value.updated_by_sequence_num),
         value.get_content().0,
         value.logs
     )?;
     Ok(())
 }
 
-fn versions_tsv(
+fn write_key_tsv(
     cell_key_node: &CellKeyNode,
     writer: &mut BufWriter<File>,
-    status: &str,
     key_modified: bool,
 ) -> Result<(), Error> {
-    let write_status;
-    if cell_key_node.cell_state.is_deleted() {
-        write_status = "Deleted";
-    } else {
-        write_status = status;
-    }
     let mut logs = cell_key_node.logs.clone();
     writeln!(
         writer,
-        "{}\t\t{}\t{:?}\t{:?}\t\t\t{}\t{:?}\t{:?}\t\t{}",
+        "{}\t\t{:?}\t{:?}\t{:?}\t\t\t{}\t{:?}\t{:?}\t\t{}",
         cell_key_node.path,
-        write_status,
-        cell_key_node.sequence_num,
-        cell_key_node.updated_by_sequence_num,
+        cell_key_node.cell_state,
+        interpret_sequence_num(cell_key_node.sequence_num),
+        interpret_sequence_num(cell_key_node.updated_by_sequence_num),
         format_date_time(cell_key_node.last_key_written_date_and_time()),
         cell_key_node.key_node_flags(&mut logs),
         cell_key_node.access_flags(&mut logs),
@@ -188,7 +171,7 @@ fn versions_tsv(
     )?;
 
     for sub_key in &cell_key_node.versions {
-        versions_tsv(sub_key, writer, "Modified", true)?;
+        write_key_tsv(sub_key, writer, true)?;
     }
 
     if !key_modified {
@@ -197,16 +180,14 @@ fn versions_tsv(
             write_value_tsv(
                 cell_key_node,
                 &value,
-                writer,
-                &get_value_status(&value, false),
+                writer
             )?;
 
             for sub_value in &value.versions {
                 write_value_tsv(
                     cell_key_node,
                     sub_value,
-                    writer,
-                    &get_value_status(&value, true),
+                    writer
                 )?;
             }
         }

@@ -98,25 +98,20 @@ pub struct CellKeyNode {
     pub key_name: String,
     pub path: String,
     pub cell_state: CellState,
-    //pub key_node_flags: KeyNodeFlags,
-    //pub access_flags: AccessFlags,
     pub sequence_num: Option<u32>,
     pub updated_by_sequence_num: Option<u32>,
     pub(crate) sub_values: Vec<CellKeyValue>, // sub_values includes deleted values, if present
     pub logs: Logs,
 
     #[serde(skip)]
-    pub hash: Option<Hash>,
-
-    /// Absolute offsets of any sub key cells
-    #[serde(skip)]
     pub cell_sub_key_offsets_absolute: Vec<u32>,
 
+    #[serde(skip)]
+    pub hash: Option<Hash>,
     #[serde(skip)]
     pub versions: Vec<Self>,
     #[serde(skip)]
     pub deleted_keys: Vec<Self>,
-
     #[serde(skip)]
     pub(crate) iteration_state: CellKeyNodeIteration,
 }
@@ -292,13 +287,13 @@ impl CellKeyNode {
                 dk.update_modified_lists(state);
             }
         }
-        if let Some(updated_keys) = state.updated_keys.get(path) {
-            self.versions = updated_keys.to_vec();
+        if let Some(modified_keys) = state.modified_keys.get(path) {
+            self.versions = modified_keys.to_vec();
         }
 
         for val in &mut self.sub_values {
-            if let Some(updated_values) = state.updated_values.get(path, &val.detail.value_name()) {
-                val.versions = updated_values.to_vec();
+            if let Some(modified_values) = state.modified_values.get(path, &val.detail.value_name()) {
+                val.versions = modified_values.to_vec();
             }
         }
 
