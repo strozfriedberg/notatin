@@ -28,6 +28,8 @@ pub enum Error {
     StripPrefix { detail: String },
     #[error("An IO error has occurred: {}", detail)]
     Io { detail: String },
+    #[error("An error has occurred in the Xlsxwriter library: {}", detail)]
+    XlsxWriter { detail: String },
     #[error("An error has occurred: {}", detail)]
     Any { detail: String },
 }
@@ -67,6 +69,14 @@ impl From<std::path::StripPrefixError> for Error {
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Error::Io {
+            detail: format!("{:#?}", error.to_string()),
+        }
+    }
+}
+
+impl From<xlsxwriter::XlsxError> for Error {
+    fn from(error: xlsxwriter::XlsxError) -> Self {
+        Error::XlsxWriter {
             detail: format!("{:#?}", error.to_string()),
         }
     }

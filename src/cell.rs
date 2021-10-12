@@ -38,6 +38,10 @@ impl CellState {
     pub fn is_deleted(self) -> bool {
         (self as i8) < 0
     }
+
+    pub fn is_deleted_primary_file(self) -> bool {
+        self == Self::DeletedPrimaryFile || self == Self::DeletedPrimaryFileSlack
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

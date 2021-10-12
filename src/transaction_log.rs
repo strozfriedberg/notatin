@@ -423,7 +423,7 @@ impl TransactionAnalyzer<'_> {
                 logs.add(
                     LogCode::WarningTransactionLog,
                     &format!(
-                        "Error adding {} to updated list for sequence num: {} ({})",
+                        "Error adding key {} to modified list for sequence num {} ({})",
                         key_needed.key_path,
                         key_needed.sequence_num,
                         &e.to_string()
@@ -443,7 +443,7 @@ impl TransactionAnalyzer<'_> {
                 logs.add(
                     LogCode::WarningTransactionLog,
                     &format!(
-                        "Error adding {} to updated list for sequence num: {} ({})",
+                        "Error adding value {} to modified list for sequence num {} ({})",
                         &value_needed.key_path,
                         value_needed.sequence_num,
                         &e.to_string()
@@ -467,7 +467,7 @@ impl TransactionAnalyzer<'_> {
                         logs.add(
                             LogCode::WarningTransactionLog,
                             &format!(
-                                "Error adding {:?} to updated list for sequence num: {} ({})",
+                                "Error adding value {:?} to deleted list for sequence num: {} ({})",
                                 prior_item_map_key,
                                 prior_item_map_value.sequence_num,
                                 &e.to_string()
@@ -486,7 +486,7 @@ impl TransactionAnalyzer<'_> {
                         logs.add(
                             LogCode::WarningTransactionLog,
                             &format!(
-                                "Error adding {} to deleted list for sequence num: {} ({})",
+                                "Error adding key {} to deleted list for sequence num: {} ({})",
                                 prior_item_map_key.key_path,
                                 prior_item_map_value.sequence_num,
                                 &e.to_string()

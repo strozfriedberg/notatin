@@ -121,12 +121,12 @@ impl<'a> ParserRecoverDeleted<'a> {
                     self.state.deleted_values.add("", cell_key_value);
                 }
             }
-            Err(e) => {
+            Err(_) => {
                 self.state.info.add(
                     LogCode::WarningRecovery,
                     &format!(
-                        "\tUnable to parse deleted value at offset {} ({})",
-                        file_offset_absolute, e
+                        "\tUnable to parse deleted value at offset {}",
+                        file_offset_absolute
                     ),
                 );
             }
@@ -170,7 +170,7 @@ impl<'a> ParserRecoverDeleted<'a> {
             }
             Err(e) => {
                 self.state.info.add(
-                    LogCode::WarningParse,
+                    LogCode::WarningRecovery,
                     &format!(
                         "Unable to parse deleted key at offset {} ({})",
                         file_offset_absolute, e

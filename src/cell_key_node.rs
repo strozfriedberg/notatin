@@ -281,24 +281,32 @@ impl CellKeyNode {
         } else {
             path = &self.path;
         }
-        if let Some(deleted_keys) = state.deleted_keys.get(path) {
-            self.deleted_keys = deleted_keys.to_vec();
-            for dk in self.deleted_keys.iter_mut() {
-                dk.update_modified_lists(state);
+        if !self.cell_state.is_deleted_primary_file() {
+            if let Some(deleted_keys) = state.deleted_keys.get(path) {
+                self.deleted_keys = deleted_keys.to_vec();
+                for dk in self.deleted_keys.iter_mut() {
+                    dk.update_modified_lists(state);
+                }
             }
-        }
-        if let Some(modified_keys) = state.modified_keys.get(path) {
-            self.versions = modified_keys.to_vec();
-        }
-
-        for val in &mut self.sub_values {
-            if let Some(modified_values) = state.modified_values.get(path, &val.detail.value_name()) {
-                val.versions = modified_values.to_vec();
+            if let Some(modified_keys) = state.modified_keys.get(path) {
+                self.versions = modified_keys.to_vec();
+                self.versions
+                    .sort_by(|a, b| b.sequence_num.cmp(&a.sequence_num));
             }
-        }
 
-        if let Some(deleted_values) = state.deleted_values.get(path) {
-            self.sub_values.extend(deleted_values.to_vec());
+            for val in &mut self.sub_values {
+                if let Some(modified_values) =
+                    state.modified_values.get(path, &val.detail.value_name())
+                {
+                    val.versions = modified_values.to_vec();
+                    val.versions
+                        .sort_by(|a, b| b.sequence_num.cmp(&a.sequence_num));
+                }
+            }
+
+            if let Some(deleted_values) = state.deleted_values.get(path) {
+                self.sub_values.extend(deleted_values.to_vec());
+            }
         }
     }
 
@@ -350,13 +358,17 @@ impl CellKeyNode {
                 filter_flags,
                 options.self_is_filter_match_or_descendent,
             )
+            && cell_key_node
+                .read_values(file_info, state, options.sequence_num)
+                .is_err()
         {
-            if let Err(e) = cell_key_node.read_values(file_info, state, options.sequence_num) {
-                cell_key_node.logs.add(
-                    LogCode::WarningParse,
-                    &format!("Unable to parse values {:?}", e),
-                )
-            }
+            cell_key_node.logs.add(
+                LogCode::WarningParse,
+                &format!(
+                    "Unable to parse values for cell key node {} (offset: {})",
+                    cell_key_node.path, cell_key_node.file_offset_absolute
+                ),
+            )
         }
 
         if filter_flags.contains(FilterFlags::FILTER_KEY_MATCH) {
