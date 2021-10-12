@@ -96,7 +96,6 @@ fn main() -> Result<(), Error> {
     };
 
     if output_type == OutputType::Xlsx {
-        //write_xlsx(output, &parser, filter)?;
         let mut writer = WriteXlsx::new(output)?;
         writer.write(&parser, filter)?;
     } else {
@@ -314,7 +313,6 @@ impl WriteXlsx {
         reg_items_sheet.write_string(0, Self::COL_ACCESS_FLAGS, "Access Flags", None)?;
         reg_items_sheet.write_string(0, Self::COL_VALUE, "Value", None)?;
         reg_items_sheet.write_string(0, Self::COL_LOGS, "Logs", None)?;
-        reg_items_sheet.freeze_panes(0, 0);
 
         let mut state = XlsxState::default();
         for key in iter.iter() {
