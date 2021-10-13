@@ -31,6 +31,8 @@ pub enum Error {
     #[error("An error has occurred in the Xlsxwriter library: {}", detail)]
     XlsxWriter { detail: String },
     #[error("An error has occurred: {}", detail)]
+    TryFromInt { detail: String },
+    #[error("An error has occurred when converting: {}", detail)]
     Any { detail: String },
 }
 
@@ -77,6 +79,14 @@ impl From<std::io::Error> for Error {
 impl From<xlsxwriter::XlsxError> for Error {
     fn from(error: xlsxwriter::XlsxError) -> Self {
         Error::XlsxWriter {
+            detail: format!("{:#?}", error.to_string()),
+        }
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(error: std::num::TryFromIntError) -> Self {
+        Error::TryFromInt {
             detail: format!("{:#?}", error.to_string()),
         }
     }

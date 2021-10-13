@@ -27,10 +27,14 @@ use notatin::{
     util::{format_date_time, write_common_export_format},
 };
 use std::{
+    borrow::Cow,
+    convert::TryFrom,
     fs::File,
     io::{BufWriter, Write},
 };
-use xlsxwriter::{Format, FormatBorder, FormatColor, Workbook, Worksheet, XlsxError};
+use xlsxwriter::{
+    Format, FormatBorder, FormatColor, FormatUnderline, Workbook, Worksheet, XlsxError,
+};
 
 fn main() -> Result<(), Error> {
     let matches = App::new("Notatin Registry Dump")
@@ -208,8 +212,8 @@ arg_enum! {
     }
 }
 
-#[derive(Default)]
-struct XlsxState {
+struct WorksheetState<'a> {
+    sheet: Worksheet<'a>,
     row: u32,
     shaded: bool,
     upper_border: bool,
@@ -217,7 +221,26 @@ struct XlsxState {
     value_name: Option<String>,
 }
 
-impl XlsxState {
+impl<'a> WorksheetState<'a> {
+    fn new(sheet: Worksheet<'a>) -> Self {
+        Self {
+            sheet,
+            row: 0,
+            shaded: false,
+            upper_border: false,
+            key_path: String::new(),
+            value_name: None,
+        }
+    }
+
+    fn write_string(&mut self, col: u16, text: &str) -> Result<(), XlsxError> {
+        self.sheet.write_string(self.row, col, text, None)
+    }
+
+    fn write_number(&mut self, col: u16, num: f64) -> Result<(), XlsxError> {
+        self.sheet.write_number(self.row, col, num, None)
+    }
+
     fn set_shading(&mut self, key_path: &str, value_name: Option<&String>, cell_state: CellState) {
         if key_path != self.key_path || value_name != self.value_name.as_ref() {
             self.shaded = !self.shaded;
@@ -252,7 +275,9 @@ impl WriteXlsx {
     const COL_VALUE: u16 = 8;
     const COL_LOGS: u16 = 9;
     const MAX_EXCEL_CELL_LEN: usize = 32767;
-    const ELLIPSES: &'static str = "...";
+    const MAX_TRUNCATED_CHARS: usize = 250;
+    const TRUNCATED: &'static str = " [truncated]";
+    const OVERFLOW: &'static str = "Overflow";
 
     fn new(output: &str) -> Result<Self, Error> {
         Ok(WriteXlsx {
@@ -266,22 +291,31 @@ impl WriteXlsx {
             iter.with_filter(filter);
         }
 
-        let mut reg_items_sheet = self.workbook.add_worksheet(Some("Registry Items"))?;
+        let mut reg_items_sheet =
+            WorksheetState::new(self.workbook.add_worksheet(Some("Registry Items"))?);
+        let mut logs_sheet = WorksheetState::new(self.workbook.add_worksheet(Some("Logs"))?);
+        let mut overflow_sheet =
+            WorksheetState::new(self.workbook.add_worksheet(Some(Self::OVERFLOW))?);
 
-        reg_items_sheet.set_column(
+        reg_items_sheet.sheet.set_column(
             Self::COL_KEY_PATH,
             Self::COL_KEY_PATH,
             Self::COL_WIDTH_WIDE,
             None,
         )?;
-        reg_items_sheet.set_column(
+        reg_items_sheet.sheet.set_column(
             Self::COL_VALUE_NAME,
             Self::COL_ACCESS_FLAGS,
             Self::COL_WIDTH_NARROW,
             None,
         )?;
-        reg_items_sheet.set_column(Self::COL_VALUE, Self::COL_LOGS, Self::COL_WIDTH_WIDE, None)?;
-        reg_items_sheet.set_row(
+        reg_items_sheet.sheet.set_column(
+            Self::COL_VALUE,
+            Self::COL_LOGS,
+            Self::COL_WIDTH_WIDE,
+            None,
+        )?;
+        reg_items_sheet.sheet.set_row(
             0,
             Self::ROW_HEIGHT,
             Some(
@@ -293,37 +327,35 @@ impl WriteXlsx {
             ),
         )?;
 
-        reg_items_sheet.write_string(0, Self::COL_KEY_PATH, "Key Path", None)?;
-        reg_items_sheet.write_string(0, Self::COL_VALUE_NAME, "Value Name", None)?;
-        reg_items_sheet.write_string(0, Self::COL_STATUS, "Status", None)?;
-        reg_items_sheet.write_string(
-            0,
-            Self::COL_PREV_SEQ_NUM,
-            "Previous Sequence Number",
-            None,
-        )?;
-        reg_items_sheet.write_string(
-            0,
-            Self::COL_MOD_SEQ_NUM,
-            "Modifying Sequence Number",
-            None,
-        )?;
-        reg_items_sheet.write_string(0, Self::COL_TIMESTAMP, "Timestamp", None)?;
-        reg_items_sheet.write_string(0, Self::COL_FLAGS, "Flags", None)?;
-        reg_items_sheet.write_string(0, Self::COL_ACCESS_FLAGS, "Access Flags", None)?;
-        reg_items_sheet.write_string(0, Self::COL_VALUE, "Value", None)?;
-        reg_items_sheet.write_string(0, Self::COL_LOGS, "Logs", None)?;
+        reg_items_sheet.write_string(Self::COL_KEY_PATH, "Key Path")?;
+        reg_items_sheet.write_string(Self::COL_VALUE_NAME, "Value Name")?;
+        reg_items_sheet.write_string(Self::COL_STATUS, "Status")?;
+        reg_items_sheet.write_string(Self::COL_PREV_SEQ_NUM, "Previous Seq Num")?;
+        reg_items_sheet.write_string(Self::COL_MOD_SEQ_NUM, "Modifying Seq Num")?;
+        reg_items_sheet.write_string(Self::COL_TIMESTAMP, "Timestamp")?;
+        reg_items_sheet.write_string(Self::COL_FLAGS, "Flags")?;
+        reg_items_sheet.write_string(Self::COL_ACCESS_FLAGS, "Access Flags")?;
+        reg_items_sheet.write_string(Self::COL_VALUE, "Value")?;
+        reg_items_sheet.write_string(Self::COL_LOGS, "Logs")?;
+        reg_items_sheet.sheet.freeze_panes(1, 0);
 
-        let mut state = XlsxState::default();
         for key in iter.iter() {
-            self.write_key(&mut reg_items_sheet, &key, false, &mut state)?;
+            self.write_key(&mut reg_items_sheet, &mut overflow_sheet, &key, false)?;
         }
 
-        let mut logs_sheet = self.workbook.add_worksheet(Some("Logs"))?;
         if let Some(logs) = parser.get_parse_logs().get() {
-            for (row, log) in logs.iter().enumerate() {
-                logs_sheet.write_string(row as u32, 0, &format!("{:?}", log.code), None)?;
-                Self::check_write_string(&mut logs_sheet, row as u32, 1, &log.text)?;
+            let mut link_format = self.workbook.add_format();
+            link_format = link_format.set_underline(FormatUnderline::Single);
+            for log in logs {
+                logs_sheet.write_string(0, &format!("{:?}", log.code))?;
+                Self::check_write_string(
+                    &mut logs_sheet,
+                    &mut overflow_sheet,
+                    1,
+                    &log.text,
+                    &link_format,
+                )?;
+                logs_sheet.row += 1;
             }
         }
         Ok(())
@@ -331,84 +363,70 @@ impl WriteXlsx {
 
     fn write_key(
         &self,
-        reg_items_sheet: &mut Worksheet,
+        reg_items_sheet: &mut WorksheetState,
+        overflow_sheet: &mut WorksheetState,
         cell_key_node: &CellKeyNode,
         is_key_version: bool,
-        state: &mut XlsxState,
     ) -> Result<(), Error> {
-        state.row += 1;
-        state.set_shading(&cell_key_node.path, None, cell_key_node.cell_state);
-        reg_items_sheet.set_row(
-            state.row,
-            Self::ROW_HEIGHT,
-            Some(&self.get_formatter(cell_key_node.cell_state, state.shaded, state.upper_border)),
-        )?;
+        reg_items_sheet.row += 1;
+        reg_items_sheet.set_shading(&cell_key_node.path, None, cell_key_node.cell_state);
+        let (row_format, link_format) = self.get_formatters(
+            cell_key_node.cell_state,
+            reg_items_sheet.shaded,
+            reg_items_sheet.upper_border,
+        );
+
+        reg_items_sheet
+            .sheet
+            .set_row(reg_items_sheet.row, Self::ROW_HEIGHT, Some(&row_format))?;
 
         let mut logs = cell_key_node.logs.clone();
         Self::check_write_string(
             reg_items_sheet,
-            state.row,
+            overflow_sheet,
             Self::COL_KEY_PATH,
             &cell_key_node.path,
+            &link_format,
         )?;
-        reg_items_sheet.write_string(
-            state.row,
-            Self::COL_STATUS,
-            &format!("{:?}", cell_key_node.cell_state),
-            None,
-        )?;
+        reg_items_sheet
+            .write_string(Self::COL_STATUS, &format!("{:?}", cell_key_node.cell_state))?;
         if let Some(sequence_num) = cell_key_node.sequence_num {
-            reg_items_sheet.write_number(
-                state.row,
-                Self::COL_PREV_SEQ_NUM,
-                sequence_num as f64,
-                None,
-            )?;
+            reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num as f64)?;
         }
         if let Some(sequence_num) = cell_key_node.updated_by_sequence_num {
-            reg_items_sheet.write_number(
-                state.row,
-                Self::COL_MOD_SEQ_NUM,
-                sequence_num as f64,
-                None,
-            )?;
+            reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num as f64)?;
         }
         reg_items_sheet.write_string(
-            state.row,
             Self::COL_TIMESTAMP,
             &format_date_time(cell_key_node.last_key_written_date_and_time()),
-            None,
         )?;
         reg_items_sheet.write_string(
-            state.row,
             Self::COL_FLAGS,
             &format!("{:?}", cell_key_node.key_node_flags(&mut logs)),
-            None,
         )?;
         reg_items_sheet.write_string(
-            state.row,
             Self::COL_ACCESS_FLAGS,
             &format!("{:?}", cell_key_node.access_flags(&mut logs)),
-            None,
         )?;
         Self::check_write_string(
             reg_items_sheet,
-            state.row,
+            overflow_sheet,
             Self::COL_LOGS,
             &cell_key_node.logs.to_string(),
+            &link_format,
         )?;
 
         for sub_key in &cell_key_node.versions {
-            self.write_key(reg_items_sheet, sub_key, true, state)?;
+            self.write_key(reg_items_sheet, overflow_sheet, sub_key, true)?;
         }
 
         if !is_key_version {
             // don't output values for modified keys; current/modified/deleted vals will be output via the current version of the key
             for value in cell_key_node.value_iter() {
-                self.write_value(reg_items_sheet, cell_key_node, &value, state)?;
+                self.write_value(reg_items_sheet, overflow_sheet, cell_key_node, &value)?;
 
                 for sub_value in &value.versions {
-                    self.write_value(reg_items_sheet, cell_key_node, sub_value, state)?;
+                    self.write_value(reg_items_sheet, overflow_sheet, cell_key_node, sub_value)?;
                 }
             }
         }
@@ -417,106 +435,157 @@ impl WriteXlsx {
 
     fn write_value(
         &self,
-        reg_items_sheet: &mut Worksheet,
+        reg_items_sheet: &mut WorksheetState,
+        overflow_sheet: &mut WorksheetState,
         cell_key_node: &CellKeyNode,
         value: &CellKeyValue,
-        state: &mut XlsxState,
     ) -> Result<(), Error> {
-        state.row += 1;
-        state.set_shading(
+        reg_items_sheet.row += 1;
+        reg_items_sheet.set_shading(
             &cell_key_node.path,
             Some(&value.detail.value_name()),
             value.cell_state,
         );
-        reg_items_sheet.set_row(
-            state.row,
-            16.0,
-            Some(&self.get_formatter(value.cell_state, state.shaded, state.upper_border)),
-        )?;
-        let mut content = format!("{:?}", value.get_content().0);
-        if content.len() > Self::MAX_EXCEL_CELL_LEN {
-            content.truncate(Self::MAX_EXCEL_CELL_LEN - Self::ELLIPSES.len());
-            content += Self::ELLIPSES;
-        }
+        let (row_format, link_format) = self.get_formatters(
+            value.cell_state,
+            reg_items_sheet.shaded,
+            reg_items_sheet.upper_border,
+        );
+        reg_items_sheet
+            .sheet
+            .set_row(reg_items_sheet.row, Self::ROW_HEIGHT, Some(&row_format))?;
 
         Self::check_write_string(
             reg_items_sheet,
-            state.row,
+            overflow_sheet,
             Self::COL_KEY_PATH,
             &cell_key_node.path,
+            &link_format,
         )?;
         Self::check_write_string(
             reg_items_sheet,
-            state.row,
+            overflow_sheet,
             Self::COL_VALUE_NAME,
             &value.get_pretty_name(),
+            &link_format,
         )?;
-        reg_items_sheet.write_string(
-            state.row,
-            Self::COL_STATUS,
-            &format!("{:?}", value.cell_state),
-            None,
-        )?;
+        reg_items_sheet.write_string(Self::COL_STATUS, &format!("{:?}", value.cell_state))?;
         if let Some(sequence_num) = value.sequence_num {
-            reg_items_sheet.write_number(
-                state.row,
-                Self::COL_PREV_SEQ_NUM,
-                sequence_num as f64,
-                None,
-            )?;
+            reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num as f64)?;
         }
         if let Some(sequence_num) = value.updated_by_sequence_num {
-            reg_items_sheet.write_number(
-                state.row,
-                Self::COL_MOD_SEQ_NUM,
-                sequence_num as f64,
-                None,
-            )?;
+            reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num as f64)?;
         }
-        reg_items_sheet.write_string(state.row, Self::COL_VALUE, &content, None)?;
         Self::check_write_string(
             reg_items_sheet,
-            state.row,
+            overflow_sheet,
+            Self::COL_VALUE,
+            &format!("{:?}", value.get_content().0),
+            &link_format,
+        )?;
+        Self::check_write_string(
+            reg_items_sheet,
+            overflow_sheet,
             Self::COL_LOGS,
             &value.logs.to_string(),
+            &link_format,
         )?;
         Ok(())
     }
 
-    fn check_write_string(
-        sheet: &mut Worksheet,
-        row: u32,
-        col: u16,
-        val: &str,
-    ) -> Result<(), XlsxError> {
-        // This check is here because xlsxwriter panics when provided certain input (they are unwrapping this result)
-        if std::ffi::CString::new(val.to_string()).is_ok() {
-            if val.len() > Self::MAX_EXCEL_CELL_LEN {
-                let mut truncated = val.to_string();
-                truncated.truncate(Self::MAX_EXCEL_CELL_LEN - Self::ELLIPSES.len());
-                truncated += Self::ELLIPSES;
-                sheet.write_string(row, col, &truncated, None)
-            } else {
-                sheet.write_string(row, col, val, None)
-            }
+    fn remove_nulls(input: &str) -> Cow<str> {
+        if input.contains('\0') {
+            Cow::Owned(input.replace('\0', ""))
         } else {
-            sheet.write_string(row, col, "{Error writing text to document}", None)
+            Cow::Borrowed(input)
         }
     }
 
-    fn get_formatter(&self, cell_state: CellState, shaded: bool, upper_line: bool) -> Format {
-        let mut format = self.workbook.add_format();
+    fn write_string_handle_overflow<'a>(
+        primary_sheet: &mut WorksheetState,
+        overflow_sheet: &mut WorksheetState,
+        primary_sheet_col: u16,
+        val: Cow<'a, str>,
+        link_format: &Format,
+    ) -> Result<(), Error> {
+        if val.len() > Self::MAX_EXCEL_CELL_LEN {
+            let full_val = val.into_owned();
+
+            let mut full_val_chunks = vec![];
+            let mut full_val_cur: &str = &full_val;
+            while !full_val_cur.is_empty() {
+                let (chunk, rest) = full_val_cur
+                    .split_at(std::cmp::min(Self::MAX_EXCEL_CELL_LEN, full_val_cur.len()));
+                full_val_chunks.push(chunk);
+                full_val_cur = rest;
+            }
+            overflow_sheet.row += 1;
+            for (col, chunk) in full_val_chunks.iter().enumerate() {
+                overflow_sheet.write_string(u16::try_from(col)?, chunk)?
+            }
+            primary_sheet.sheet.write_url(
+                primary_sheet.row,
+                primary_sheet_col,
+                &format!("internal:{}!A{}", Self::OVERFLOW, overflow_sheet.row + 1),
+                Some(link_format),
+            )?;
+
+            let mut sample = full_val.clone();
+            sample.truncate(Self::MAX_TRUNCATED_CHARS);
+            sample += Self::TRUNCATED;
+            primary_sheet.sheet.write_string(
+                primary_sheet.row,
+                primary_sheet_col,
+                &sample,
+                Some(link_format),
+            )?
+        } else {
+            primary_sheet.write_string(primary_sheet_col, &val)?
+        }
+        Ok(())
+    }
+
+    fn check_write_string(
+        primary_sheet: &mut WorksheetState,
+        overflow_sheet: &mut WorksheetState,
+        primary_sheet_col: u16,
+        val: &str,
+        link_format: &Format,
+    ) -> Result<(), Error> {
+        let val = Self::remove_nulls(val); // xlsxwriter panics when provided input with nulls
+        Self::write_string_handle_overflow(
+            primary_sheet,
+            overflow_sheet,
+            primary_sheet_col,
+            val,
+            link_format,
+        )
+    }
+
+    fn get_formatters(
+        &self,
+        cell_state: CellState,
+        shaded: bool,
+        upper_line: bool,
+    ) -> (Format, Format) {
+        let mut row_format = self.workbook.add_format();
+        let mut link_format = self.workbook.add_format();
         if shaded {
-            format = format.set_bg_color(FormatColor::Custom(0xF4F4F4));
+            row_format = row_format.set_bg_color(FormatColor::Custom(0xF4F4F4));
+            link_format = link_format.set_bg_color(FormatColor::Custom(0xF4F4F4));
         }
         if upper_line {
-            format = format.set_border_top(FormatBorder::Hair);
+            row_format = row_format.set_border_top(FormatBorder::Hair);
+            link_format = link_format.set_border_top(FormatBorder::Hair);
         }
         if cell_state.is_deleted() {
-            format = format.set_font_color(FormatColor::Custom(0xA51B1B));
+            row_format = row_format.set_font_color(FormatColor::Custom(0xA51B1B));
+            link_format = link_format.set_font_color(FormatColor::Custom(0xA51B1B));
         } else if cell_state == CellState::ModifiedTransactionLog {
-            format = format.set_font_color(FormatColor::Custom(0x808080));
+            row_format = row_format.set_font_color(FormatColor::Custom(0x808080));
+            link_format = link_format.set_font_color(FormatColor::Custom(0x808080));
         }
-        format
+        link_format = link_format.set_underline(FormatUnderline::Single);
+        (row_format, link_format)
     }
 }
