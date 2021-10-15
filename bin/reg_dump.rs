@@ -293,8 +293,11 @@ impl WriteXlsx {
     const COL_LOGS: u16 = 9;
     const MAX_EXCEL_CELL_LEN: usize = 32767;
     const MAX_TRUNCATED_CHARS: usize = 250;
-    const TRUNCATED: &'static str = " [truncated]";
+    const TRUNCATED: &'static str = "truncated";
     const OVERFLOW: &'static str = "Overflow";
+    const COLOR_LIGHT_GREY: u32 = 0xF4F4F4;
+    const COLOR_DARK_GREY: u32 = 0x808080;
+    const COLOR_DARK_RED: u32 = 0xA51B1B;
 
     fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
         Ok(WriteXlsx {
@@ -413,10 +416,10 @@ impl WriteXlsx {
             reg_items_sheet
                 .write_string(Self::COL_STATUS, &format!("{:?}", cell_key_node.cell_state))?;
             if let Some(sequence_num) = cell_key_node.sequence_num {
-                reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num as f64)?;
+                reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num.into())?;
             }
             if let Some(sequence_num) = cell_key_node.updated_by_sequence_num {
-                reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num as f64)?;
+                reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num.into())?;
             }
             reg_items_sheet.write_string(
                 Self::COL_TIMESTAMP,
@@ -497,10 +500,10 @@ impl WriteXlsx {
         )?;
         reg_items_sheet.write_string(Self::COL_STATUS, &format!("{:?}", value.cell_state))?;
         if let Some(sequence_num) = value.sequence_num {
-            reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num as f64)?;
+            reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num.into())?;
         }
         if let Some(sequence_num) = value.updated_by_sequence_num {
-            reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num as f64)?;
+            reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num.into())?;
         }
         Self::check_write_string(
             reg_items_sheet,
@@ -537,20 +540,23 @@ impl WriteXlsx {
                 full_val_chunks.push(chunk);
                 full_val_cur = rest;
             }
-            overflow_sheet.row += 1;
+            // Putting the label here to tie this data back to the main sheet
+            let truncated_label = format!(" [{}; row: {}]", Self::TRUNCATED, overflow_sheet.row+1);
+            overflow_sheet.write_string(0, &truncated_label)?;
             for (col, chunk) in full_val_chunks.iter().enumerate() {
-                overflow_sheet.write_string(u16::try_from(col)?, chunk)?
+                overflow_sheet.write_string(u16::try_from(col + 1)?, chunk)?
             }
+            overflow_sheet.row += 1;
             primary_sheet.sheet.write_url(
                 primary_sheet.row,
                 primary_sheet_col,
-                &format!("internal:{}!A{}", Self::OVERFLOW, overflow_sheet.row + 1),
+                &format!("internal:{}!A{}", Self::OVERFLOW, overflow_sheet.row),
                 Some(link_format),
             )?;
 
             let mut sample = full_val.clone();
             sample.truncate(Self::MAX_TRUNCATED_CHARS);
-            sample += Self::TRUNCATED;
+            sample += &truncated_label;
             primary_sheet.sheet.write_string(
                 primary_sheet.row,
                 primary_sheet_col,
@@ -589,19 +595,19 @@ impl WriteXlsx {
         let mut row_format = self.workbook.add_format();
         let mut link_format = self.workbook.add_format();
         if shaded {
-            row_format = row_format.set_bg_color(FormatColor::Custom(0xF4F4F4));
-            link_format = link_format.set_bg_color(FormatColor::Custom(0xF4F4F4));
+            row_format = row_format.set_bg_color(FormatColor::Custom(Self::COLOR_LIGHT_GREY));
+            link_format = link_format.set_bg_color(FormatColor::Custom(Self::COLOR_LIGHT_GREY));
         }
         if upper_line {
             row_format = row_format.set_border_top(FormatBorder::Hair);
             link_format = link_format.set_border_top(FormatBorder::Hair);
         }
         if cell_state.is_deleted() {
-            row_format = row_format.set_font_color(FormatColor::Custom(0xA51B1B));
-            link_format = link_format.set_font_color(FormatColor::Custom(0xA51B1B));
+            row_format = row_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_RED));
+            link_format = link_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_RED));
         } else if cell_state == CellState::ModifiedTransactionLog {
-            row_format = row_format.set_font_color(FormatColor::Custom(0x808080));
-            link_format = link_format.set_font_color(FormatColor::Custom(0x808080));
+            row_format = row_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_GREY));
+            link_format = link_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_GREY));
         }
         link_format = link_format.set_underline(FormatUnderline::Single);
         (row_format, link_format)
