@@ -58,7 +58,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         let mut input = &self.file_info.buffer[file_offset_absolute..];
         while file_offset_absolute < hbin_max {
             let (input_cell_type, size) = le_i32(input)?;
-            let size_abs = size.abs() as usize;
+            let size_abs = size.unsigned_abs() as usize;
             if size == 0 {
                 break;
             } else {

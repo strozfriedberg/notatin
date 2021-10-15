@@ -16,7 +16,7 @@
 
 use clap::{arg_enum, value_t, App, Arg};
 use notatin::{
-    cell::CellState,
+    cell::{Cell, CellState},
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
     cli_util::parse_paths,
@@ -24,13 +24,13 @@ use notatin::{
     filter::{Filter, FilterBuilder},
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
-    util::{format_date_time, write_common_export_format},
+    util,
 };
 use std::{
     borrow::Cow,
     convert::TryFrom,
     fs::File,
-    io::{BufWriter, Write},
+    io::{stdout, BufWriter, Write},
 };
 use xlsxwriter::{
     Format, FormatBorder, FormatColor, FormatUnderline, Workbook, Worksheet, XlsxError,
@@ -43,7 +43,10 @@ fn main() -> Result<(), Error> {
             "-r --recover 'Recover deleted and versioned keys and values'",
         ))
         .arg(Arg::from_usage(
-            "-h --full-field-info 'Get the offset and length for each key/value field'",
+            "--recovered-only 'Only export recovered items (applicable for tsv and xlsx output only)'",
+        ))
+        .arg(Arg::from_usage(
+            "--full-field-info 'Get the offset and length for each key/value field'",
         ))
         .arg(Arg::from_usage(
             "-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'",
@@ -78,6 +81,7 @@ fn main() -> Result<(), Error> {
     let (input, logs) = parse_paths(matches.value_of("input").expect("Required value"));
     let output = matches.value_of("output").expect("Required value");
     let recover = matches.is_present("recover");
+    let recovered_only = matches.is_present("recovered-only");
     let get_full_field_info = matches.is_present("full-field-info");
     let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
@@ -99,13 +103,15 @@ fn main() -> Result<(), Error> {
         None => None,
     };
 
+    let mut stdout = stdout();
+    stdout.write_all("Writing file".as_bytes())?;
     if output_type == OutputType::Xlsx {
-        let mut writer = WriteXlsx::new(output)?;
+        let mut writer = WriteXlsx::new(output, recovered_only)?;
         writer.write(&parser, filter)?;
     } else {
         let write_file = File::create(output)?;
         if output_type == OutputType::Common {
-            write_common_export_format(&parser, filter, write_file)?;
+            util::write_common_export_format(&parser, filter, write_file)?;
         } else {
             let mut iter = ParserIterator::new(&parser);
             if let Some(filter) = filter {
@@ -113,15 +119,18 @@ fn main() -> Result<(), Error> {
             }
             let mut writer = BufWriter::new(write_file);
             match output_type {
-                OutputType::Tsv => write_tsv(&mut writer, &parser, &mut iter)?,
+                OutputType::Tsv => write_tsv(&mut writer, &parser, &mut iter, recovered_only)?,
                 _ => {
-                    for key in iter.iter() {
+                    for (index, key) in iter.iter().enumerate() {
+                        util::update_console_progress(index)?;
                         writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
                     }
                 }
             }
         }
     }
+    stdout.write_all(format!("\nFinished writing {}\n", output).as_bytes())?;
+    stdout.flush()?;
     Ok(())
 }
 
@@ -129,11 +138,12 @@ fn write_tsv(
     writer: &mut BufWriter<File>,
     parser: &Parser,
     iter: &mut ParserIterator,
+    recovered_only: bool,
 ) -> Result<(), Error> {
-    //write!(writer, "{}", std::str::from_utf8(&vec![0xEF, 0xBB, 0xBF]).expect("known good bytes (utf8 BOM)"))?; // need explicit BOM to keep Excel happy with multibyte UTF8 chars
     writeln!(writer,"Key Path\tValue Name\tStatus\tPrevious Sequence Number\tModifying Sequence Number\tTimestamp\tFlags\tAccess Flags\tValue\tLogs")?;
-    for key in iter.iter() {
-        write_key_tsv(&key, writer, false)?;
+    for (index, key) in iter.iter().enumerate() {
+        util::update_console_progress(index)?;
+        write_key_tsv(&key, writer, false, recovered_only)?;
     }
     writeln!(writer, "\nLogs\n-----------")?;
     parser.get_parse_logs().write(writer)?;
@@ -144,18 +154,21 @@ fn write_value_tsv(
     cell_key_node: &CellKeyNode,
     value: &CellKeyValue,
     writer: &mut BufWriter<File>,
+    recovered_only: bool,
 ) -> Result<(), Error> {
-    writeln!(
-        writer,
-        "{}\t{}\t{:?}\t{}\t{}\t\t\t\t{:?}\t{}",
-        cell_key_node.path,
-        value.get_pretty_name(),
-        value.cell_state,
-        get_sequence_num_string(value.sequence_num),
-        get_sequence_num_string(value.updated_by_sequence_num),
-        value.get_content().0,
-        value.logs
-    )?;
+    if !recovered_only || value.has_or_is_recovered() {
+        writeln!(
+            writer,
+            "{}\t{}\t{:?}\t{}\t{}\t\t\t\t{:?}\t{}",
+            cell_key_node.path,
+            value.get_pretty_name(),
+            value.cell_state,
+            get_sequence_num_string(value.sequence_num),
+            get_sequence_num_string(value.updated_by_sequence_num),
+            value.get_content().0,
+            value.logs
+        )?;
+    }
     Ok(())
 }
 
@@ -163,32 +176,35 @@ fn write_key_tsv(
     cell_key_node: &CellKeyNode,
     writer: &mut BufWriter<File>,
     key_modified: bool,
+    recovered_only: bool,
 ) -> Result<(), Error> {
-    let mut logs = cell_key_node.logs.clone();
-    writeln!(
-        writer,
-        "{}\t\t{:?}\t{}\t{}\t{}\t{:?}\t{:?}\t\t{}",
-        cell_key_node.path,
-        cell_key_node.cell_state,
-        get_sequence_num_string(cell_key_node.sequence_num),
-        get_sequence_num_string(cell_key_node.updated_by_sequence_num),
-        format_date_time(cell_key_node.last_key_written_date_and_time()),
-        cell_key_node.key_node_flags(&mut logs),
-        cell_key_node.access_flags(&mut logs),
-        cell_key_node.logs
-    )?;
+    if !recovered_only || cell_key_node.has_or_is_recovered() {
+        let mut logs = cell_key_node.logs.clone();
+        writeln!(
+            writer,
+            "{}\t\t{:?}\t{}\t{}\t{}\t{:?}\t{:?}\t\t{}",
+            cell_key_node.path,
+            cell_key_node.cell_state,
+            get_sequence_num_string(cell_key_node.sequence_num),
+            get_sequence_num_string(cell_key_node.updated_by_sequence_num),
+            util::format_date_time(cell_key_node.last_key_written_date_and_time()),
+            cell_key_node.key_node_flags(&mut logs),
+            cell_key_node.access_flags(&mut logs),
+            cell_key_node.logs
+        )?;
 
-    for sub_key in &cell_key_node.versions {
-        write_key_tsv(sub_key, writer, true)?;
+        for sub_key in &cell_key_node.versions {
+            write_key_tsv(sub_key, writer, true, recovered_only)?;
+        }
     }
 
     if !key_modified {
         // don't output values for modified keys; current/modified/deleted vals will be output via the current version of the key
         for value in cell_key_node.value_iter() {
-            write_value_tsv(cell_key_node, &value, writer)?;
+            write_value_tsv(cell_key_node, &value, writer, recovered_only)?;
 
             for sub_value in &value.versions {
-                write_value_tsv(cell_key_node, sub_value, writer)?;
+                write_value_tsv(cell_key_node, sub_value, writer, recovered_only)?;
             }
         }
     }
@@ -258,6 +274,7 @@ impl<'a> WorksheetState<'a> {
 
 struct WriteXlsx {
     workbook: Workbook,
+    recovered_only: bool,
 }
 
 impl WriteXlsx {
@@ -279,9 +296,10 @@ impl WriteXlsx {
     const TRUNCATED: &'static str = " [truncated]";
     const OVERFLOW: &'static str = "Overflow";
 
-    fn new(output: &str) -> Result<Self, Error> {
+    fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
         Ok(WriteXlsx {
             workbook: Workbook::new(output),
+            recovered_only,
         })
     }
 
@@ -339,7 +357,8 @@ impl WriteXlsx {
         reg_items_sheet.write_string(Self::COL_LOGS, "Logs")?;
         reg_items_sheet.sheet.freeze_panes(1, 0);
 
-        for key in iter.iter() {
+        for (index, key) in iter.iter().enumerate() {
+            util::update_console_progress(index)?;
             self.write_key(&mut reg_items_sheet, &mut overflow_sheet, &key, false)?;
         }
 
@@ -368,56 +387,60 @@ impl WriteXlsx {
         cell_key_node: &CellKeyNode,
         is_key_version: bool,
     ) -> Result<(), Error> {
-        reg_items_sheet.row += 1;
-        reg_items_sheet.set_shading(&cell_key_node.path, None, cell_key_node.cell_state);
-        let (row_format, link_format) = self.get_formatters(
-            cell_key_node.cell_state,
-            reg_items_sheet.shaded,
-            reg_items_sheet.upper_border,
-        );
+        if !self.recovered_only || cell_key_node.has_or_is_recovered() {
+            reg_items_sheet.row += 1;
+            reg_items_sheet.set_shading(&cell_key_node.path, None, cell_key_node.cell_state);
+            let (row_format, link_format) = self.get_formatters(
+                cell_key_node.cell_state,
+                reg_items_sheet.shaded,
+                reg_items_sheet.upper_border,
+            );
 
-        reg_items_sheet
-            .sheet
-            .set_row(reg_items_sheet.row, Self::ROW_HEIGHT, Some(&row_format))?;
+            reg_items_sheet.sheet.set_row(
+                reg_items_sheet.row,
+                Self::ROW_HEIGHT,
+                Some(&row_format),
+            )?;
 
-        let mut logs = cell_key_node.logs.clone();
-        Self::check_write_string(
-            reg_items_sheet,
-            overflow_sheet,
-            Self::COL_KEY_PATH,
-            &cell_key_node.path,
-            &link_format,
-        )?;
-        reg_items_sheet
-            .write_string(Self::COL_STATUS, &format!("{:?}", cell_key_node.cell_state))?;
-        if let Some(sequence_num) = cell_key_node.sequence_num {
-            reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num as f64)?;
-        }
-        if let Some(sequence_num) = cell_key_node.updated_by_sequence_num {
-            reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num as f64)?;
-        }
-        reg_items_sheet.write_string(
-            Self::COL_TIMESTAMP,
-            &format_date_time(cell_key_node.last_key_written_date_and_time()),
-        )?;
-        reg_items_sheet.write_string(
-            Self::COL_FLAGS,
-            &format!("{:?}", cell_key_node.key_node_flags(&mut logs)),
-        )?;
-        reg_items_sheet.write_string(
-            Self::COL_ACCESS_FLAGS,
-            &format!("{:?}", cell_key_node.access_flags(&mut logs)),
-        )?;
-        Self::check_write_string(
-            reg_items_sheet,
-            overflow_sheet,
-            Self::COL_LOGS,
-            &cell_key_node.logs.to_string(),
-            &link_format,
-        )?;
+            let mut logs = cell_key_node.logs.clone();
+            Self::check_write_string(
+                reg_items_sheet,
+                overflow_sheet,
+                Self::COL_KEY_PATH,
+                &cell_key_node.path,
+                &link_format,
+            )?;
+            reg_items_sheet
+                .write_string(Self::COL_STATUS, &format!("{:?}", cell_key_node.cell_state))?;
+            if let Some(sequence_num) = cell_key_node.sequence_num {
+                reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num as f64)?;
+            }
+            if let Some(sequence_num) = cell_key_node.updated_by_sequence_num {
+                reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num as f64)?;
+            }
+            reg_items_sheet.write_string(
+                Self::COL_TIMESTAMP,
+                &util::format_date_time(cell_key_node.last_key_written_date_and_time()),
+            )?;
+            reg_items_sheet.write_string(
+                Self::COL_FLAGS,
+                &format!("{:?}", cell_key_node.key_node_flags(&mut logs)),
+            )?;
+            reg_items_sheet.write_string(
+                Self::COL_ACCESS_FLAGS,
+                &format!("{:?}", cell_key_node.access_flags(&mut logs)),
+            )?;
+            Self::check_write_string(
+                reg_items_sheet,
+                overflow_sheet,
+                Self::COL_LOGS,
+                &cell_key_node.logs.to_string(),
+                &link_format,
+            )?;
 
-        for sub_key in &cell_key_node.versions {
-            self.write_key(reg_items_sheet, overflow_sheet, sub_key, true)?;
+            for sub_key in &cell_key_node.versions {
+                self.write_key(reg_items_sheet, overflow_sheet, sub_key, true)?;
+            }
         }
 
         if !is_key_version {
@@ -440,6 +463,9 @@ impl WriteXlsx {
         cell_key_node: &CellKeyNode,
         value: &CellKeyValue,
     ) -> Result<(), Error> {
+        if self.recovered_only && !value.has_or_is_recovered() {
+            return Ok(());
+        }
         reg_items_sheet.row += 1;
         reg_items_sheet.set_shading(
             &cell_key_node.path,
@@ -493,14 +519,6 @@ impl WriteXlsx {
         Ok(())
     }
 
-    fn remove_nulls(input: &str) -> Cow<str> {
-        if input.contains('\0') {
-            Cow::Owned(input.replace('\0', ""))
-        } else {
-            Cow::Borrowed(input)
-        }
-    }
-
     fn write_string_handle_overflow<'a>(
         primary_sheet: &mut WorksheetState,
         overflow_sheet: &mut WorksheetState,
@@ -552,7 +570,7 @@ impl WriteXlsx {
         val: &str,
         link_format: &Format,
     ) -> Result<(), Error> {
-        let val = Self::remove_nulls(val); // xlsxwriter panics when provided input with nulls
+        let val = util::remove_nulls(val); // xlsxwriter panics when provided input with nulls
         Self::write_string_handle_overflow(
             primary_sheet,
             overflow_sheet,

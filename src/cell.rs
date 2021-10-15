@@ -79,8 +79,9 @@ impl CellType {
     }
 }
 
-pub(crate) trait Cell {
+pub trait Cell {
     fn get_file_offset_absolute(&self) -> usize;
     fn get_hash(&self) -> Option<blake3::Hash>;
     fn get_logs(&self) -> &crate::log::Logs;
+    fn has_or_is_recovered(&self) -> bool;
 }

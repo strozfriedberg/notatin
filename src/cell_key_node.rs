@@ -138,13 +138,13 @@ impl CellKeyNode {
     }
 
     fn check_size(size: i32, input_len: usize) -> bool {
-        let size_abs = size.abs() as usize;
+        let size_abs = size.unsigned_abs() as usize;
         Self::MIN_CELL_KEY_SIZE <= size_abs && size_abs <= input_len
     }
 
     /// Returns the byte length of the cell (regardless of if it's allocated or free)
     pub(crate) fn get_cell_size(&self) -> usize {
-        self.detail.size().abs() as usize
+        self.detail.size().unsigned_abs() as usize
     }
 
     pub fn last_key_written_date_and_time(&self) -> DateTime<Utc> {
@@ -742,6 +742,13 @@ impl Cell for CellKeyNode {
 
     fn get_logs(&self) -> &Logs {
         &self.logs
+    }
+
+    /// Returns true for an item that is deleted, modified, or is an allocated item that contains a modified version
+    fn has_or_is_recovered(&self) -> bool {
+        self.cell_state.is_deleted()
+            || self.cell_state == CellState::ModifiedTransactionLog
+            || !self.versions.is_empty()
     }
 }
 

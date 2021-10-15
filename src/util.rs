@@ -22,12 +22,14 @@ use crate::filter::Filter;
 use crate::log::{LogCode, Logs};
 use crate::parser::{Parser, ParserIterator};
 use chrono::{DateTime, Utc};
+use crossterm::{cursor, QueueableCommand};
 use nom::{take, IResult};
 use std::{
+    borrow::Cow,
     char::REPLACEMENT_CHARACTER,
     convert::TryInto,
     fmt::Write as FmtWrite,
-    io::{BufWriter, Write},
+    io::{stdout, BufWriter, Write},
     mem, str,
 };
 use winstructs::guid::Guid;
@@ -360,7 +362,8 @@ pub fn write_common_export_format<W: Write>(
     if let Some(filter) = filter {
         iter.with_filter(filter);
     }
-    for key in iter.iter() {
+    for (index, key) in iter.iter().enumerate() {
+        update_console_progress(index)?;
         write_key(
             &mut writer,
             &key,
@@ -551,6 +554,46 @@ pub(crate) fn get_root_path_offset(path: &str) -> usize {
         }
     } else {
         0
+    }
+}
+
+pub fn update_console_progress(index: usize) -> Result<(), Error> {
+    if index % 1000 == 0 {
+        let mut stdout = stdout();
+        stdout.write_all(".".as_bytes())?;
+        stdout.flush()?;
+    }
+    Ok(())
+}
+
+pub(crate) fn update_console(msg: &str) -> Result<(), Error> {
+    let mut stdout = stdout();
+    stdout.queue(cursor::SavePosition)?;
+    stdout.write_all(msg.as_bytes())?;
+    stdout.queue(cursor::RestorePosition)?;
+    stdout.flush()?;
+    Ok(())
+}
+
+pub(crate) fn write_console(msg: &str) -> Result<(), Error> {
+    let mut stdout = stdout();
+    stdout.write_all(msg.as_bytes())?;
+    stdout.flush()?;
+    Ok(())
+}
+
+pub(crate) fn finalize_console() -> Result<(), Error> {
+    let mut stdout = stdout();
+    stdout.write_all("\n".as_bytes())?;
+    stdout.flush()?;
+    Ok(())
+}
+
+pub fn remove_nulls(input: &str) -> Cow<str> {
+    if input.contains('\0') {
+        Cow::Owned(input.replace('\0', ""))
+    } else {
+        Cow::Borrowed(input)
     }
 }
 
@@ -777,5 +820,10 @@ mod tests {
             "00 01 02 03 04 05 FF",
             to_hex_string(&[0, 1, 2, 3, 4, 5, 0xff])
         );
+    }
+
+    #[test]
+    fn test_remove_nulls() {
+        assert_eq!("00 01 0203 04 05 FF", remove_nulls("00 01 02\003 04 05 FF"),);
     }
 }

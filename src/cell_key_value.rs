@@ -241,13 +241,13 @@ impl CellKeyValue {
     const SIGNATURE: &'static str = "vk";
 
     fn check_size(size: i32, input: &[u8]) -> bool {
-        let size_abs = size.abs() as usize;
+        let size_abs = size.unsigned_abs() as usize;
         Self::MIN_CELL_VALUE_SIZE <= size_abs && size_abs <= input.len()
     }
 
     /// Returns the byte length of the cell (regardless of if it's allocated or free)
     pub(crate) fn get_cell_size(&self) -> usize {
-        self.detail.size().abs() as usize
+        self.detail.size().unsigned_abs() as usize
     }
 
     pub(crate) fn is_free(&self) -> bool {
@@ -380,10 +380,19 @@ impl CellKeyValue {
         } else {
             const DATA_OFFSET_RELATIVE_OFFSET: usize = 12;
             data_offsets_absolute.push(file_offset_absolute + DATA_OFFSET_RELATIVE_OFFSET);
+            let data_size = data_size_raw ^ DATA_IS_RESIDENT_MASK;
             let resident_value = data_offset_relative.to_le_bytes();
-            value_bytes = data_type.get_value_bytes(
-                &resident_value[..(data_size_raw ^ DATA_IS_RESIDENT_MASK) as usize],
-            );
+            if data_size as usize <= resident_value.len() {
+                value_bytes = data_type.get_value_bytes(
+                    &resident_value[..(data_size_raw ^ DATA_IS_RESIDENT_MASK) as usize],
+                );
+            } else {
+                logs.add(
+                    LogCode::WarningParse,
+                    &"data_size exceeds length of resident_value",
+                );
+                return (Vec::new(), Vec::new());
+            }
         }
         (value_bytes, data_offsets_absolute)
     }
@@ -463,6 +472,13 @@ impl Cell for CellKeyValue {
 
     fn get_logs(&self) -> &Logs {
         &self.logs
+    }
+
+    /// Returns true for an item that is deleted, modified, or is an allocated item that contains a modified version
+    fn has_or_is_recovered(&self) -> bool {
+        self.cell_state.is_deleted()
+            || self.cell_state == CellState::ModifiedTransactionLog
+            || !self.versions.is_empty()
     }
 }
 

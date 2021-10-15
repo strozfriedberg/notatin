@@ -219,10 +219,15 @@ impl TransactionLog {
         &self,
         parser: &mut Parser,
         mut prior_items: RegItemMap,
-    ) -> (u32, RegItemMap) {
+    ) -> Result<(u32, RegItemMap), Error> {
         let mut new_sequence_number = 0;
         let (primary_secondary_seq_num, primary_hive_bins_data_size) = parser.get_base_block_info();
-        for log_entry in &self.log_entries {
+        for (index, log_entry) in self.log_entries.iter().enumerate() {
+            util::update_console(&format!(
+                "Processing transaction log entry {} of {}",
+                index + 1,
+                self.log_entries.len()
+            ))?;
             if log_entry.has_valid_hashes {
                 if log_entry.sequence_number < primary_secondary_seq_num {
                     parser.state.info.add(
@@ -305,7 +310,8 @@ impl TransactionLog {
                 break;
             }
         }
-        (new_sequence_number, prior_items)
+        util::finalize_console()?;
+        Ok((new_sequence_number, prior_items))
     }
 
     pub(crate) fn get_reg_items(
@@ -640,6 +646,7 @@ mod tests {
     use crate::base_block::{FileFormat, FileType};
     use crate::file_info::FileInfo;
     use crate::log::Logs;
+    use crate::parser_builder::ParserBuilder;
 
     #[test]
     fn test_parse_transaction_log() {
@@ -679,57 +686,67 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_log_entry() {
-        /* let parser = Parser::from_path(primary_path: T, transaction_log_paths: Option<Vec<T>>, filter: Option<Filter>, recover_deleted: bool)
-        let mut log_entry = LogEntry::default();
-        let mut state = State::default();
-        log_entry.hive_bins_data_size = 8192;
-        assert_eq!(true, log_entry.is_valid_hive_bin_data_size());
+    fn test_parse_log_entry() -> Result<(), Error> {
+        let mut parser = ParserBuilder::from_path("test_data/system")
+            .build()
+            .unwrap();
+        let mut log_entry = LogEntry {
+            hive_bins_data_size: 8192,
+            ..Default::default()
+        };
+        assert!(log_entry.is_valid_hive_bin_data_size());
         log_entry.hive_bins_data_size = 1;
-        assert_eq!(false, log_entry.is_valid_hive_bin_data_size());
+        assert!(!log_entry.is_valid_hive_bin_data_size());
 
-        let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
+        let mut file_info = FileInfo::from_path("test_data/system.log1").unwrap();
         file_info.hbin_offset_absolute = 4096;
-        let (_, base_block_base) = BaseBlockBase::from_bytes(&file_info.buffer[..]).unwrap();
         let (_, mut log) = TransactionLog::from_bytes(&file_info.buffer[0..]).unwrap();
         log.log_entries[0].dirty_pages = Vec::new();
-        log.log_entries[0].sequence_number = 179;
+        log.log_entries[0].sequence_number = 4066;
         log.log_entries[1].dirty_pages = Vec::new();
-        log.log_entries[1].sequence_number = 181;
+        log.log_entries[1].sequence_number = 4068;
 
-        let (last_sequence_num, _) = log.update_bytes(&mut file_info, &mut state, MinCellKeyNode::default(), &base_block_base);
-        assert_eq!(179, last_sequence_num);
+        let original_items = TransactionLog::get_reg_items(&mut parser, 0)?;
+        let (last_sequence_num, _) = log.update_parser(&mut parser, original_items)?;
+        assert_eq!(4066, last_sequence_num);
         let mut expected_warning_logs = Logs::default();
-        expected_warning_logs.add(LogCode::WarningTransactionLog, &"Stopping log entry processing; the sequence number (181) does not follow the previous log entry's sequence number (179)");
-        assert_eq!(expected_warning_logs, state.info);
+        expected_warning_logs.add(LogCode::WarningBaseBlock, &"Hive requires recovery: primary and secondary sequence numbers do not match. 4019, 4018");
+        expected_warning_logs.add(LogCode::WarningTransactionLog, &"Stopping log entry processing; the sequence number (4068) does not follow the previous log entry's sequence number (4066)");
+        assert_eq!(expected_warning_logs, parser.state.info);
 
+        let original_items = TransactionLog::get_reg_items(&mut parser, 0)?;
         log.log_entries[0].has_valid_hashes = false;
-        let (last_sequence_num, _) = log.update_bytes(&mut file_info, &mut state, MinCellKeyNode::default(), &base_block_base);
+        let (last_sequence_num, _) = log.update_parser(&mut parser, original_items)?;
         assert_eq!(0, last_sequence_num);
-        expected_warning_logs.add(LogCode::WarningTransactionLog, &"Stopping log entry processing; hash mismatch at log entry with sequence number 179");
-        assert_eq!(expected_warning_logs, state.info);*/
+        expected_warning_logs.add(
+            LogCode::WarningTransactionLog,
+            &"Stopping log entry processing; hash mismatch at log entry with sequence number 4066",
+        );
+        assert_eq!(expected_warning_logs, parser.state.info);
+        Ok(())
     }
 
     #[test]
     fn test_update_bytes() {
-        /*let mut file_info = FileInfo::from_path("test_data/SYSTEM.LOG1").unwrap();
+        let mut file_info = FileInfo::from_path("test_data/system.log1").unwrap();
         file_info.hbin_offset_absolute = 4096;
-        let (_, log_entry) = LogEntry::from_bytes_internal(&file_info.buffer[512..]).unwrap();
+        let (_, log_entry) = LogEntry::from_bytes_internal(
+            file_info.buffer[..].as_ptr() as usize,
+            &file_info.buffer[512..],
+        )
+        .unwrap();
         assert_eq!(512, log_entry.file_offset_absolute);
-        assert_eq!(515584, log_entry.size);
-        assert_eq!(0, log_entry.flags);
-        assert_eq!(178, log_entry.sequence_number);
-        assert_eq!(7155712, log_entry.hive_bins_data_size);
-        assert_eq!(69, log_entry.dirty_pages_count);
-        assert_eq!(9787668550818779155, log_entry.hash1);
-        assert_eq!(7274014407108881154, log_entry.hash2);
-        assert_eq!(69, log_entry.dirty_pages.len());*/
+        assert_eq!(11776, log_entry.size);
+        assert_eq!(1, log_entry.flags);
+        assert_eq!(4064, log_entry.sequence_number);
+        assert_eq!(16445440, log_entry.hive_bins_data_size);
+        assert_eq!(2, log_entry.dirty_pages_count);
+        assert_eq!(9224533926344046332, log_entry.hash1);
+        assert_eq!(17775315420625959254, log_entry.hash2);
 
-        /* assert_eq!(DirtyPageRef {offset:0, size:4096}, log_entry.dirty_pages[0].dirty_page_ref);
-        assert_eq!(116, log_entry.dirty_pages[0].page_bytes[1880]);
-        assert_eq!(DirtyPageRef {offset:1708032, size:24576}, log_entry.dirty_pages[32].dirty_page_ref);
-        assert_eq!(2, log_entry.dirty_pages[32].page_bytes[3904]);
-        assert_eq!(DirtyPageRef {offset:7151616, size:4096}, log_entry.dirty_pages[68].dirty_page_ref);
-        assert_eq!(0, log_entry.dirty_pages[68].page_bytes[1880]);*/
+        assert_eq!(0, log_entry.dirty_pages[0].dirty_page_ref_offset);
+        assert_eq!(120, log_entry.dirty_pages[0].page_bytes[656]);
+        assert_eq!(4431872, log_entry.dirty_pages[1].dirty_page_ref_offset);
+        assert_eq!(208, log_entry.dirty_pages[1].page_bytes[2152]);
     }
 }
