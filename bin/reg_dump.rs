@@ -541,7 +541,8 @@ impl WriteXlsx {
                 full_val_cur = rest;
             }
             // Putting the label here to tie this data back to the main sheet
-            let truncated_label = format!(" [{}; row: {}]", Self::TRUNCATED, overflow_sheet.row+1);
+            let truncated_label =
+                format!(" [{}; row: {}]", Self::TRUNCATED, overflow_sheet.row + 1);
             overflow_sheet.write_string(0, &truncated_label)?;
             for (col, chunk) in full_val_chunks.iter().enumerate() {
                 overflow_sheet.write_string(u16::try_from(col + 1)?, chunk)?

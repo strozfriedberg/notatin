@@ -382,16 +382,18 @@ impl CellKeyValue {
             data_offsets_absolute.push(file_offset_absolute + DATA_OFFSET_RELATIVE_OFFSET);
             let data_size = data_size_raw ^ DATA_IS_RESIDENT_MASK;
             let resident_value = data_offset_relative.to_le_bytes();
-            if data_size as usize <= resident_value.len() {
-                value_bytes = data_type.get_value_bytes(
-                    &resident_value[..(data_size_raw ^ DATA_IS_RESIDENT_MASK) as usize],
-                );
-            } else {
-                logs.add(
-                    LogCode::WarningParse,
-                    &"data_size exceeds length of resident_value",
-                );
-                return (Vec::new(), Vec::new());
+            value_bytes = match resident_value.get(..data_size as usize) {
+                Some(val) => data_type.get_value_bytes(val),
+                None => {
+                    logs.add(
+                        LogCode::WarningParse,
+                        &format!(
+                            "data_size exceeds length of resident_value at file_offset {}",
+                            file_offset_absolute
+                        ),
+                    );
+                    return (Vec::new(), Vec::new());
+                }
             }
         }
         (value_bytes, data_offsets_absolute)
