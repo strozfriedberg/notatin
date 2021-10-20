@@ -46,7 +46,7 @@ fn main() -> Result<(), Error> {
             "--recovered-only 'Only export recovered items (applicable for tsv and xlsx output only)'",
         ))
         .arg(Arg::from_usage(
-            "--full-field-info 'Get the offset and length for each key/value field'",
+            "--full-field-info 'Get the offset and length for each key/value field (applicable for jsonl output only)'",
         ))
         .arg(Arg::from_usage(
             "-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'",

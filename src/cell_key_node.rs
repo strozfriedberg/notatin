@@ -305,6 +305,8 @@ impl CellKeyNode {
             }
 
             if let Some(deleted_values) = state.deleted_values.get(path) {
+                let mut deleted_values = deleted_values.to_vec();
+                deleted_values.sort_by(|a, b| a.detail.value_name().cmp(&b.detail.value_name()));
                 self.sub_values.extend(deleted_values.to_vec());
             }
         }

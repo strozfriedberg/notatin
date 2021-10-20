@@ -359,23 +359,42 @@ impl CellKeyValue {
         let mut data_offsets_absolute = Vec::new();
         if data_size_raw & DATA_IS_RESIDENT_MASK == 0 {
             let mut offset = data_offset_relative as usize + file_info.hbin_offset_absolute;
-            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw
-                && CellBigData::is_big_data_block(&file_info.buffer[offset..])
-            {
-                let (vb, offsets) =
-                    CellBigData::get_big_data_bytes(file_info, offset, data_type, data_size_raw)
+            match file_info.buffer.get(offset..) {
+                Some(slice) => {
+                    if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw
+                        && CellBigData::is_big_data_block(slice)
+                    {
+                        let (vb, offsets) = CellBigData::get_big_data_bytes(
+                            file_info,
+                            offset,
+                            data_type,
+                            data_size_raw,
+                        )
                         .or_else(|err| -> Result<(Vec<u8>, Vec<usize>), Error> {
                             logs.add(LogCode::WarningBigDataContent, &err);
                             Ok((Vec::new(), Vec::new()))
                         })
                         .expect("Error handled in or_else");
-                value_bytes = vb;
-                data_offsets_absolute.extend(offsets);
-            } else {
-                offset += mem::size_of::<i32>(); // skip over the size bytes
-                data_offsets_absolute.push(offset);
-                value_bytes = data_type
-                    .get_value_bytes(&file_info.buffer[offset..offset + data_size_raw as usize]);
+                        value_bytes = vb;
+                        data_offsets_absolute.extend(offsets);
+                    } else {
+                        offset += mem::size_of::<i32>(); // skip over the size bytes
+                        data_offsets_absolute.push(offset);
+                        value_bytes = data_type.get_value_bytes(
+                            &file_info.buffer[offset..offset + data_size_raw as usize],
+                        );
+                    }
+                }
+                None => {
+                    logs.add(
+                        LogCode::WarningParse,
+                        &format!(
+                            "value buffer offset ({}) invalid at file_offset {}",
+                            offset, file_offset_absolute
+                        ),
+                    );
+                    value_bytes = Vec::new();
+                }
             }
         } else {
             const DATA_OFFSET_RELATIVE_OFFSET: usize = 12;
@@ -392,7 +411,7 @@ impl CellKeyValue {
                             file_offset_absolute
                         ),
                     );
-                    return (Vec::new(), Vec::new());
+                    Vec::new()
                 }
             }
         }
