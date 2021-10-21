@@ -24,6 +24,7 @@ use crate::log::{LogCode, Logs};
 use crate::parser_recover_deleted::ParserRecoverDeleted;
 use crate::state::State;
 use crate::transaction_log::TransactionLog;
+use crate::util;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -264,15 +265,20 @@ impl Parser {
             (If recovery stops when applying log entries from this transaction log file, then recovery is resumed with the next
             transaction log file; the first log entry of the next transaction log file is expected to have a sequence number
             equal to N + 1, where N is a sequence number of the last log entry applied) */
-            for log in &mut parsed_transaction_logs {
+            for (index, log) in &mut parsed_transaction_logs.iter().enumerate() {
                 if log.base_block.primary_sequence_number >= primary_file_secondary_seq_num {
                     if new_sequence_number == 0
                         || (log.base_block.primary_sequence_number == new_sequence_number + 1)
                     {
-                        let (new_sequence_number_ret, prior_reg_items) =
-                            log.update_parser(self, original_items);
+                        util::write_console(&format!(
+                            "Applying transaction log {} of {}\n",
+                            index + 1,
+                            parsed_transaction_logs.len()
+                        ))?;
+                        let (new_seq_num_ret, prior_reg_items) =
+                            log.update_parser(self, original_items)?;
                         original_items = prior_reg_items;
-                        new_sequence_number = new_sequence_number_ret;
+                        new_sequence_number = new_seq_num_ret;
                     } else {
                         self.state.info.add(
                             LogCode::WarningTransactionLog,
@@ -740,7 +746,7 @@ mod tests {
         let (keys, keys_versions, keys_deleted, values, values_versions, values_deleted) =
             parser._count_all_keys_and_values_with_modified(None);
         assert_eq!(
-            (45587, 319, 31, 108178, 139, 244),
+            (45587, 289, 31, 108178, 139, 244),
             (
                 keys,
                 keys_versions,

@@ -241,13 +241,13 @@ impl CellKeyValue {
     const SIGNATURE: &'static str = "vk";
 
     fn check_size(size: i32, input: &[u8]) -> bool {
-        let size_abs = size.abs() as usize;
+        let size_abs = size.unsigned_abs() as usize;
         Self::MIN_CELL_VALUE_SIZE <= size_abs && size_abs <= input.len()
     }
 
     /// Returns the byte length of the cell (regardless of if it's allocated or free)
     pub(crate) fn get_cell_size(&self) -> usize {
-        self.detail.size().abs() as usize
+        self.detail.size().unsigned_abs() as usize
     }
 
     pub(crate) fn is_free(&self) -> bool {
@@ -359,31 +359,61 @@ impl CellKeyValue {
         let mut data_offsets_absolute = Vec::new();
         if data_size_raw & DATA_IS_RESIDENT_MASK == 0 {
             let mut offset = data_offset_relative as usize + file_info.hbin_offset_absolute;
-            if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw
-                && CellBigData::is_big_data_block(&file_info.buffer[offset..])
-            {
-                let (vb, offsets) =
-                    CellBigData::get_big_data_bytes(file_info, offset, data_type, data_size_raw)
+            match file_info.buffer.get(offset..) {
+                Some(slice) => {
+                    if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw
+                        && CellBigData::is_big_data_block(slice)
+                    {
+                        let (vb, offsets) = CellBigData::get_big_data_bytes(
+                            file_info,
+                            offset,
+                            data_type,
+                            data_size_raw,
+                        )
                         .or_else(|err| -> Result<(Vec<u8>, Vec<usize>), Error> {
                             logs.add(LogCode::WarningBigDataContent, &err);
                             Ok((Vec::new(), Vec::new()))
                         })
                         .expect("Error handled in or_else");
-                value_bytes = vb;
-                data_offsets_absolute.extend(offsets);
-            } else {
-                offset += mem::size_of::<i32>(); // skip over the size bytes
-                data_offsets_absolute.push(offset);
-                value_bytes = data_type
-                    .get_value_bytes(&file_info.buffer[offset..offset + data_size_raw as usize]);
+                        value_bytes = vb;
+                        data_offsets_absolute.extend(offsets);
+                    } else {
+                        offset += mem::size_of::<i32>(); // skip over the size bytes
+                        data_offsets_absolute.push(offset);
+                        value_bytes = data_type.get_value_bytes(
+                            &file_info.buffer[offset..offset + data_size_raw as usize],
+                        );
+                    }
+                }
+                None => {
+                    logs.add(
+                        LogCode::WarningParse,
+                        &format!(
+                            "value buffer offset ({}) invalid at file_offset {}",
+                            offset, file_offset_absolute
+                        ),
+                    );
+                    value_bytes = Vec::new();
+                }
             }
         } else {
             const DATA_OFFSET_RELATIVE_OFFSET: usize = 12;
             data_offsets_absolute.push(file_offset_absolute + DATA_OFFSET_RELATIVE_OFFSET);
+            let data_size = data_size_raw ^ DATA_IS_RESIDENT_MASK;
             let resident_value = data_offset_relative.to_le_bytes();
-            value_bytes = data_type.get_value_bytes(
-                &resident_value[..(data_size_raw ^ DATA_IS_RESIDENT_MASK) as usize],
-            );
+            value_bytes = match resident_value.get(..data_size as usize) {
+                Some(val) => data_type.get_value_bytes(val),
+                None => {
+                    logs.add(
+                        LogCode::WarningParse,
+                        &format!(
+                            "data_size exceeds length of resident_value at file_offset {}",
+                            file_offset_absolute
+                        ),
+                    );
+                    Vec::new()
+                }
+            }
         }
         (value_bytes, data_offsets_absolute)
     }
@@ -464,6 +494,13 @@ impl Cell for CellKeyValue {
     fn get_logs(&self) -> &Logs {
         &self.logs
     }
+
+    /// Returns true for an item that is deleted, modified, or is an allocated item that contains a modified version
+    fn has_or_is_recovered(&self) -> bool {
+        self.cell_state.is_deleted()
+            || self.cell_state == CellState::ModifiedTransactionLog
+            || !self.versions.is_empty()
+    }
 }
 
 /// Wrapper class to dynamically convert value_bytes into a parsed CellValue when serde serialize is called.
@@ -481,9 +518,9 @@ struct CellKeyValueForSerialization<'a> {
     updated_by_sequence_num: &'a Option<u32>,
     data_offsets_absolute: &'a Vec<usize>,
     state: &'a CellState,
-
     value: CellValue,
     value_parse_warnings: Option<Logs>,
+    versions: &'a Vec<CellKeyValue>,
 }
 
 impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
@@ -502,6 +539,7 @@ impl<'a> From<&'a CellKeyValue> for CellKeyValueForSerialization<'a> {
             state: &other.cell_state,
             value,
             value_parse_warnings,
+            versions: &other.versions,
         }
     }
 }

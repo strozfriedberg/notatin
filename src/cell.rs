@@ -38,6 +38,10 @@ impl CellState {
     pub fn is_deleted(self) -> bool {
         (self as i8) < 0
     }
+
+    pub fn is_deleted_primary_file(self) -> bool {
+        self == Self::DeletedPrimaryFile || self == Self::DeletedPrimaryFileSlack
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -75,8 +79,9 @@ impl CellType {
     }
 }
 
-pub(crate) trait Cell {
+pub trait Cell {
     fn get_file_offset_absolute(&self) -> usize;
     fn get_hash(&self) -> Option<blake3::Hash>;
     fn get_logs(&self) -> &crate::log::Logs;
+    fn has_or_is_recovered(&self) -> bool;
 }

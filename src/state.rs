@@ -160,9 +160,9 @@ pub(crate) struct State {
     pub hasher: Hasher,
 
     pub deleted_keys: ModifiedDeletedKeyMap,
-    pub updated_keys: ModifiedDeletedKeyMap,
+    pub modified_keys: ModifiedDeletedKeyMap,
     pub deleted_values: DeletedValueMap,
-    pub updated_values: ModifiedValueMap,
+    pub modified_values: ModifiedValueMap,
 }
 
 impl State {
@@ -182,9 +182,9 @@ impl Default for State {
             info: Logs::default(),
             hasher: Hasher::new(),
             deleted_keys: ModifiedDeletedKeyMap::new(),
-            updated_keys: ModifiedDeletedKeyMap::new(),
+            modified_keys: ModifiedDeletedKeyMap::new(),
             deleted_values: DeletedValueMap::new(),
-            updated_values: ModifiedValueMap::new(),
+            modified_values: ModifiedValueMap::new(),
         }
     }
 }
