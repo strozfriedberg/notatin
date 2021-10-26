@@ -76,6 +76,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
+#[cfg(feature = "build-binary")]
 impl From<xlsxwriter::XlsxError> for Error {
     fn from(error: xlsxwriter::XlsxError) -> Self {
         Error::XlsxWriter {

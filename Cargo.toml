@@ -17,10 +17,10 @@ thiserror = "1.0"
 winstructs = "0.3.0"
 blake3 = "0.3.8"
 regex = "1.5.4"
-xlsxwriter = "0.3.5"
-clap = "~2.33"
-paste = "1.0"
 crossterm = "0.21.0"
+paste = "1.0"
+xlsxwriter = { version = "0.3.5", optional = true }
+clap = { version = "2.33", optional = true }
 
 [dependencies.chrono]
 version = "0.4.10"
@@ -29,13 +29,18 @@ features = ["serde"]
 [dev-dependencies]
 criterion = "0.3"
 
+[features]
+build-binary = ["xlsxwriter", "clap"]
+
 [[bin]]
 name = "reg_compare"
 path = "./bin/reg_compare.rs"
+required-features = ["build-binary"]
 
 [[bin]]
 name = "reg_dump"
 path = "./bin/reg_dump.rs"
+required-features = ["build-binary"]
 
 [[bench]]
 name = "my_benchmark"
