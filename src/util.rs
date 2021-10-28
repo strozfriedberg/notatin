@@ -220,21 +220,21 @@ pub(crate) fn to_hex_string(bytes: &[u8]) -> String {
     s.trim_end().to_string()
 }
 
+pub fn escape_string(orig: &str) -> Cow<str> {
+    if orig.contains(&['\t', '\r', '\n', ',', '\"'][..]) {
+        let escaped = &str::replace(orig, "\"", "\"\"");
+        Cow::Owned(format!("\"{}\"", escaped))
+    } else {
+        Cow::Borrowed(orig)
+    }
+}
+
 #[allow(dead_code)]
 pub fn write_common_export_format<W: Write>(
     parser: &Parser,
     filter: Option<Filter>,
     output: W,
 ) -> Result<(), Error> {
-    fn escape_string(orig: &str) -> String {
-        if orig.contains(',') || orig.contains('\"') {
-            let escaped = &str::replace(orig, "\"", "\"\"");
-            format!("\"{}\"", escaped)
-        } else {
-            orig.to_string()
-        }
-    }
-
     fn get_alloc_char(state: &CellState) -> &str {
         match state {
             CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => "U",
@@ -824,6 +824,10 @@ mod tests {
 
     #[test]
     fn test_remove_nulls() {
-        assert_eq!("00 01 0203 04 05 FF", remove_nulls("00 01 02\003 04 05 FF"),);
+        assert_eq!(
+            "00 01 0203 04 05 FF",
+            remove_nulls("00 01 02\0\003 04\0 05 FF\0"),
+        );
+        assert_eq!("", remove_nulls("\0\0\0\0"),);
     }
 }
