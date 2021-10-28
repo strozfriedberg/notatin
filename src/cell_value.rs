@@ -18,19 +18,43 @@ use crate::field_serializers;
 use crate::log::{LogCode, Logs};
 use crate::util;
 use serde::Serialize;
+use strum_macros::IntoStaticStr;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, IntoStaticStr, PartialEq, Serialize)]
 pub enum CellValue {
-    ValueNone,
+    None,
     #[serde(serialize_with = "field_serializers::field_data_as_hex")]
-    ValueBinary(Vec<u8>),
-    ValueString(String),
-    ValueMultiString(Vec<String>),
-    ValueU32(u32),
-    ValueI32(i32),
-    ValueU64(u64),
-    ValueI64(i64),
-    ValueError,
+    Binary(Vec<u8>),
+    String(String),
+    MultiString(Vec<String>),
+    U32(u32),
+    I32(i32),
+    U64(u64),
+    I64(i64),
+    Error,
+}
+
+impl CellValue {
+    pub fn get_type(&self) -> String {
+        // take advantage of IntoStaticStr which will return the enum type as a str
+        let value_type: &str = self.into();
+        value_type.to_string()
+    }
+}
+
+impl std::fmt::Display for CellValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Binary(v) => write!(f, "{}", util::to_hex_string(v)),
+            Self::String(v) => write!(f, "{}", v),
+            Self::MultiString(v) => write!(f, "{:?}", v),
+            Self::U32(v) => write!(f, "{}", v),
+            Self::I32(v) => write!(f, "{}", v),
+            Self::U64(v) => write!(f, "{}", v),
+            Self::I64(v) => write!(f, "{}", v),
+            _ => write!(f, ""),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -49,7 +73,7 @@ impl DecodeFormat {
     ) -> (CellValue, Option<Logs>) {
         match self {
             DecodeFormat::Lznt1 | DecodeFormat::Utf16 | DecodeFormat::Utf16Multiple => {
-                if let CellValue::ValueBinary(b) = cell_value {
+                if let CellValue::Binary(b) = cell_value {
                     self.decode_bytes(b, offset)
                 } else {
                     let mut warnings = Logs::default();
@@ -57,7 +81,7 @@ impl DecodeFormat {
                         LogCode::WarningConversion,
                         &"Unsupported CellValue/format pair",
                     );
-                    (CellValue::ValueError, Some(warnings))
+                    (CellValue::Error, Some(warnings))
                 }
             }
             DecodeFormat::Rot13 => Self::decode_string(cell_value),
@@ -69,10 +93,10 @@ impl DecodeFormat {
         match self {
             DecodeFormat::Lznt1 => {
                 match util::decode_lznt1(value_bytes, offset, value_bytes.len()) {
-                    Ok(decompressed) => (CellValue::ValueBinary(decompressed), None),
+                    Ok(decompressed) => (CellValue::Binary(decompressed), None),
                     _ => {
                         warnings.add(LogCode::WarningConversion, &"Error decompressing lznt1");
-                        (CellValue::ValueError, Some(warnings))
+                        (CellValue::Error, Some(warnings))
                     }
                 }
             }
@@ -83,7 +107,7 @@ impl DecodeFormat {
                     &mut warnings,
                     "decode_content",
                 );
-                (CellValue::ValueString(s), warnings.get_option())
+                (CellValue::String(s), warnings.get_option())
             }
             DecodeFormat::Utf16Multiple => {
                 let m = util::from_utf16_le_strings(
@@ -92,21 +116,21 @@ impl DecodeFormat {
                     &mut warnings,
                     "decode_content",
                 );
-                (CellValue::ValueMultiString(m), warnings.get_option())
+                (CellValue::MultiString(m), warnings.get_option())
             }
-            _ => (CellValue::ValueNone, warnings.get_option()),
+            _ => (CellValue::None, warnings.get_option()),
         }
     }
 
     fn decode_string(cell_value: &CellValue) -> (CellValue, Option<Logs>) {
         match cell_value {
-            CellValue::ValueString(s) => (CellValue::ValueString(util::decode_rot13(s)), None),
-            CellValue::ValueMultiString(m) => {
+            CellValue::String(s) => (CellValue::String(util::decode_rot13(s)), None),
+            CellValue::MultiString(m) => {
                 let mut decoded = vec![];
                 for s in m {
                     decoded.push(util::decode_rot13(s));
                 }
-                (CellValue::ValueMultiString(decoded), None)
+                (CellValue::MultiString(decoded), None)
             }
             _ => {
                 let mut warnings = Logs::default();
@@ -114,7 +138,7 @@ impl DecodeFormat {
                     LogCode::WarningConversion,
                     &"Unsupported CellValue/format pair",
                 );
-                (CellValue::ValueError, Some(warnings))
+                (CellValue::Error, Some(warnings))
             }
         }
     }

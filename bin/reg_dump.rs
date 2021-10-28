@@ -106,8 +106,9 @@ fn main() -> Result<(), Error> {
     let mut stdout = stdout();
     stdout.write_all("Writing file".as_bytes())?;
     if output_type == OutputType::Xlsx {
-        let mut writer = WriteXlsx::new(output, recovered_only)?;
-        writer.write(&parser, filter)?;
+        WriteXlsx::new(output, recovered_only).write(&parser, filter)?;
+    } else if output_type == OutputType::Tsv {
+        WriteTsv::new(output, recovered_only)?.write(&parser, filter)?;
     } else {
         let write_file = File::create(output)?;
         if output_type == OutputType::Common {
@@ -118,104 +119,15 @@ fn main() -> Result<(), Error> {
                 iter.with_filter(filter);
             }
             let mut writer = BufWriter::new(write_file);
-            match output_type {
-                OutputType::Tsv => write_tsv(&mut writer, &parser, &mut iter, recovered_only)?,
-                _ => {
-                    for (index, key) in iter.iter().enumerate() {
-                        util::update_console_progress(index)?;
-                        writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
-                    }
-                }
+            for (index, key) in iter.iter().enumerate() {
+                util::update_console_progress(index)?;
+                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
             }
         }
     }
     stdout.write_all(format!("\nFinished writing {}\n", output).as_bytes())?;
     stdout.flush()?;
     Ok(())
-}
-
-fn write_tsv(
-    writer: &mut BufWriter<File>,
-    parser: &Parser,
-    iter: &mut ParserIterator,
-    recovered_only: bool,
-) -> Result<(), Error> {
-    writeln!(writer,"Key Path\tValue Name\tStatus\tPrevious Sequence Number\tModifying Sequence Number\tTimestamp\tFlags\tAccess Flags\tValue\tLogs")?;
-    for (index, key) in iter.iter().enumerate() {
-        util::update_console_progress(index)?;
-        write_key_tsv(&key, writer, false, recovered_only)?;
-    }
-    writeln!(writer, "\nLogs\n-----------")?;
-    parser.get_parse_logs().write(writer)?;
-    Ok(())
-}
-
-fn write_value_tsv(
-    cell_key_node: &CellKeyNode,
-    value: &CellKeyValue,
-    writer: &mut BufWriter<File>,
-    recovered_only: bool,
-) -> Result<(), Error> {
-    if !recovered_only || value.has_or_is_recovered() {
-        writeln!(
-            writer,
-            "{}\t{}\t{:?}\t{}\t{}\t\t\t\t{:?}\t{}",
-            cell_key_node.path,
-            value.get_pretty_name(),
-            value.cell_state,
-            get_sequence_num_string(value.sequence_num),
-            get_sequence_num_string(value.updated_by_sequence_num),
-            value.get_content().0,
-            value.logs
-        )?;
-    }
-    Ok(())
-}
-
-fn write_key_tsv(
-    cell_key_node: &CellKeyNode,
-    writer: &mut BufWriter<File>,
-    key_modified: bool,
-    recovered_only: bool,
-) -> Result<(), Error> {
-    if !recovered_only || cell_key_node.has_or_is_recovered() {
-        let mut logs = cell_key_node.logs.clone();
-        writeln!(
-            writer,
-            "{}\t\t{:?}\t{}\t{}\t{}\t{:?}\t{:?}\t\t{}",
-            cell_key_node.path,
-            cell_key_node.cell_state,
-            get_sequence_num_string(cell_key_node.sequence_num),
-            get_sequence_num_string(cell_key_node.updated_by_sequence_num),
-            util::format_date_time(cell_key_node.last_key_written_date_and_time()),
-            cell_key_node.key_node_flags(&mut logs),
-            cell_key_node.access_flags(&mut logs),
-            cell_key_node.logs
-        )?;
-
-        for sub_key in &cell_key_node.versions {
-            write_key_tsv(sub_key, writer, true, recovered_only)?;
-        }
-    }
-
-    if !key_modified {
-        // don't output values for modified keys; current/modified/deleted vals will be output via the current version of the key
-        for value in cell_key_node.value_iter() {
-            write_value_tsv(cell_key_node, &value, writer, recovered_only)?;
-
-            for sub_value in &value.versions {
-                write_value_tsv(cell_key_node, sub_value, writer, recovered_only)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn get_sequence_num_string(seq_num: Option<u32>) -> String {
-    match seq_num {
-        Some(seq_num) => format!("{}", seq_num),
-        _ => String::new(),
-    }
 }
 
 arg_enum! {
@@ -281,16 +193,19 @@ impl WriteXlsx {
     const ROW_HEIGHT: f64 = 16.0;
     const COL_WIDTH_WIDE: f64 = 50.0;
     const COL_WIDTH_NARROW: f64 = 23.0;
-    const COL_KEY_PATH: u16 = 0;
-    const COL_VALUE_NAME: u16 = 1;
-    const COL_STATUS: u16 = 2;
-    const COL_PREV_SEQ_NUM: u16 = 3;
-    const COL_MOD_SEQ_NUM: u16 = 4;
-    const COL_TIMESTAMP: u16 = 5;
-    const COL_FLAGS: u16 = 6;
-    const COL_ACCESS_FLAGS: u16 = 7;
-    const COL_VALUE: u16 = 8;
-    const COL_LOGS: u16 = 9;
+    const COL_WIDTH_TINY: f64 = 6.0;
+    const COL_INDEX: u16 = 0;
+    const COL_KEY_PATH: u16 = 1;
+    const COL_VALUE_NAME: u16 = 2;
+    const COL_VALUE_DATA: u16 = 3;
+    const COL_TIMESTAMP: u16 = 4;
+    const COL_STATUS: u16 = 5;
+    const COL_PREV_SEQ_NUM: u16 = 6;
+    const COL_MOD_SEQ_NUM: u16 = 7;
+    const COL_FLAGS: u16 = 8;
+    const COL_ACCESS_FLAGS: u16 = 9;
+    const COL_VALUE_TYPE: u16 = 10;
+    const COL_LOGS: u16 = 11;
     const MAX_EXCEL_CELL_LEN: usize = 32767;
     const MAX_TRUNCATED_CHARS: usize = 250;
     const TRUNCATED: &'static str = "truncated";
@@ -299,11 +214,11 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
-        Ok(WriteXlsx {
+    fn new(output: &str, recovered_only: bool) -> Self {
+        WriteXlsx {
             workbook: Workbook::new(output),
             recovered_only,
-        })
+        }
     }
 
     fn write(&mut self, parser: &Parser, filter: Option<Filter>) -> Result<(), Error> {
@@ -319,21 +234,21 @@ impl WriteXlsx {
             WorksheetState::new(self.workbook.add_worksheet(Some(Self::OVERFLOW))?);
 
         reg_items_sheet.sheet.set_column(
+            Self::COL_INDEX,
+            Self::COL_INDEX,
+            Self::COL_WIDTH_TINY,
+            None,
+        )?;
+        reg_items_sheet.sheet.set_column(
             Self::COL_KEY_PATH,
-            Self::COL_KEY_PATH,
+            Self::COL_VALUE_DATA,
             Self::COL_WIDTH_WIDE,
             None,
         )?;
         reg_items_sheet.sheet.set_column(
-            Self::COL_VALUE_NAME,
-            Self::COL_ACCESS_FLAGS,
-            Self::COL_WIDTH_NARROW,
-            None,
-        )?;
-        reg_items_sheet.sheet.set_column(
-            Self::COL_VALUE,
+            Self::COL_TIMESTAMP,
             Self::COL_LOGS,
-            Self::COL_WIDTH_WIDE,
+            Self::COL_WIDTH_NARROW,
             None,
         )?;
         reg_items_sheet.sheet.set_row(
@@ -348,15 +263,17 @@ impl WriteXlsx {
             ),
         )?;
 
+        reg_items_sheet.write_string(Self::COL_INDEX, "Index")?;
         reg_items_sheet.write_string(Self::COL_KEY_PATH, "Key Path")?;
         reg_items_sheet.write_string(Self::COL_VALUE_NAME, "Value Name")?;
+        reg_items_sheet.write_string(Self::COL_VALUE_DATA, "Value Data")?;
+        reg_items_sheet.write_string(Self::COL_TIMESTAMP, "Timestamp")?;
         reg_items_sheet.write_string(Self::COL_STATUS, "Status")?;
         reg_items_sheet.write_string(Self::COL_PREV_SEQ_NUM, "Previous Seq Num")?;
         reg_items_sheet.write_string(Self::COL_MOD_SEQ_NUM, "Modifying Seq Num")?;
-        reg_items_sheet.write_string(Self::COL_TIMESTAMP, "Timestamp")?;
         reg_items_sheet.write_string(Self::COL_FLAGS, "Flags")?;
         reg_items_sheet.write_string(Self::COL_ACCESS_FLAGS, "Access Flags")?;
-        reg_items_sheet.write_string(Self::COL_VALUE, "Value")?;
+        reg_items_sheet.write_string(Self::COL_VALUE_TYPE, "Value Type")?;
         reg_items_sheet.write_string(Self::COL_LOGS, "Logs")?;
         reg_items_sheet.sheet.freeze_panes(1, 0);
 
@@ -406,12 +323,17 @@ impl WriteXlsx {
             )?;
 
             let mut logs = cell_key_node.logs.clone();
+            reg_items_sheet.write_number(Self::COL_INDEX, reg_items_sheet.row.into())?;
             Self::check_write_string(
                 reg_items_sheet,
                 overflow_sheet,
                 Self::COL_KEY_PATH,
                 &cell_key_node.path,
                 &link_format,
+            )?;
+            reg_items_sheet.write_string(
+                Self::COL_TIMESTAMP,
+                &util::format_date_time(cell_key_node.last_key_written_date_and_time()),
             )?;
             reg_items_sheet
                 .write_string(Self::COL_STATUS, &format!("{:?}", cell_key_node.cell_state))?;
@@ -421,10 +343,6 @@ impl WriteXlsx {
             if let Some(sequence_num) = cell_key_node.updated_by_sequence_num {
                 reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num.into())?;
             }
-            reg_items_sheet.write_string(
-                Self::COL_TIMESTAMP,
-                &util::format_date_time(cell_key_node.last_key_written_date_and_time()),
-            )?;
             reg_items_sheet.write_string(
                 Self::COL_FLAGS,
                 &format!("{:?}", cell_key_node.key_node_flags(&mut logs)),
@@ -484,6 +402,7 @@ impl WriteXlsx {
             .sheet
             .set_row(reg_items_sheet.row, Self::ROW_HEIGHT, Some(&row_format))?;
 
+        reg_items_sheet.write_number(Self::COL_INDEX, reg_items_sheet.row.into())?;
         Self::check_write_string(
             reg_items_sheet,
             overflow_sheet,
@@ -498,6 +417,13 @@ impl WriteXlsx {
             &value.get_pretty_name(),
             &link_format,
         )?;
+        Self::check_write_string(
+            reg_items_sheet,
+            overflow_sheet,
+            Self::COL_VALUE_DATA,
+            &format!("{}", value.get_content().0),
+            &link_format,
+        )?;
         reg_items_sheet.write_string(Self::COL_STATUS, &format!("{:?}", value.cell_state))?;
         if let Some(sequence_num) = value.sequence_num {
             reg_items_sheet.write_number(Self::COL_PREV_SEQ_NUM, sequence_num.into())?;
@@ -505,13 +431,15 @@ impl WriteXlsx {
         if let Some(sequence_num) = value.updated_by_sequence_num {
             reg_items_sheet.write_number(Self::COL_MOD_SEQ_NUM, sequence_num.into())?;
         }
+
         Self::check_write_string(
             reg_items_sheet,
             overflow_sheet,
-            Self::COL_VALUE,
-            &format!("{:?}", value.get_content().0),
+            Self::COL_VALUE_TYPE,
+            &value.get_content().0.get_type(),
             &link_format,
         )?;
+
         Self::check_write_string(
             reg_items_sheet,
             overflow_sheet,
@@ -577,14 +505,18 @@ impl WriteXlsx {
         val: &str,
         link_format: &Format,
     ) -> Result<(), Error> {
-        let val = util::remove_nulls(val); // xlsxwriter panics when provided input with nulls
-        Self::write_string_handle_overflow(
-            primary_sheet,
-            overflow_sheet,
-            primary_sheet_col,
-            val,
-            link_format,
-        )
+        if !val.is_empty() {
+            let val = util::remove_nulls(val); // xlsxwriter panics when provided input with nulls
+            Self::write_string_handle_overflow(
+                primary_sheet,
+                overflow_sheet,
+                primary_sheet_col,
+                val,
+                link_format,
+            )
+        } else {
+            Ok(())
+        }
     }
 
     fn get_formatters(
@@ -612,5 +544,110 @@ impl WriteXlsx {
         }
         link_format = link_format.set_underline(FormatUnderline::Single);
         (row_format, link_format)
+    }
+}
+
+struct WriteTsv {
+    index: usize,
+    recovered_only: bool,
+    writer: BufWriter<File>,
+}
+
+impl WriteTsv {
+    fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
+        let write_file = File::create(output)?;
+        let writer = BufWriter::new(write_file);
+        Ok(WriteTsv {
+            index: 0,
+            recovered_only,
+            writer,
+        })
+    }
+
+    fn write(&mut self, parser: &Parser, filter: Option<Filter>) -> Result<(), Error> {
+        let mut iter = ParserIterator::new(parser);
+        if let Some(filter) = filter {
+            iter.with_filter(filter);
+        }
+
+        writeln!(self.writer,"Index\tKey Path\tValue Name\tValue Data\tTimestamp\tStatus\tPrevious Seq Num\tModifying Seq Num\tFlags\tAccess Flags\tValue Type\tLogs")?;
+        for (index, key) in iter.iter().enumerate() {
+            util::update_console_progress(index)?;
+            self.write_key_tsv(&key, false)?;
+        }
+        writeln!(self.writer, "\nLogs\n-----------")?;
+        parser.get_parse_logs().write::<File>(&mut self.writer)?;
+        Ok(())
+    }
+
+    fn write_value_tsv(
+        &mut self,
+        cell_key_node: &CellKeyNode,
+        value: &CellKeyValue,
+    ) -> Result<(), Error> {
+        if !self.recovered_only || value.has_or_is_recovered() {
+            self.index += 1;
+            writeln!(
+                self.writer,
+                "{index}\t{key_path}\t{value_name}\t{value_data}\t\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t\t\t{value_type}\t{logs}",
+                index = self.index,
+                key_path = util::escape_string(&cell_key_node.path),
+                value_name = util::escape_string(&value.get_pretty_name()),
+                value_data = util::escape_string(&value.get_content().0.to_string()),
+                status = value.cell_state,
+                prev_seq_num = Self::get_sequence_num_string(value.sequence_num),
+                mod_seq_num = Self::get_sequence_num_string(value.updated_by_sequence_num),
+                value_type = value.get_content().0.get_type(),
+                logs = util::escape_string(&value.logs.to_string())
+            )?;
+        }
+        Ok(())
+    }
+
+    fn write_key_tsv(
+        &mut self,
+        cell_key_node: &CellKeyNode,
+        key_modified: bool,
+    ) -> Result<(), Error> {
+        if !self.recovered_only || cell_key_node.has_or_is_recovered() {
+            let mut logs = cell_key_node.logs.clone();
+            self.index += 1;
+            writeln!(
+                self.writer,
+                "{index}\t{key_path}\t\t\t{timestamp}\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t{flags:?}\t{access_flags:?}\t\t{logs}",
+                index = self.index,
+                key_path = util::escape_string(&cell_key_node.path),
+                timestamp = util::format_date_time(cell_key_node.last_key_written_date_and_time()),
+                status = cell_key_node.cell_state,
+                prev_seq_num = Self::get_sequence_num_string(cell_key_node.sequence_num),
+                mod_seq_num = Self::get_sequence_num_string(cell_key_node.updated_by_sequence_num),
+                flags = cell_key_node.key_node_flags(&mut logs),
+                access_flags = cell_key_node.access_flags(&mut logs),
+                logs = util::escape_string(&cell_key_node.logs.to_string())
+            )?;
+
+            for sub_key in &cell_key_node.versions {
+                self.write_key_tsv(sub_key, true)?;
+            }
+        }
+
+        if !key_modified {
+            // don't output values for modified keys; current/modified/deleted vals will be output via the current version of the key
+            for value in cell_key_node.value_iter() {
+                self.write_value_tsv(cell_key_node, &value)?;
+
+                for sub_value in &value.versions {
+                    self.write_value_tsv(cell_key_node, sub_value)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn get_sequence_num_string(seq_num: Option<u32>) -> String {
+        match seq_num {
+            Some(seq_num) => format!("{}", seq_num),
+            _ => String::new(),
+        }
     }
 }

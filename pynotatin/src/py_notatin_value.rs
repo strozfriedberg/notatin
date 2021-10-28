@@ -96,13 +96,13 @@ impl PyNotatinValue {
     /// Returns typed data based upon the values's data_type
     pub(crate) fn prepare_content(py: Python, content: &CellValue) -> Option<PyObject> {
         match content {
-            CellValue::ValueString(content) => Some(content.to_object(py)),
-            CellValue::ValueI32(content) => Some(content.to_object(py)),
-            CellValue::ValueU32(content) => Some(content.to_object(py)),
-            CellValue::ValueU64(content) => Some(content.to_object(py)),
-            CellValue::ValueI64(content) => Some(content.to_object(py)),
-            CellValue::ValueMultiString(content) => Some(content.to_object(py)),
-            CellValue::ValueBinary(content) => {
+            CellValue::String(content) => Some(content.to_object(py)),
+            CellValue::I32(content) => Some(content.to_object(py)),
+            CellValue::U32(content) => Some(content.to_object(py)),
+            CellValue::U64(content) => Some(content.to_object(py)),
+            CellValue::I64(content) => Some(content.to_object(py)),
+            CellValue::MultiString(content) => Some(content.to_object(py)),
+            CellValue::Binary(content) => {
                 Some(pyo3::types::PyBytes::new(py, content).to_object(py))
             }
             _ => None,
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(lznt1_decoded_buffer, decoded_value);
 
         let py_notatin_content = PyNotatinContent {
-            inner: CellValue::ValueBinary(lznt1_buffer),
+            inner: CellValue::Binary(lznt1_buffer),
         };
         let decoded_value = py_notatin_content
             .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
@@ -317,7 +317,7 @@ mod tests {
             .read_to_end(&mut utf16_multiple_buffer)
             .unwrap();
         let py_notatin_content = PyNotatinContent {
-            inner: CellValue::ValueBinary(utf16_multiple_buffer),
+            inner: CellValue::Binary(utf16_multiple_buffer),
         };
         let decoded_value = py_notatin_content
             .decode(py, &PyNotatinDecodeFormat::utf16_multiple(), 0)?
@@ -344,7 +344,7 @@ mod tests {
             0x64, 0x00, 0x61, 0x00, 0x74, 0x00, 0x61, 0x00, 0x2E, 0x00, 0x37, 0x00, 0x7A, 0x00,
         ];
         let py_notatin_content = PyNotatinContent {
-            inner: CellValue::ValueBinary(utf16),
+            inner: CellValue::Binary(utf16),
         };
         let decoded_value = py_notatin_content
             .decode(py, &PyNotatinDecodeFormat::utf16(), 0)?
@@ -356,7 +356,7 @@ mod tests {
         assert_eq!(expected_output, decoded_value);
 
         let py_notatin_content = PyNotatinContent {
-            inner: CellValue::ValueString("Abgngva havg grfg.".to_string()),
+            inner: CellValue::String("Abgngva havg grfg.".to_string()),
         };
         let decoded_value = py_notatin_content
             .decode(py, &PyNotatinDecodeFormat::rot13(), 0)?

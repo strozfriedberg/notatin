@@ -101,7 +101,7 @@ impl CellKeyValueDataTypes {
         logs: &mut Logs,
     ) -> Result<CellValue, Error> {
         match input_vec {
-            None => Ok(CellValue::ValueNone),
+            None => Ok(CellValue::None),
             Some(input_vec) => {
                 if let Some(data_type_len) = self.get_data_type_len() {
                     if input_vec.len() < data_type_len {
@@ -109,49 +109,49 @@ impl CellKeyValueDataTypes {
                             LogCode::WarningConversion,
                             &"Too few input bytes for data type",
                         );
-                        return Ok(CellValue::ValueBinary(input_vec.to_vec()));
+                        return Ok(CellValue::Binary(input_vec.to_vec()));
                     }
                 }
                 let input = &input_vec[..];
                 let cv = match self {
                     CellKeyValueDataTypes::REG_SZ
                     | CellKeyValueDataTypes::REG_EXPAND_SZ
-                    | CellKeyValueDataTypes::REG_LINK => CellValue::ValueString(
+                    | CellKeyValueDataTypes::REG_LINK => CellValue::String(
                         util::from_utf16_le_string(input, input.len(), logs, "Get value content"),
                     ),
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT8
-                    | CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN => CellValue::ValueU32(
+                    | CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN => CellValue::U32(
                         u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32,
                     ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_INT16 => CellValue::ValueI32(
+                    CellKeyValueDataTypes::REG_COMPOSITE_INT16 => CellValue::I32(
                         i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into()?) as i32,
                     ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_UINT16 => CellValue::ValueU32(
+                    CellKeyValueDataTypes::REG_COMPOSITE_UINT16 => CellValue::U32(
                         u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into()?) as u32,
                     ),
                     CellKeyValueDataTypes::REG_DWORD
-                    | CellKeyValueDataTypes::REG_COMPOSITE_UINT32 => CellValue::ValueU32(
+                    | CellKeyValueDataTypes::REG_COMPOSITE_UINT32 => CellValue::U32(
                         u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into()?) as u32,
                     ),
-                    CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => CellValue::ValueU32(
+                    CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => CellValue::U32(
                         u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into()?) as u32,
                     ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_INT32 => CellValue::ValueI32(
+                    CellKeyValueDataTypes::REG_COMPOSITE_INT32 => CellValue::I32(
                         i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into()?),
                     ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_INT64 => CellValue::ValueI64(
+                    CellKeyValueDataTypes::REG_COMPOSITE_INT64 => CellValue::I64(
                         i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into()?),
                     ),
                     CellKeyValueDataTypes::REG_QWORD
                     | CellKeyValueDataTypes::REG_COMPOSITE_UINT64
-                    | CellKeyValueDataTypes::REG_FILETIME => CellValue::ValueU64(
-                        u64::from_le_bytes(input[0..mem::size_of::<u64>()].try_into()?),
-                    ),
-                    CellKeyValueDataTypes::REG_BIN => CellValue::ValueBinary(input.to_vec()),
-                    CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::ValueMultiString(
+                    | CellKeyValueDataTypes::REG_FILETIME => CellValue::U64(u64::from_le_bytes(
+                        input[0..mem::size_of::<u64>()].try_into()?,
+                    )),
+                    CellKeyValueDataTypes::REG_BIN => CellValue::Binary(input.to_vec()),
+                    CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::MultiString(
                         util::from_utf16_le_strings(input, input.len(), logs, "Get value content"),
                     ),
-                    _ => CellValue::ValueBinary(input.to_vec()),
+                    _ => CellValue::Binary(input.to_vec()),
                 };
                 Ok(cv)
             }
@@ -452,7 +452,7 @@ impl CellKeyValue {
             .get_value_content(self.detail.value_bytes().as_ref(), &mut warnings)
             .or_else(|err| -> Result<CellValue, Error> {
                 warnings.add(LogCode::WarningContent, &err);
-                Ok(CellValue::ValueError)
+                Ok(CellValue::Error)
             })
             .expect("Error handled in or_else");
 
@@ -681,7 +681,7 @@ mod tests {
         file_info.hbin_offset_absolute = 4096;
         key_value.read_value_bytes(&file_info, &mut state);
         assert_eq!(
-            (CellValue::ValueString("5.0".to_string()), None),
+            (CellValue::String("5.0".to_string()), None),
             key_value.get_content()
         );
     }
@@ -731,10 +731,10 @@ mod tests {
         lznt1_decoded_file
             .read_to_end(&mut lznt1_decoded_buffer)
             .unwrap();
-        let expected_output = CellValue::ValueBinary(lznt1_decoded_buffer);
+        let expected_output = CellValue::Binary(lznt1_decoded_buffer);
         assert_eq!(expected_output, decoded_value);
 
-        let cell_value_lznt1 = CellValue::ValueBinary(lznt1_buffer);
+        let cell_value_lznt1 = CellValue::Binary(lznt1_buffer);
         let (decoded_value, _) = cell_value_lznt1.decode_content(&DecodeFormat::Lznt1, 8);
         assert_eq!(expected_output, decoded_value);
 
@@ -742,7 +742,7 @@ mod tests {
             .decode_content(&DecodeFormat::Lznt1, 8)
             .0
             .decode_content(&DecodeFormat::Utf16Multiple, 1860);
-        let expected_output = CellValue::ValueMultiString(vec![
+        let expected_output = CellValue::MultiString(vec![
             r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string(),
             r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\LOGONUI.EXE".to_string(),
             r"\DEVICE\HARDDISKVOLUME2\WINDOWS\EXPLORER.EXE".to_string(),
@@ -760,9 +760,8 @@ mod tests {
             .decode_content(&DecodeFormat::Lznt1, 8)
             .0
             .decode_content(&DecodeFormat::Utf16, 1860);
-        let expected_output = CellValue::ValueString(
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string(),
-        );
+        let expected_output =
+            CellValue::String(r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string());
         assert_eq!(expected_output, decoded_value);
 
         let mut utf16_multiple_file = File::open("test_data/utf16_multiple_buffer").unwrap();
@@ -777,7 +776,7 @@ mod tests {
             .detail
             .set_value_bytes(&Some(utf16_multiple_buffer.clone()), 0);
         let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Utf16Multiple, 0);
-        let expected_output = CellValue::ValueMultiString(vec![
+        let expected_output = CellValue::MultiString(vec![
             "NAS_requested_data.7z".to_string(),
             "BlackHarrier_D7_i686_FDE_20141219.dd.7z".to_string(),
             "BlackHarrier_D7_amd64_20141217.7z".to_string(),
@@ -790,7 +789,7 @@ mod tests {
         ]);
         assert_eq!(expected_output, decoded_value);
 
-        let cell_value_utf16_multiple = CellValue::ValueBinary(utf16_multiple_buffer);
+        let cell_value_utf16_multiple = CellValue::Binary(utf16_multiple_buffer);
         let (decoded_value, _) =
             cell_value_utf16_multiple.decode_content(&DecodeFormat::Utf16Multiple, 0);
         assert_eq!(expected_output, decoded_value);
@@ -807,10 +806,10 @@ mod tests {
             .detail
             .set_value_bytes(&Some(utf16.clone()), 0);
         let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Utf16, 0);
-        let expected_output = CellValue::ValueString("NAS_requested_data.7z".to_string());
+        let expected_output = CellValue::String("NAS_requested_data.7z".to_string());
         assert_eq!(expected_output, decoded_value);
 
-        let cell_value_utf16 = CellValue::ValueBinary(utf16);
+        let cell_value_utf16 = CellValue::Binary(utf16);
         let (decoded_value, _) = cell_value_utf16.decode_content(&DecodeFormat::Utf16, 0);
         assert_eq!(expected_output, decoded_value);
 
@@ -826,10 +825,10 @@ mod tests {
         cell_key_value.detail.set_data_type_raw(&1, 0);
         cell_key_value.data_type = CellKeyValueDataTypes::REG_SZ;
         let (decoded_value, _) = cell_key_value.decode_content(&DecodeFormat::Rot13, 0);
-        let expected_output = CellValue::ValueString("Notatin unit test.".to_string());
+        let expected_output = CellValue::String("Notatin unit test.".to_string());
         assert_eq!(expected_output, decoded_value);
 
-        let cell_value_rot13 = CellValue::ValueString("Abgngva havg grfg.".to_string());
+        let cell_value_rot13 = CellValue::String("Abgngva havg grfg.".to_string());
         let (decoded_value, _) = cell_value_rot13.decode_content(&DecodeFormat::Rot13, 0);
         assert_eq!(expected_output, decoded_value);
     }
@@ -858,7 +857,7 @@ mod tests {
             key_node.sub_values[1].detail.value_name()
         );
         let (cell_value, _) = key_node.sub_values[1].get_content();
-        if let CellValue::ValueBinary(content) = cell_value {
+        if let CellValue::Binary(content) = cell_value {
             assert_eq!(81725, content.len());
             content.iter().for_each(|c| assert_eq!(50, *c));
         } else {

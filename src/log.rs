@@ -75,17 +75,16 @@ impl Logs {
         }
     }
 
-    pub fn write<W: Write>(&self, output: W) -> Result<(), Error> {
-        let mut writer = BufWriter::new(output);
+    pub fn write<W: Write>(&self, writer: &mut BufWriter<std::fs::File>) -> Result<(), Error> {
         if let Some(logs) = &self.logs {
             for log in logs {
-                writeln!(&mut writer, "{:?} {}", log.code, log.text)?;
+                writeln!(writer, "{:?} {}", log.code, log.text)?;
             }
         }
         Ok(())
     }
 
-    pub fn get_string(&self) -> String {
+    pub(crate) fn get_string(&self) -> String {
         let mut ret = String::new();
         if let Some(logs) = &self.logs {
             for log in logs {
@@ -98,7 +97,7 @@ impl Logs {
 
 impl fmt::Display for Logs {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.get_string())
+        write!(f, "{}", self.get_string())
     }
 }
 

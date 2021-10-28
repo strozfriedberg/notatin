@@ -27,6 +27,9 @@ def py_notatin_dump():
 ```
 See `test_reg.py` for other usage examples (particularly regarding accessing specific keys and values directly).
 
+## Unit tests
+Use `cargo test --no-default-features` to run the Rust unit tests. The `--no-default-featues` option is required due to this [known issue](https://pyo3.rs/v0.13.2/faq.html#i-cant-run-cargo-test-im-having-linker-issues-like-symbol-not-found-or-undefined-reference-to-_pyexc_systemerror) in PyO3.
+
 ## Copyright
 Copyright 2021 Aon Cyber Solutions. Notatin and PyNotatin are licensed under the Apache License, Version 2.0.
 
