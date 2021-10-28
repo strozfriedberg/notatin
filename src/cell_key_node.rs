@@ -394,7 +394,10 @@ impl CellKeyNode {
         Self::read_from_slice(
             file_info,
             state,
-            &file_info.buffer[options.offset..],
+            file_info
+                .buffer
+                .get(options.offset..)
+                .ok_or_else(|| Error::any("read: buffer too small"))?,
             options,
         )
     }
@@ -615,7 +618,10 @@ impl CellKeyNode {
                 }
                 let offset = *val as usize + file_info.hbin_offset_absolute;
                 let (_, mut cell_key_value) = CellKeyValue::from_bytes(
-                    &file_info.buffer[offset..],
+                    file_info
+                        .buffer
+                        .get(offset..)
+                        .ok_or_else(|| Error::any("read_values: buffer too small"))?,
                     offset,
                     sequence_num,
                     state.get_full_field_info,
@@ -662,8 +668,13 @@ impl CellKeyNode {
         key_values_count: u32,
         list_offset_relative: i32,
     ) -> IResult<&[u8], Vec<u32>> {
-        let slice: &[u8] =
-            &file_info.buffer[list_offset_relative as usize + file_info.hbin_offset_absolute..];
+        let slice = file_info
+            .buffer
+            .get(list_offset_relative as usize + file_info.hbin_offset_absolute..)
+            .ok_or(nom::Err::Error(nom::error::Error {
+                input: &file_info.buffer[..],
+                code: nom::error::ErrorKind::Eof,
+            }))?;
         let (slice, _size) = le_u32(slice)?;
         let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
         Ok((slice, list))
@@ -676,8 +687,10 @@ impl CellKeyNode {
         list_offset_relative: u32,
     ) -> Result<Vec<u32>, Error> {
         let file_offset_absolute = list_offset_relative as usize + file_info.hbin_offset_absolute;
-        let slice = &file_info.buffer[file_offset_absolute..];
-
+        let slice = file_info
+            .buffer
+            .get(file_offset_absolute..)
+            .ok_or_else(|| Error::any("parse_sub_key_list: buffer too small"))?;
         // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
         // Look for the ri list first and follow the pointers
         match SubKeyListRi::from_bytes(slice) {
@@ -1278,8 +1291,13 @@ mod tests {
             key_node.access_flags(&mut logs)
         );
 
-        let slice = &file_info.buffer[0..10];
-        let ret = CellKeyNode::from_bytes(&mut state, slice, 0, &String::new(), None);
+        let ret = CellKeyNode::from_bytes(
+            &mut state,
+            &file_info.buffer[0..10],
+            0,
+            &String::new(),
+            None,
+        );
         let remaining = &file_info.buffer[4..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {
             input: remaining,

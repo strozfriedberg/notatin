@@ -69,7 +69,11 @@ impl Parser {
     }
 
     pub(crate) fn init_root(&mut self) -> Result<(), Error> {
-        let input = &self.file_info.buffer[self.file_info.hbin_offset_absolute..];
+        let input = &self
+            .file_info
+            .buffer
+            .get(self.file_info.hbin_offset_absolute..)
+            .ok_or_else(|| Error::any("init_root: buffer too small"))?;
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.file_info, input)?;
         self.hive_bin_header = Some(hive_bin_header);
         let root = CellKeyNode::read(
@@ -94,11 +98,11 @@ impl Parser {
         self.file_info.hbin_offset_absolute =
             input.as_ptr() as usize - self.file_info.buffer.as_ptr() as usize;
         self.base_block = Some(base_block);
-        Ok(self.check_base_block())
+        self.check_base_block()
     }
 
     /// Checks if the base block is a supported format. Returns a tuple of (is_supported_format, has_bad_checksum)
-    fn check_base_block(&mut self) -> (bool, bool) {
+    fn check_base_block(&mut self) -> Result<(bool, bool), Error> {
         if self.is_supported_file_type() {
             let mut has_bad_checksum = false;
             let base_block = &self
@@ -115,7 +119,7 @@ impl Parser {
                     )
                 );
             }
-            let checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
+            let checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200])?;
             if checksum != base_block.checksum {
                 self.state.info.add(
                     LogCode::WarningBaseBlock,
@@ -123,14 +127,14 @@ impl Parser {
                 );
                 has_bad_checksum = true;
             }
-            return (true, has_bad_checksum);
+            return Ok((true, has_bad_checksum));
         } else {
             self.state.info.add(
                 LogCode::WarningBaseBlock,
                 &"Unsupported registry file type.",
             );
         }
-        (false, false)
+        Ok((false, false))
     }
 
     fn is_supported_file_type(&self) -> bool {
@@ -198,8 +202,12 @@ impl Parser {
         let newest_log = parsed_transaction_logs
             .last()
             .expect("shouldn't be here unless we have logs");
-        self.file_info.buffer[..BaseBlockBase::BASE_BLOCK_LEN]
-            .copy_from_slice(&newest_log.base_block_bytes);
+        let slice = self
+            .file_info
+            .buffer
+            .get_mut(..BaseBlockBase::BASE_BLOCK_LEN)
+            .ok_or_else(|| Error::any("handle_bad_checksum: buffer too small"))?;
+        slice.copy_from_slice(&newest_log.base_block_bytes);
 
         // Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
         //  "If a primary file contains an invalid base block, only the transaction log file with latest log entries is used in the recovery."
@@ -231,7 +239,7 @@ impl Parser {
             .copy_from_slice(&new_sequence_number_bytes);
 
         // Update the checksum
-        let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200]);
+        let new_checksum = BaseBlockBase::calculate_checksum(&self.file_info.buffer[..0x200])?;
         self.file_info.buffer[BaseBlockBase::CHECKSUM_OFFSET
             ..BaseBlockBase::CHECKSUM_OFFSET + std::mem::size_of_val(&new_checksum)]
             .copy_from_slice(&new_checksum.to_le_bytes());

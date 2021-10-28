@@ -38,7 +38,12 @@ pub struct CellBigData {
 
 impl CellBigData {
     pub(crate) fn is_big_data_block(input: &[u8]) -> bool {
-        tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(&input[4..]).map_or(false, |_| true)
+        match input.get(4..) {
+            Some(slice) => {
+                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).map_or(false, |_| true)
+            }
+            None => false,
+        }
     }
 
     /// Uses nom to parse a big data (db) hive bin cell. Returns a tuple of Self and the starting ptr offset
@@ -70,8 +75,11 @@ impl CellBigData {
         data_type: &CellKeyValueDataTypes,
         data_size: u32,
     ) -> Result<(Vec<u8>, Vec<usize>), Error> {
-        let (_, (hive_bin_cell_big_data, _)) =
-            CellBigData::from_bytes(&file_info.buffer[offset..])?;
+        let slice = file_info
+            .buffer
+            .get(offset..)
+            .ok_or_else(|| Error::any("get_big_data_bytes: buffer too small"))?;
+        let (_, (hive_bin_cell_big_data, _)) = CellBigData::from_bytes(slice)?;
         let (_, data_offsets_absolute) =
             hive_bin_cell_big_data.parse_big_data_offsets(file_info)?;
 
@@ -84,7 +92,10 @@ impl CellBigData {
                     size.unsigned_abs(),
                     std::cmp::min(data_size_remaining, CellKeyValue::BIG_DATA_SIZE_THRESHOLD),
                 );
-                big_data_buffer.extend_from_slice(&input[..size_to_read as usize]);
+                let slice = input
+                    .get(..size_to_read as usize)
+                    .ok_or_else(|| Error::any("get_big_data_bytes: buffer too small"))?;
+                big_data_buffer.extend_from_slice(slice);
                 data_size_remaining -= size_to_read;
             }
         }
@@ -95,14 +106,28 @@ impl CellBigData {
     }
 
     fn parse_big_data_size(file_info: &FileInfo, offset: u32) -> IResult<&[u8], i32> {
-        le_i32(&file_info.buffer[file_info.hbin_offset_absolute + offset as usize..])
+        let slice = file_info
+            .buffer
+            .get(file_info.hbin_offset_absolute + offset as usize..)
+            .ok_or(nom::Err::Error(nom::error::Error {
+                input: &file_info.buffer[..],
+                code: nom::error::ErrorKind::Eof,
+            }))?;
+        le_i32(slice)
     }
 
     fn parse_big_data_offsets<'a>(&self, file_info: &'a FileInfo) -> IResult<&'a [u8], Vec<u32>> {
-        let (input, _size) = le_u32(
-            &file_info.buffer
-                [file_info.hbin_offset_absolute + self.segment_list_offset_relative as usize..],
-        )?;
+        let slice = file_info
+            .buffer
+            .get(
+                file_info.hbin_offset_absolute
+                    + self.segment_list_offset_relative as usize as usize..,
+            )
+            .ok_or(nom::Err::Error(nom::error::Error {
+                input: &file_info.buffer[..],
+                code: nom::error::ErrorKind::Eof,
+            }))?;
+        let (input, _size) = le_u32(slice)?;
         let (_, list) = count(le_u32, self.count as usize)(input)?;
         Ok((input, list))
     }
@@ -165,5 +190,19 @@ mod tests {
         };
 
         assert_eq!(expected_output, big_data);
+    }
+
+    #[test]
+    fn test_get_big_data_bytes() {
+        let file_info = FileInfo {
+            hbin_offset_absolute: 0,
+            buffer: [
+                0xF0, 0xFF, 0xFF, 0xFF, 0x20, 0x30, 0x00, 0x00, 0x20, 0x70, 0x00, 0x00,
+            ]
+            .to_vec(),
+        };
+        let res =
+            CellBigData::get_big_data_bytes(&file_info, 20, &CellKeyValueDataTypes::REG_DWORD, 4);
+        assert_eq!(Err(Error::any("get_big_data_bytes: buffer too small")), res);
     }
 }

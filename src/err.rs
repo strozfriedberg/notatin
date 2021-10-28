@@ -36,6 +36,14 @@ pub enum Error {
     Any { detail: String },
 }
 
+impl Error {
+    pub(crate) fn any(s: &str) -> Self {
+        Self::Any {
+            detail: s.to_string(),
+        }
+    }
+}
+
 impl From<nom::Err<nom::error::Error<&[u8]>>> for Error {
     fn from(_error: nom::Err<nom::error::Error<&[u8]>>) -> Self {
         Error::Nom {

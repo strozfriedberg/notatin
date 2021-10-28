@@ -100,24 +100,36 @@ impl DecodeFormat {
                     }
                 }
             }
-            DecodeFormat::Utf16 => {
-                let s = util::from_utf16_le_string(
-                    &value_bytes[offset..],
-                    value_bytes.len() - offset,
-                    &mut warnings,
-                    "decode_content",
-                );
-                (CellValue::String(s), warnings.get_option())
-            }
-            DecodeFormat::Utf16Multiple => {
-                let m = util::from_utf16_le_strings(
-                    &value_bytes[offset..],
-                    value_bytes.len(),
-                    &mut warnings,
-                    "decode_content",
-                );
-                (CellValue::MultiString(m), warnings.get_option())
-            }
+            DecodeFormat::Utf16 => match value_bytes.get(offset..) {
+                Some(slice) => {
+                    let s = util::from_utf16_le_string(
+                        slice,
+                        value_bytes.len() - offset,
+                        &mut warnings,
+                        "decode_content",
+                    );
+                    (CellValue::String(s), warnings.get_option())
+                }
+                None => {
+                    warnings.add(LogCode::WarningConversion, &"Buffer too small");
+                    (CellValue::Error, Some(warnings))
+                }
+            },
+            DecodeFormat::Utf16Multiple => match value_bytes.get(offset..) {
+                Some(slice) => {
+                    let m = util::from_utf16_le_strings(
+                        slice,
+                        value_bytes.len(),
+                        &mut warnings,
+                        "decode_content",
+                    );
+                    (CellValue::MultiString(m), warnings.get_option())
+                }
+                None => {
+                    warnings.add(LogCode::WarningConversion, &"Buffer too small");
+                    (CellValue::Error, Some(warnings))
+                }
+            },
             _ => (CellValue::None, warnings.get_option()),
         }
     }
