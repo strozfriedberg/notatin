@@ -151,7 +151,7 @@ impl BaseBlockBase {
         while index <= 0x01FB {
             let slice = bytes
                 .get(index..index + size_of_u32)
-                .ok_or_else(|| Error::any("calculate_checksum: buffer too small"))?;
+                .ok_or_else(|| Error::buffer("calculate_checksum"))?;
             xsum ^= u32::from_le_bytes(slice_to_u32(slice));
             index += size_of_u32;
         }
@@ -401,7 +401,7 @@ mod tests {
         );
 
         assert_eq!(
-            Err(Error::any("calculate_checksum: buffer too small")),
+            Err(Error::buffer("calculate_checksum")),
             BaseBlockBase::calculate_checksum(&[])
         );
     }

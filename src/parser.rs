@@ -73,7 +73,7 @@ impl Parser {
             .file_info
             .buffer
             .get(self.file_info.hbin_offset_absolute..)
-            .ok_or_else(|| Error::any("init_root: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("init_root"))?;
         let (input, hive_bin_header) = HiveBinHeader::from_bytes(&self.file_info, input)?;
         self.hive_bin_header = Some(hive_bin_header);
         let root = CellKeyNode::read(
@@ -206,7 +206,7 @@ impl Parser {
             .file_info
             .buffer
             .get_mut(..BaseBlockBase::BASE_BLOCK_LEN)
-            .ok_or_else(|| Error::any("handle_bad_checksum: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("handle_bad_checksum"))?;
         slice.copy_from_slice(&newest_log.base_block_bytes);
 
         // Per https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:

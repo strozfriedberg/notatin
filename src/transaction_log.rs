@@ -276,7 +276,7 @@ impl TransactionLog {
                             .file_info
                             .buffer
                             .get_mut(dst_offset..dst_offset_end)
-                            .ok_or_else(|| Error::any("update_parser: dst buffer too small"))?;
+                            .ok_or_else(|| Error::buffer("update_parser"))?;
                         let src = &dirty_page.page_bytes;
                         dst.copy_from_slice(src);
                     }
@@ -625,7 +625,7 @@ impl TransactionAnalyzer<'_> {
             .prior_file_info
             .buffer
             .get(file_offset_absolute..)
-            .ok_or_else(|| Error::any("add_full_value_to_list: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("add_full_value_to_list"))?;
         let (_, mut full_value) = CellKeyValue::from_bytes(
             slice,
             file_offset_absolute,

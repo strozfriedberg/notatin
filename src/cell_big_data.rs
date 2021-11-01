@@ -78,7 +78,7 @@ impl CellBigData {
         let slice = file_info
             .buffer
             .get(offset..)
-            .ok_or_else(|| Error::any("get_big_data_bytes: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("get_big_data_bytes"))?;
         let (_, (hive_bin_cell_big_data, _)) = CellBigData::from_bytes(slice)?;
         let (_, data_offsets_absolute) =
             hive_bin_cell_big_data.parse_big_data_offsets(file_info)?;
@@ -94,7 +94,7 @@ impl CellBigData {
                 );
                 let slice = input
                     .get(..size_to_read as usize)
-                    .ok_or_else(|| Error::any("get_big_data_bytes: buffer too small"))?;
+                    .ok_or_else(|| Error::buffer("get_big_data_bytes"))?;
                 big_data_buffer.extend_from_slice(slice);
                 data_size_remaining -= size_to_read;
             }
@@ -203,6 +203,6 @@ mod tests {
         };
         let res =
             CellBigData::get_big_data_bytes(&file_info, 20, &CellKeyValueDataTypes::REG_DWORD, 4);
-        assert_eq!(Err(Error::any("get_big_data_bytes: buffer too small")), res);
+        assert_eq!(Err(Error::buffer("get_big_data_bytes")), res);
     }
 }

@@ -418,7 +418,10 @@ impl CellKeyValue {
                     {
                         Some(slice) => value_bytes = data_type.get_value_bytes(slice),
                         None => {
-                            logs.add(LogCode::WarningParse, &Error::any("read_value_bytes_direct: buffer too small for file_offset and length"));
+                            logs.add(
+                                LogCode::WarningParse,
+                                &Error::buffer("read_value_bytes_direct: file_offset and length"),
+                            );
                             value_bytes = Vec::new();
                         }
                     }
@@ -426,7 +429,7 @@ impl CellKeyValue {
             } else {
                 logs.add(
                     LogCode::WarningParse,
-                    &Error::any("read_value_bytes_direct: buffer too small for file_offset"),
+                    &Error::buffer("read_value_bytes_direct: file_offset"),
                 );
                 value_bytes = Vec::new();
             }
@@ -441,7 +444,7 @@ impl CellKeyValue {
                 None => {
                     logs.add(
                         LogCode::WarningBigDataContent,
-                        &Error::any("read_value_bytes_direct: resident_value buffer too small"),
+                        &Error::buffer("read_value_bytes_direct: resident_value"),
                     );
                     value_bytes = Vec::new();
                 }

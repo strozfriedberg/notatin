@@ -397,7 +397,7 @@ impl CellKeyNode {
             file_info
                 .buffer
                 .get(options.offset..)
-                .ok_or_else(|| Error::any("read: buffer too small"))?,
+                .ok_or_else(|| Error::buffer("cell_key_node::read"))?,
             options,
         )
     }
@@ -621,7 +621,7 @@ impl CellKeyNode {
                     file_info
                         .buffer
                         .get(offset..)
-                        .ok_or_else(|| Error::any("read_values: buffer too small"))?,
+                        .ok_or_else(|| Error::buffer("read_values"))?,
                     offset,
                     sequence_num,
                     state.get_full_field_info,
@@ -690,7 +690,7 @@ impl CellKeyNode {
         let slice = file_info
             .buffer
             .get(file_offset_absolute..)
-            .ok_or_else(|| Error::any("parse_sub_key_list: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("parse_sub_key_list"))?;
         // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
         // Look for the ri list first and follow the pointers
         match SubKeyListRi::from_bytes(slice) {

@@ -39,9 +39,7 @@ impl<'a> ParserRecoverDeleted<'a> {
             .file_info
             .buffer
             .get(file_offset_absolute..)
-            .ok_or_else(|| {
-                Error::any("file_offset_absolute: buffer too small to read HiveBinHeader")
-            })?;
+            .ok_or_else(|| Error::buffer("find_free_keys_and_values"))?;
         let (input, hbin_header) = HiveBinHeader::from_bytes(self.file_info, slice)?;
 
         let hbin_size = hbin_header.size as usize;
@@ -63,7 +61,7 @@ impl<'a> ParserRecoverDeleted<'a> {
             .file_info
             .buffer
             .get(file_offset_absolute..)
-            .ok_or_else(|| Error::any("find_unused_cells_in_hbin: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: initial"))?;
         while file_offset_absolute < hbin_max {
             let (input_cell_type, size) = le_i32(input)?;
             let size_abs = size.unsigned_abs() as usize;
@@ -73,7 +71,12 @@ impl<'a> ParserRecoverDeleted<'a> {
                 match CellType::read_cell_type(input_cell_type) {
                     CellType::CellValue => {
                         self.read_cell_key_value(
-                            self.file_info.buffer.get(file_offset_absolute..).ok_or_else(|| Error::any("find_unused_cells_in_hbin: buffer too small for read_cell_key_value"))?,
+                            self.file_info
+                                .buffer
+                                .get(file_offset_absolute..)
+                                .ok_or_else(|| {
+                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_value")
+                                })?,
                             file_offset_absolute,
                             CellState::DeletedPrimaryFile,
                             false,
@@ -81,7 +84,12 @@ impl<'a> ParserRecoverDeleted<'a> {
                     }
                     CellType::CellKey => {
                         self.read_cell_key_node(
-                            self.file_info.buffer.get(file_offset_absolute..).ok_or_else(|| Error::any("find_unused_cells_in_hbin: buffer too small for read_cell_key_node"))?,
+                            self.file_info
+                                .buffer
+                                .get(file_offset_absolute..)
+                                .ok_or_else(|| {
+                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_node")
+                                })?,
                             file_offset_absolute,
                             CellState::DeletedPrimaryFile,
                             false,
@@ -89,7 +97,12 @@ impl<'a> ParserRecoverDeleted<'a> {
                     }
                     _ => {
                         self.find_cells_in_slack(
-                            self.file_info.buffer.get(file_offset_absolute..file_offset_absolute + size_abs).ok_or_else(|| Error::any("find_unused_cells_in_hbin: buffer too small for find_cells_in_slack"))?,
+                            self.file_info
+                                .buffer
+                                .get(file_offset_absolute..file_offset_absolute + size_abs)
+                                .ok_or_else(|| {
+                                    Error::buffer("find_unused_cells_in_hbin: find_cells_in_slack")
+                                })?,
                             file_offset_absolute,
                         );
                     }
@@ -100,9 +113,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                 .file_info
                 .buffer
                 .get(file_offset_absolute..file_offset_absolute + size_abs)
-                .ok_or_else(|| {
-                    Error::any("find_unused_cells_in_hbin: buffer too small once incremented")
-                })?;
+                .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: after increment"))?;
         }
 
         Ok(file_offset_absolute)

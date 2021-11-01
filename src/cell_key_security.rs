@@ -92,7 +92,7 @@ pub(crate) fn read_cell_key_security(
     loop {
         let slice = buffer
             .get(offset + hbin_offset_absolute..)
-            .ok_or_else(|| Error::any("read_cell_key_security: buffer too small"))?;
+            .ok_or_else(|| Error::buffer("read_cell_key_security"))?;
         let (_, cell_key_security) = CellKeySecurity::from_bytes(slice)?;
         security_descriptors.push(SecurityDescriptor::from_stream(&mut Cursor::new(
             cell_key_security.security_descriptor,
