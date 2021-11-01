@@ -103,13 +103,6 @@ impl CellKeyValueDataTypes {
         CellValue::Binary(input_vec.to_vec())
     }
 
-    pub fn handle_invalid_input2(logs: &mut Logs) {
-        logs.add(
-            LogCode::WarningConversion,
-            &"Too few input bytes for data type",
-        );
-    }
-
     #[rustfmt::skip]
     pub(crate) fn get_value_content(
         &self,
