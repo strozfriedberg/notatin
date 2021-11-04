@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use crate::err::Error;
 use crate::field_serializers;
 use crate::impl_enum_from_value;
 use crate::log::{LogCode, Logs};
@@ -139,7 +140,7 @@ impl BaseBlockBase {
         ))
     }
 
-    pub(crate) fn calculate_checksum(bytes: &[u8]) -> u32 {
+    pub(crate) fn calculate_checksum(bytes: &[u8]) -> Result<u32, Error> {
         let mut index = 0;
         let mut xsum = 0;
 
@@ -148,14 +149,18 @@ impl BaseBlockBase {
         let size_of_u32 = mem::size_of::<u32>();
 
         while index <= 0x01FB {
-            xsum ^= u32::from_le_bytes(slice_to_u32(&bytes[index..index + size_of_u32]));
+            let slice = bytes
+                .get(index..index + size_of_u32)
+                .ok_or_else(|| Error::buffer("calculate_checksum"))?;
+            xsum ^= u32::from_le_bytes(slice_to_u32(slice));
             index += size_of_u32;
         }
-        match xsum {
+        let ret = match xsum {
             0 => 1,
             0xFFFFFFFF => 0xFFFFFFFE,
             _ => xsum,
-        }
+        };
+        Ok(ret)
     }
 }
 
@@ -390,6 +395,14 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x21, 0xca, 0x62, 0xcc, 0x00,
         ];
-        assert_eq!(0xCC62_CA20, BaseBlockBase::calculate_checksum(&bytes));
+        assert_eq!(
+            0xCC62_CA20,
+            BaseBlockBase::calculate_checksum(&bytes).unwrap()
+        );
+
+        assert_eq!(
+            Err(Error::buffer("calculate_checksum")),
+            BaseBlockBase::calculate_checksum(&[])
+        );
     }
 }

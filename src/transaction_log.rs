@@ -177,7 +177,7 @@ impl TransactionLog {
             input,
             Self {
                 base_block,
-                base_block_bytes: start[..512].to_vec(),
+                base_block_bytes: start[..BaseBlockBase::BASE_BLOCK_LEN].to_vec(), // direct access ok; if the buffer is < BASE_BLOCK_LEN BaseBlockBase::from_bytes() above will Err
                 log_entries,
             },
         ))
@@ -272,7 +272,11 @@ impl TransactionLog {
                         let dst_offset = dirty_page.dirty_page_ref_offset as usize
                             + parser.file_info.hbin_offset_absolute;
                         let dst_offset_end = dst_offset + dirty_page.page_bytes.len();
-                        let dst = &mut parser.file_info.buffer[dst_offset..dst_offset_end];
+                        let dst = parser
+                            .file_info
+                            .buffer
+                            .get_mut(dst_offset..dst_offset_end)
+                            .ok_or_else(|| Error::buffer("update_parser"))?;
                         let src = &dirty_page.page_bytes;
                         dst.copy_from_slice(src);
                     }
@@ -617,8 +621,13 @@ impl TransactionAnalyzer<'_> {
         old_sequence_number: u32,
         modified_list_type: ModifiedListType,
     ) -> Result<(), Error> {
+        let slice = self
+            .prior_file_info
+            .buffer
+            .get(file_offset_absolute..)
+            .ok_or_else(|| Error::buffer("add_full_value_to_list"))?;
         let (_, mut full_value) = CellKeyValue::from_bytes(
-            &self.prior_file_info.buffer[file_offset_absolute..],
+            slice,
             file_offset_absolute,
             Some(old_sequence_number),
             state.get_full_field_info,

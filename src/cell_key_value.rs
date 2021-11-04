@@ -95,6 +95,15 @@ pub enum CellKeyValueDataTypes {
 }
 
 impl CellKeyValueDataTypes {
+    pub fn handle_invalid_input(input_vec: &[u8], logs: &mut Logs) -> CellValue {
+        logs.add(
+            LogCode::WarningConversion,
+            &"Too few input bytes for data type",
+        );
+        CellValue::Binary(input_vec.to_vec())
+    }
+
+    #[rustfmt::skip]
     pub(crate) fn get_value_content(
         &self,
         input_vec: Option<&Vec<u8>>,
@@ -103,15 +112,6 @@ impl CellKeyValueDataTypes {
         match input_vec {
             None => Ok(CellValue::None),
             Some(input_vec) => {
-                if let Some(data_type_len) = self.get_data_type_len() {
-                    if input_vec.len() < data_type_len {
-                        logs.add(
-                            LogCode::WarningConversion,
-                            &"Too few input bytes for data type",
-                        );
-                        return Ok(CellValue::Binary(input_vec.to_vec()));
-                    }
-                }
                 let input = &input_vec[..];
                 let cv = match self {
                     CellKeyValueDataTypes::REG_SZ
@@ -120,33 +120,57 @@ impl CellKeyValueDataTypes {
                         util::from_utf16_le_string(input, input.len(), logs, "Get value content"),
                     ),
                     CellKeyValueDataTypes::REG_COMPOSITE_UINT8
-                    | CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN => CellValue::U32(
-                        u8::from_le_bytes(input[0..mem::size_of::<u8>()].try_into()?) as u32,
-                    ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_INT16 => CellValue::I32(
-                        i16::from_le_bytes(input[0..mem::size_of::<i16>()].try_into()?) as i32,
-                    ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_UINT16 => CellValue::U32(
-                        u16::from_le_bytes(input[0..mem::size_of::<u16>()].try_into()?) as u32,
-                    ),
+                    | CellKeyValueDataTypes::REG_COMPOSITE_BOOLEAN => {
+                        match input.get(0..mem::size_of::<u8>()) {
+                            Some(val) => CellValue::U32(u8::from_le_bytes(val.try_into()?) as u32),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
+                    CellKeyValueDataTypes::REG_COMPOSITE_INT16 => {
+                        match input.get(0..mem::size_of::<i16>()) {
+                            Some(val) => CellValue::I32(i16::from_le_bytes(val.try_into()?) as i32),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
+                    CellKeyValueDataTypes::REG_COMPOSITE_UINT16 => {
+                        match input.get(0..mem::size_of::<u16>()) {
+                            Some(val) => CellValue::U32(u16::from_le_bytes(val.try_into()?) as u32),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
                     CellKeyValueDataTypes::REG_DWORD
-                    | CellKeyValueDataTypes::REG_COMPOSITE_UINT32 => CellValue::U32(
-                        u32::from_le_bytes(input[0..mem::size_of::<u32>()].try_into()?) as u32,
-                    ),
-                    CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => CellValue::U32(
-                        u32::from_be_bytes(input[0..mem::size_of::<u32>()].try_into()?) as u32,
-                    ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_INT32 => CellValue::I32(
-                        i32::from_le_bytes(input[0..mem::size_of::<i32>()].try_into()?),
-                    ),
-                    CellKeyValueDataTypes::REG_COMPOSITE_INT64 => CellValue::I64(
-                        i64::from_le_bytes(input[0..mem::size_of::<i64>()].try_into()?),
-                    ),
+                    | CellKeyValueDataTypes::REG_COMPOSITE_UINT32 => {
+                        match input.get(0..mem::size_of::<u32>()) {
+                            Some(val) => CellValue::U32(u32::from_le_bytes(val.try_into()?)),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
+                    CellKeyValueDataTypes::REG_DWORD_BIG_ENDIAN => {
+                        match input.get(0..mem::size_of::<u32>()) {
+                            Some(val) => CellValue::U32(u32::from_be_bytes(val.try_into()?)),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
+                    CellKeyValueDataTypes::REG_COMPOSITE_INT32 => {
+                        match input.get(0..mem::size_of::<i32>()) {
+                            Some(val) => CellValue::I32(i32::from_le_bytes(val.try_into()?)),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
+                    CellKeyValueDataTypes::REG_COMPOSITE_INT64 => {
+                        match input.get(0..mem::size_of::<i64>()) {
+                            Some(val) => CellValue::I64(i64::from_le_bytes(val.try_into()?)),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
                     CellKeyValueDataTypes::REG_QWORD
                     | CellKeyValueDataTypes::REG_COMPOSITE_UINT64
-                    | CellKeyValueDataTypes::REG_FILETIME => CellValue::U64(u64::from_le_bytes(
-                        input[0..mem::size_of::<u64>()].try_into()?,
-                    )),
+                    | CellKeyValueDataTypes::REG_FILETIME => {
+                        match input.get(0..mem::size_of::<u64>()) {
+                            Some(val) => CellValue::U64(u64::from_le_bytes(val.try_into()?)),
+                            None => Self::handle_invalid_input(input_vec, logs),
+                        }
+                    }
                     CellKeyValueDataTypes::REG_BIN => CellValue::Binary(input.to_vec()),
                     CellKeyValueDataTypes::REG_MULTI_SZ => CellValue::MultiString(
                         util::from_utf16_le_strings(input, input.len(), logs, "Get value content"),
@@ -177,7 +201,7 @@ impl CellKeyValueDataTypes {
 
     pub(crate) fn get_value_bytes(&self, input: &[u8]) -> Vec<u8> {
         match self.get_data_type_len() {
-            Some(data_type_len) => input[0..std::cmp::min(data_type_len, input.len())].to_vec(),
+            Some(data_type_len) => input[0..std::cmp::min(data_type_len, input.len())].to_vec(), // ok as direct access (checking input.len())
             None => input.to_vec(),
         }
     }
@@ -359,59 +383,63 @@ impl CellKeyValue {
         let mut data_offsets_absolute = Vec::new();
         if data_size_raw & DATA_IS_RESIDENT_MASK == 0 {
             let mut offset = data_offset_relative as usize + file_info.hbin_offset_absolute;
-            match file_info.buffer.get(offset..) {
-                Some(slice) => {
-                    if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw
-                        && CellBigData::is_big_data_block(slice)
+
+            if let Some(slice) = file_info.buffer.get(offset..) {
+                if CellKeyValue::BIG_DATA_SIZE_THRESHOLD < data_size_raw
+                    && CellBigData::is_big_data_block(slice)
+                {
+                    let (vb, offsets) = CellBigData::get_big_data_bytes(
+                        file_info,
+                        offset,
+                        data_type,
+                        data_size_raw,
+                    )
+                    .or_else(|err| -> Result<(Vec<u8>, Vec<usize>), Error> {
+                        logs.add(LogCode::WarningBigDataContent, &err);
+                        Ok((Vec::new(), Vec::new()))
+                    })
+                    .expect("Error handled in or_else");
+                    value_bytes = vb;
+                    data_offsets_absolute.extend(offsets);
+                } else {
+                    offset += mem::size_of::<i32>(); // skip over the size bytes
+                    data_offsets_absolute.push(offset);
+
+                    match file_info
+                        .buffer
+                        .get(offset..offset + data_size_raw as usize)
                     {
-                        let (vb, offsets) = CellBigData::get_big_data_bytes(
-                            file_info,
-                            offset,
-                            data_type,
-                            data_size_raw,
-                        )
-                        .or_else(|err| -> Result<(Vec<u8>, Vec<usize>), Error> {
-                            logs.add(LogCode::WarningBigDataContent, &err);
-                            Ok((Vec::new(), Vec::new()))
-                        })
-                        .expect("Error handled in or_else");
-                        value_bytes = vb;
-                        data_offsets_absolute.extend(offsets);
-                    } else {
-                        offset += mem::size_of::<i32>(); // skip over the size bytes
-                        data_offsets_absolute.push(offset);
-                        value_bytes = data_type.get_value_bytes(
-                            &file_info.buffer[offset..offset + data_size_raw as usize],
-                        );
+                        Some(slice) => value_bytes = data_type.get_value_bytes(slice),
+                        None => {
+                            logs.add(
+                                LogCode::WarningParse,
+                                &Error::buffer("read_value_bytes_direct: file_offset and length"),
+                            );
+                            value_bytes = Vec::new();
+                        }
                     }
                 }
-                None => {
-                    logs.add(
-                        LogCode::WarningParse,
-                        &format!(
-                            "value buffer offset ({}) invalid at file_offset {}",
-                            offset, file_offset_absolute
-                        ),
-                    );
-                    value_bytes = Vec::new();
-                }
+            } else {
+                logs.add(
+                    LogCode::WarningParse,
+                    &Error::buffer("read_value_bytes_direct: file_offset"),
+                );
+                value_bytes = Vec::new();
             }
         } else {
             const DATA_OFFSET_RELATIVE_OFFSET: usize = 12;
             data_offsets_absolute.push(file_offset_absolute + DATA_OFFSET_RELATIVE_OFFSET);
             let data_size = data_size_raw ^ DATA_IS_RESIDENT_MASK;
             let resident_value = data_offset_relative.to_le_bytes();
-            value_bytes = match resident_value.get(..data_size as usize) {
-                Some(val) => data_type.get_value_bytes(val),
+
+            match resident_value.get(..data_size as usize) {
+                Some(slice) => value_bytes = data_type.get_value_bytes(slice),
                 None => {
                     logs.add(
-                        LogCode::WarningParse,
-                        &format!(
-                            "data_size exceeds length of resident_value at file_offset {}",
-                            file_offset_absolute
-                        ),
+                        LogCode::WarningBigDataContent,
+                        &Error::buffer("read_value_bytes_direct: resident_value"),
                     );
-                    Vec::new()
+                    value_bytes = Vec::new();
                 }
             }
         }

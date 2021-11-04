@@ -32,8 +32,18 @@ pub enum Error {
     XlsxWriter { detail: String },
     #[error("An error has occurred: {}", detail)]
     TryFromInt { detail: String },
+    #[error("Invalid buffer access: {}", detail)]
+    Buffer { detail: String },
     #[error("An error has occurred when converting: {}", detail)]
     Any { detail: String },
+}
+
+impl Error {
+    pub(crate) fn buffer(s: &str) -> Self {
+        Self::Buffer {
+            detail: s.to_string(),
+        }
+    }
 }
 
 impl From<nom::Err<nom::error::Error<&[u8]>>> for Error {

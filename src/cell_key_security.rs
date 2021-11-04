@@ -90,8 +90,10 @@ pub(crate) fn read_cell_key_security(
     let mut security_descriptors = Vec::new();
     let mut offset: usize = security_key_offset as usize;
     loop {
-        let (_, cell_key_security) =
-            CellKeySecurity::from_bytes(&buffer[offset + hbin_offset_absolute..])?;
+        let slice = buffer
+            .get(offset + hbin_offset_absolute..)
+            .ok_or_else(|| Error::buffer("read_cell_key_security"))?;
+        let (_, cell_key_security) = CellKeySecurity::from_bytes(slice)?;
         security_descriptors.push(SecurityDescriptor::from_stream(&mut Cursor::new(
             cell_key_security.security_descriptor,
         ))?);

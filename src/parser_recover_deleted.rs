@@ -35,10 +35,12 @@ impl<'a> ParserRecoverDeleted<'a> {
         &mut self,
         mut file_offset_absolute: usize,
     ) -> Result<usize, Error> {
-        let (input, hbin_header) = HiveBinHeader::from_bytes(
-            self.file_info,
-            &self.file_info.buffer[file_offset_absolute..],
-        )?;
+        let slice = self
+            .file_info
+            .buffer
+            .get(file_offset_absolute..)
+            .ok_or_else(|| Error::buffer("find_free_keys_and_values"))?;
+        let (input, hbin_header) = HiveBinHeader::from_bytes(self.file_info, slice)?;
 
         let hbin_size = hbin_header.size as usize;
         let hbin_start = file_offset_absolute;
@@ -55,7 +57,11 @@ impl<'a> ParserRecoverDeleted<'a> {
         mut file_offset_absolute: usize,
         hbin_max: usize,
     ) -> Result<usize, Error> {
-        let mut input = &self.file_info.buffer[file_offset_absolute..];
+        let mut input = self
+            .file_info
+            .buffer
+            .get(file_offset_absolute..)
+            .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: initial"))?;
         while file_offset_absolute < hbin_max {
             let (input_cell_type, size) = le_i32(input)?;
             let size_abs = size.unsigned_abs() as usize;
@@ -65,7 +71,12 @@ impl<'a> ParserRecoverDeleted<'a> {
                 match CellType::read_cell_type(input_cell_type) {
                     CellType::CellValue => {
                         self.read_cell_key_value(
-                            &self.file_info.buffer[file_offset_absolute..],
+                            self.file_info
+                                .buffer
+                                .get(file_offset_absolute..)
+                                .ok_or_else(|| {
+                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_value")
+                                })?,
                             file_offset_absolute,
                             CellState::DeletedPrimaryFile,
                             false,
@@ -73,7 +84,12 @@ impl<'a> ParserRecoverDeleted<'a> {
                     }
                     CellType::CellKey => {
                         self.read_cell_key_node(
-                            &self.file_info.buffer[file_offset_absolute..],
+                            self.file_info
+                                .buffer
+                                .get(file_offset_absolute..)
+                                .ok_or_else(|| {
+                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_node")
+                                })?,
                             file_offset_absolute,
                             CellState::DeletedPrimaryFile,
                             false,
@@ -81,15 +97,23 @@ impl<'a> ParserRecoverDeleted<'a> {
                     }
                     _ => {
                         self.find_cells_in_slack(
-                            &self.file_info.buffer
-                                [file_offset_absolute..file_offset_absolute + size_abs],
+                            self.file_info
+                                .buffer
+                                .get(file_offset_absolute..file_offset_absolute + size_abs)
+                                .ok_or_else(|| {
+                                    Error::buffer("find_unused_cells_in_hbin: find_cells_in_slack")
+                                })?,
                             file_offset_absolute,
                         );
                     }
                 }
             }
             file_offset_absolute += size_abs;
-            input = &self.file_info.buffer[file_offset_absolute..];
+            input = self
+                .file_info
+                .buffer
+                .get(file_offset_absolute..file_offset_absolute + size_abs)
+                .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: after increment"))?;
         }
 
         Ok(file_offset_absolute)
@@ -186,10 +210,9 @@ impl<'a> ParserRecoverDeleted<'a> {
         input_orig: &[u8],
         file_offset_absolute_start: usize,
     ) -> Result<(), Error> {
-        let len = input_orig.len();
         let mut offset = 0;
-        while offset < len {
-            let input = &input_orig[offset..];
+        while offset < input_orig.len() {
+            let input = &input_orig[offset..]; // direct access ok; loop checks for offset < input_orig.len()
             let file_offset_absolute = file_offset_absolute_start + offset;
             let (input, _size) = le_i32(input)?;
             named!(
@@ -203,7 +226,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                 Ok((_, cell_type)) => match cell_type {
                     CellType::CellValue => {
                         offset += self.read_cell_key_value(
-                            &input_orig[offset..],
+                            &input_orig[offset..], // direct access ok; loop checks for offset < input_orig.len()
                             file_offset_absolute,
                             CellState::DeletedPrimaryFileSlack,
                             true,
@@ -211,7 +234,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                     }
                     CellType::CellKey => {
                         offset += self.read_cell_key_node(
-                            &input_orig[offset..],
+                            &input_orig[offset..], // direct access ok; loop checks for offset < input_orig.len()
                             file_offset_absolute,
                             CellState::DeletedPrimaryFileSlack,
                             true,
