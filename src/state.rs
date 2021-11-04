@@ -151,7 +151,7 @@ pub(crate) struct State {
     /// This is the length of that root name so we can index into the string directly.
     pub root_key_path_offset: usize,
 
-    /// This indicates if we should generate offset and length info for the structures we are reading.
+    /// `get_full_field_info` indicates if we should generate offset and length info for the structures we are reading.
     /// Default is `false`
     pub get_full_field_info: bool,
 

@@ -24,13 +24,13 @@ use notatin::{
     filter::{Filter, FilterBuilder},
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
-    util,
+    progress, util,
 };
 use std::{
     borrow::Cow,
     convert::TryFrom,
     fs::File,
-    io::{stdout, BufWriter, Write},
+    io::{BufWriter, Write},
 };
 use xlsxwriter::{
     Format, FormatBorder, FormatColor, FormatUnderline, Workbook, Worksheet, XlsxError,
@@ -86,6 +86,7 @@ fn main() -> Result<(), Error> {
     let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
 
     let mut parser_builder = ParserBuilder::from_path(input);
+    parser_builder.update_console(true);
     parser_builder.recover_deleted(recover);
     parser_builder.get_full_field_info(get_full_field_info);
     for log in logs.unwrap_or_default() {
@@ -103,8 +104,8 @@ fn main() -> Result<(), Error> {
         None => None,
     };
 
-    let mut stdout = stdout();
-    stdout.write_all("Writing file".as_bytes())?;
+    let mut console = progress::new(true);
+    console.write("Writing file")?;
     if output_type == OutputType::Xlsx {
         WriteXlsx::new(output, recovered_only).write(&parser, filter)?;
     } else if output_type == OutputType::Tsv {
@@ -120,13 +121,12 @@ fn main() -> Result<(), Error> {
             }
             let mut writer = BufWriter::new(write_file);
             for (index, key) in iter.iter().enumerate() {
-                util::update_console_progress(index)?;
+                console.update_progress(index)?;
                 writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
             }
         }
     }
-    stdout.write_all(format!("\nFinished writing {}\n", output).as_bytes())?;
-    stdout.flush()?;
+    console.write(&format!("\nFinished writing {}\n", output))?;
     Ok(())
 }
 
@@ -187,6 +187,7 @@ impl<'a> WorksheetState<'a> {
 struct WriteXlsx {
     workbook: Workbook,
     recovered_only: bool,
+    console: Box<dyn progress::UpdateProgressTrait>,
 }
 
 impl WriteXlsx {
@@ -218,6 +219,7 @@ impl WriteXlsx {
         WriteXlsx {
             workbook: Workbook::new(output),
             recovered_only,
+            console: progress::new(true),
         }
     }
 
@@ -278,7 +280,7 @@ impl WriteXlsx {
         reg_items_sheet.sheet.freeze_panes(1, 0);
 
         for (index, key) in iter.iter().enumerate() {
-            util::update_console_progress(index)?;
+            self.console.update_progress(index)?;
             self.write_key(&mut reg_items_sheet, &mut overflow_sheet, &key, false)?;
         }
 
@@ -551,6 +553,7 @@ struct WriteTsv {
     index: usize,
     recovered_only: bool,
     writer: BufWriter<File>,
+    console: Box<dyn progress::UpdateProgressTrait>,
 }
 
 impl WriteTsv {
@@ -561,6 +564,7 @@ impl WriteTsv {
             index: 0,
             recovered_only,
             writer,
+            console: progress::new(true),
         })
     }
 
@@ -572,7 +576,7 @@ impl WriteTsv {
 
         writeln!(self.writer,"Index\tKey Path\tValue Name\tValue Data\tTimestamp\tStatus\tPrevious Seq Num\tModifying Seq Num\tFlags\tAccess Flags\tValue Type\tLogs")?;
         for (index, key) in iter.iter().enumerate() {
-            util::update_console_progress(index)?;
+            self.console.update_progress(index)?;
             self.write_key_tsv(&key, false)?;
         }
         writeln!(self.writer, "\nLogs\n-----------")?;

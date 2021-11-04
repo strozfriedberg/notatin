@@ -22,11 +22,12 @@ use crate::state::State;
 use crate::transaction_log::TransactionLog;
 use std::path::Path;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ParserBuilderBase {
     filter: Option<Filter>,
     recover_deleted: bool,
     get_full_field_info: bool,
+    update_console: bool,
 }
 
 pub struct ParserBuilderFromPath {
@@ -48,6 +49,11 @@ impl ParserBuilderFromPath {
 
     pub fn with_transaction_log<T: AsRef<Path> + 'static>(&mut self, log: T) -> &mut Self {
         self.transaction_logs.push(Box::new(log));
+        self
+    }
+
+    pub fn update_console(&mut self, update_console: bool) -> &mut Self {
+        self.base.update_console = update_console;
         self
     }
 
@@ -111,11 +117,7 @@ impl ParserBuilder {
         ParserBuilderFromPath {
             primary: Box::new(primary),
             transaction_logs: vec![],
-            base: ParserBuilderBase {
-                filter: None,
-                recover_deleted: false,
-                get_full_field_info: false,
-            },
+            base: ParserBuilderBase::default(),
         }
     }
 
@@ -123,11 +125,7 @@ impl ParserBuilder {
         ParserBuilderFromFile {
             primary: Box::new(primary),
             transaction_logs: vec![],
-            base: ParserBuilderBase {
-                filter: None,
-                recover_deleted: false,
-                get_full_field_info: false,
-            },
+            base: ParserBuilderBase::default(),
         }
     }
 
@@ -148,6 +146,7 @@ impl ParserBuilder {
             hive_bin_header: None,
             cell_key_node_root: None,
             recover_deleted: base.recover_deleted,
+            update_console: base.update_console,
         };
         parser.init(base.recover_deleted, parsed_transaction_logs)?;
 

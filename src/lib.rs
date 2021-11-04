@@ -35,6 +35,7 @@ pub mod marvin_hash;
 pub mod parser;
 pub mod parser_builder;
 pub mod parser_recover_deleted;
+pub mod progress;
 pub mod reg_item_map;
 pub mod state;
 pub mod sub_key_list_lf;

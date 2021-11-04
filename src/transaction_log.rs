@@ -23,6 +23,7 @@ use crate::file_info::{FileInfo, ReadSeek};
 use crate::log::{LogCode, Logs};
 use crate::marvin_hash;
 use crate::parser::{Parser, ParserIterator};
+use crate::progress;
 use crate::reg_item_map::{RegItemMap, RegItemMapKey, RegItemMapValue};
 use crate::state::State;
 use crate::util;
@@ -222,8 +223,9 @@ impl TransactionLog {
     ) -> Result<(u32, RegItemMap), Error> {
         let mut new_sequence_number = 0;
         let (primary_secondary_seq_num, primary_hive_bins_data_size) = parser.get_base_block_info();
+        let mut console = progress::new(parser.update_console);
         for (index, log_entry) in self.log_entries.iter().enumerate() {
-            util::update_console(&format!(
+            console.update(&format!(
                 "Processing transaction log entry {} of {}",
                 index + 1,
                 self.log_entries.len()
@@ -314,7 +316,6 @@ impl TransactionLog {
                 break;
             }
         }
-        util::finalize_console()?;
         Ok((new_sequence_number, prior_items))
     }
 
