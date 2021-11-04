@@ -22,9 +22,9 @@ use crate::filter::{Filter, FilterBuilder};
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::{LogCode, Logs};
 use crate::parser_recover_deleted::ParserRecoverDeleted;
+use crate::progress;
 use crate::state::State;
 use crate::transaction_log::TransactionLog;
-use crate::util;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -49,6 +49,7 @@ pub struct Parser {
     pub(crate) hive_bin_header: Option<HiveBinHeader>,
     pub(crate) cell_key_node_root: Option<CellKeyNode>,
     pub(crate) recover_deleted: bool,
+    pub(crate) update_console: bool,
 }
 
 impl Parser {
@@ -266,6 +267,7 @@ impl Parser {
 
             let (primary_file_secondary_seq_num, _) = self.get_base_block_info();
 
+            let mut console = progress::new(self.update_console);
             /* https://github.com/msuhanov/regf/blob/master/Windows%20registry%20file%20format%20specification.md#new-format-1:
             If a primary file contains a valid base block, both transaction log files are used to recover the dirty hive,
             i.e. log entries from both transaction log files are applied.
@@ -278,7 +280,7 @@ impl Parser {
                     if new_sequence_number == 0
                         || (log.base_block.primary_sequence_number == new_sequence_number + 1)
                     {
-                        util::write_console(&format!(
+                        console.write(&format!(
                             "Applying transaction log {} of {}\n",
                             index + 1,
                             parsed_transaction_logs.len()
