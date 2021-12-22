@@ -12,25 +12,34 @@ Notatin is a Rust parser for offline Windows Registry files. This project is cur
  `notatin` is a library that parses Windows Registry files.
 
 ### reg_dump (utility)
-`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, TSV, or common format.
+`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, TSV, XLSX, or common format.
 An optional key path filter may also be supplied. Optional analysis to recover deleted and prior versions of keys and values from the transaction log is also supported.
 
-JSONL dumps _all_ the data. TSV dumps some of the data. Common dumps what common wants.
+JSONL dumps _all_ the data. The `--full-field-info` argument will include file offset information for each field.
+
+XLSX and TSV dump some of the data; the data in both outputs is the same but XLSX has context-specific formatting which is especially helpful when reviewing recovered data.
+And, if you are focusing on recovered items, the `--recovered-only` argument will return only items that are modified, deleted, or that contain a modified or deleted value.
+
+Common dumps what common wants.
 
 ```
-Notatin Registry Dump 0.1
+Notatin Registry Dump 0.2
 
 USAGE:
-    reg_dump [FLAGS] [OPTIONS] --input <FILE(S)> --output <FILE> -t <type>
+    reg_dump [FLAGS] [OPTIONS] -t <TYPE> --input <FILE(S)> --output <FILE>
 
 FLAGS:
-    -r, --recover    Recover deleted and versioned keys and values
+        --full-field-info    Get the offset and length for each key/value field (applicable for jsonl output only)
+    -h, --help               Prints help information
+    -r, --recover            Recover deleted and versioned keys and values
+        --recovered-only     Only export recovered items (applicable for tsv and xlsx output only)
+    -V, --version            Prints version information
 
 OPTIONS:
+    -t <TYPE>                output type [default: jsonl]  [possible values: Jsonl, Common, Tsv, Xlsx]
+    -f, --filter <STRING>    Key path for filter (ex: 'ControlSet001\Services')
     -i, --input <FILE(S)>    Base registry file with optional transaction log(s) (Comma separated list)
     -o, --output <FILE>      Output file
-    -f, --filter <STRING>    Key path for filter (ex: 'ControlSet001\Services')
-    -t <TYPE>                output type [default: jsonl]  [possible values: Jsonl, Common, Tsv]
 ```
 
 ### reg_compare (utility)
@@ -73,8 +82,8 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 ```
-Opening files and iterating the results is intended to be straightforward. By default, iteration is prefix order;
-postorder traversal (children before parents) is available as well.
+Opening files and iterating the results is intended to be straightforward.
+By default, iteration is prefix order (displayed in the code sample above). Postorder traversal (children before parents) is available as well:
 ```rust,no_run
 for key in parser.iter_postorder() {
     //...

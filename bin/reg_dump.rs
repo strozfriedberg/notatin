@@ -38,7 +38,7 @@ use xlsxwriter::{
 
 fn main() -> Result<(), Error> {
     let matches = App::new("Notatin Registry Dump")
-        .version("0.1")
+        .version("0.2")
         .arg(Arg::from_usage(
             "-r --recover 'Recover deleted and versioned keys and values'",
         ))
