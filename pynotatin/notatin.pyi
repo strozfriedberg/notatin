@@ -1,3 +1,5 @@
+from typing import Optional
+
 # classes
 class PyNotatinParser(object):
     """ Create and return a new object. """
@@ -21,13 +23,13 @@ class PyNotatinKey(object):
     def values(self): ...
 
     """ Returns the requested value, or None """
-    def value(self, name: str) -> PyNotatinValue: ...
+    def value(self, name: str) -> Optional[PyNotatinValue]: ...
 
     """ Returns an iterator that yields sub keys """
     def subkeys(self, parser: PyNotatinParser): ...
 
     """ Returns the requested key, or None """
-    def find_key(self, parser: PyNotatinParser, path: str) -> PyNotatinKey: ...
+    def find_key(self, parser: PyNotatinParser, path: str) -> Optional[PyNotatinKey]: ...
 
     """ Returns the name of the key """
     @property
