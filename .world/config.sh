@@ -6,6 +6,4 @@ if [[ "$Linkage" == 'static' || "$Target" != 'linux' ]]; then
   exit
 fi
 
-pushd pynotatin
-poetry install
-popd
+. .world/config_base.sh

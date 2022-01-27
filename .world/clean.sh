@@ -2,4 +2,4 @@
 
 . .world/build_config.sh
 
-rm -rf pynotatin/out
+. .world/clean_base.sh
