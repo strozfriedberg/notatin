@@ -2,8 +2,10 @@
 
 . .world/build_config.sh
 
-if [[ "$Linkage" == 'static' || "$Target" != 'linux' ]]; then
+if [[ "$Linkage" == 'static' ]]; then
   exit
 fi
 
-. .world/config_base.sh
+pushd pynotatin
+poetry install
+popd

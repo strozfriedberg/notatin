@@ -2,7 +2,6 @@
 
 . .world/build_config.sh
 
-if [[ "$Linkage" == 'static' || "$Target" != 'linux' ]]; then
+if [[ "$Linkage" == 'static' ]]; then
   exit
 fi
-

@@ -2,4 +2,8 @@
 
 . .world/build_config.sh
 
-. .world/clean_base.sh
+if [[ "$Linkage" == 'static' ]]; then
+  exit
+fi
+
+rm -rf pynotatin/out
