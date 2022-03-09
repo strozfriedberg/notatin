@@ -2,6 +2,6 @@
 
 . .world/build_config.sh
 
-if [[ "$Linkage" == 'static' || "$Architecture" != '64' ]]; then
+if [[ "$Linkage" == 'static' ]] || [[ "$Target" != 'linux' && "$Target" != 'windows_package' ]]; then
   exit
 fi
