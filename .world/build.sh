@@ -2,10 +2,9 @@
 
 . .world/build_config.sh
 
-if [[ "$Linkage" == 'static' ]]; then
+if [[ "$Linkage" == 'static' || "$Architecture" != '64' ]]; then
   exit
 fi
-
 BASEDIR=$(pwd)
 
 cargo test
