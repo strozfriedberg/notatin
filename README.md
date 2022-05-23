@@ -107,7 +107,9 @@ let filter = FilterBuilder::new()
  ## What is Notatin?
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
  It is present in honey because honeybees synthesize the enzyme and deposit it into the honey, where it acts as a natural preservative.
- So, Notatin helps preserve things in hives. https://en.wikipedia.org/wiki/Glucose_oxidase
+ So, Notatin helps preserve things in hives.
+ * https://en.wikipedia.org/wiki/Glucose_oxidase
+ * https://en.wikipedia.org/wiki/Windows_Registry#Hives
 
  ## Copyright
  Copyright 2021 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.
