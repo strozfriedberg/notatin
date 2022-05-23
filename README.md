@@ -5,7 +5,7 @@ Notatin is a Rust parser for offline Windows Registry files. This project is cur
 ## Features
  - Implemented using 100% safe Rust and works on all platforms supported by Rust (that have stdlib). Tested in Windows and Ubuntu.
  - Supports applying transaction logs and recovering deleted and modified keys and values.
- - Supports exporting to JSONL, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry).
+ - Supports exporting to JSONL, XLSX, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry).
  - Python bindings are included in the project (pynotatin).
 
 ### notatin (crate)
