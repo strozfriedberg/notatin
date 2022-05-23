@@ -12,8 +12,8 @@ Notatin is a Rust parser for offline Windows Registry files. This project is cur
  `notatin` is a library that parses Windows Registry files.
 
 ### reg_dump (utility)
-`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, TSV, XLSX, or common format.
-An optional key path filter may also be supplied. Optional analysis to recover deleted and prior versions of keys and values from the transaction log is also supported.
+`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, XLSX, TSV, or common format.
+An optional key path filter may also be supplied. Optional recovery of deleted and prior versions of keys and values from the transaction log is also supported.
 
 JSONL dumps _all_ the data. The `--full-field-info` argument will include file offset information for each field.
 
