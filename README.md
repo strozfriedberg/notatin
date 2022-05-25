@@ -111,6 +111,5 @@ let filter = FilterBuilder::new()
  * https://en.wikipedia.org/wiki/Glucose_oxidase
  * https://en.wikipedia.org/wiki/Windows_Registry#Hives
 
-
  ## Copyright
  Copyright 2021 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.
