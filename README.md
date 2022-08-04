@@ -5,15 +5,15 @@ Notatin is a Rust parser for offline Windows Registry files. This project is cur
 ## Features
  - Implemented using 100% safe Rust and works on all platforms supported by Rust (that have stdlib). Tested in Windows and Ubuntu.
  - Supports applying transaction logs and recovering deleted and modified keys and values.
- - Supports exporting to JSONL, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry).
+ - Supports exporting to JSONL, XLSX, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry).
  - Python bindings are included in the project (pynotatin).
 
 ### notatin (crate)
  `notatin` is a library that parses Windows Registry files.
 
 ### reg_dump (utility)
-`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, TSV, XLSX, or common format.
-An optional key path filter may also be supplied. Optional analysis to recover deleted and prior versions of keys and values from the transaction log is also supported.
+`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, XLSX, TSV, or common format.
+An optional key path filter may also be supplied. Optional recovery of deleted and prior versions of keys and values from the transaction log is also supported.
 
 JSONL dumps _all_ the data. The `--full-field-info` argument will include file offset information for each field.
 
@@ -107,8 +107,9 @@ let filter = FilterBuilder::new()
  ## What is Notatin?
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
  It is present in honey because honeybees synthesize the enzyme and deposit it into the honey, where it acts as a natural preservative.
- So, Notatin helps preserve things in hives. https://en.wikipedia.org/wiki/Glucose_oxidase
+ So, Notatin helps preserve things in hives.
+ * https://en.wikipedia.org/wiki/Glucose_oxidase
+ * https://en.wikipedia.org/wiki/Windows_Registry#Hives
 
  ## Copyright
  Copyright 2021 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.
-

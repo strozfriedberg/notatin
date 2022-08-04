@@ -5,7 +5,7 @@ Python bindings for the Notatin crate. This project is currently pre-release and
 ### From source:
 
 ```
-pip install . --use-feature=in-tree-build
+pip install .
 ```
 
 ### From Github:

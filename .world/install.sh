@@ -11,6 +11,6 @@ cp pynotatin/target/wheels/* $INSTALL/lib/python/pynotatin
 
 if [[ "$Target" == 'windows_package' ]]; then
   pushd pynotatin
-  pip install . --use-feature=in-tree-build
+  pip install .
   popd
 fi
