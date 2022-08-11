@@ -32,4 +32,3 @@ Use `cargo test --no-default-features` to run the Rust unit tests. The `--no-def
 
 ## Copyright
 Copyright 2021 Aon Cyber Solutions. Notatin and PyNotatin are licensed under the Apache License, Version 2.0.
-
