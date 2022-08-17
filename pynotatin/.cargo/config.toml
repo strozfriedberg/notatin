@@ -8,5 +8,7 @@ rustflags = [
 rustflags = [
   "-C", "link-arg=-undefined",
   "-C", "link-arg=dynamic_lookup",
+  "-L", "/opt/homebrew/lib",
+  "-l", "intl",
 ]
 
