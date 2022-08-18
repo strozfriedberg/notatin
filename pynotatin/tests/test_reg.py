@@ -96,8 +96,10 @@ def test_get_key(sample_parser):
         parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
+        assert key.pretty_path == "Control Panel\\Accessibility"
         sub = key.find_key(parser, "Keyboard Response")
         assert sub.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response"
+        assert sub.pretty_path == "Control Panel\\Accessibility\\Keyboard Response"
 
 def test_sub_keys(sample_parser):
     with open(sample_parser, "rb") as m:

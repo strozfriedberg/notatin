@@ -105,6 +105,15 @@ impl PyNotatinKey {
         self.inner.path.to_object(py)
     }
 
+    /// pretty_path(self, /)
+    /// --
+    ///
+    /// Returns the pretty path (no root object) of the key
+    #[getter]
+    pub fn pretty_path(&self, py: Python) -> PyObject {
+        self.inner.get_pretty_path().to_object(py)
+    }
+
     /// number_of_sub_keys(self, /)
     /// --
     ///
