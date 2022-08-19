@@ -141,10 +141,7 @@ impl PyNotatinValueVersionsIterator {
         match self.versions.get(self.index) {
             Some(value) => {
                 self.index += 1;
-                Some(PyNotatinValuesIterator::reg_value_to_pyobject(
-                    value.clone(),
-                    py,
-                ))
+                Some(self.reg_value_to_pyobject(Ok(value.clone()), py))
             }
             None => None,
         }
