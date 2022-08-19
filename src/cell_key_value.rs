@@ -264,24 +264,28 @@ impl CellKeyValue {
     const MIN_CELL_VALUE_SIZE: usize = 24;
     const SIGNATURE: &'static str = "vk";
 
-    fn check_size(size: i32, input: &[u8]) -> bool {
-        let size_abs = size.unsigned_abs() as usize;
-        Self::MIN_CELL_VALUE_SIZE <= size_abs && size_abs <= input.len()
+    pub fn get_content(&self) -> (CellValue, Option<Logs>) {
+        let mut warnings = Logs::default();
+        let cell_value = self
+            .data_type
+            .get_value_content(self.detail.value_bytes().as_ref(), &mut warnings)
+            .or_else(|err| -> Result<CellValue, Error> {
+                warnings.add(LogCode::WarningContent, &err);
+                Ok(CellValue::Error)
+            })
+            .expect("Error handled in or_else");
+
+        match warnings.get() {
+            Some(_) => (cell_value, Some(warnings)),
+            _ => (cell_value, None),
+        }
     }
 
-    /// Returns the byte length of the cell (regardless of if it's allocated or free)
-    pub(crate) fn get_cell_size(&self) -> usize {
-        self.detail.size().unsigned_abs() as usize
+    pub fn get_pretty_name(&self) -> String {
+        util::get_pretty_name(&self.detail.value_name())
     }
 
-    pub(crate) fn is_free(&self) -> bool {
-        self.detail.size() > 0
-    }
-
-    pub(crate) fn slack_offset_absolute(&self) -> usize {
-        self.file_offset_absolute + self.get_cell_size() - self.detail.slack().len()
-    }
-
+    /// Returns a CellValue containing `self.detail.value_bytes` interpreted as `self.data_type`
     pub(crate) fn from_bytes(
         input_orig: &[u8],
         file_offset_absolute: usize,
@@ -369,6 +373,50 @@ impl CellKeyValue {
         }
     }
 
+    /// Reads the value content and stores it in self.detail.value_bytes
+    pub(crate) fn read_value_bytes(&mut self, file_info: &FileInfo, state: &mut State) {
+        let (value_bytes, data_offsets_absolute) = Self::read_value_bytes_direct(
+            self.file_offset_absolute,
+            self.detail.data_size_raw(),
+            self.detail.data_offset_relative(),
+            &self.data_type,
+            file_info,
+            &mut self.logs,
+        );
+
+        self.data_offsets_absolute.extend(data_offsets_absolute);
+        self.hash = Some(CellKeyValue::hash(
+            state,
+            self.detail.data_type_raw(),
+            self.detail.flags_raw(),
+            &value_bytes,
+        ));
+        let value_bytes_len = value_bytes.len() as u32;
+        self.detail.set_value_bytes_full(
+            &Some(value_bytes),
+            self.file_offset_absolute,
+            value_bytes_len,
+        );
+    }
+
+    /// Returns the byte length of the cell (regardless of if it's allocated or free)
+    pub(crate) fn get_cell_size(&self) -> usize {
+        self.detail.size().unsigned_abs() as usize
+    }
+
+    pub(crate) fn is_free(&self) -> bool {
+        self.detail.size() > 0
+    }
+
+    pub(crate) fn slack_offset_absolute(&self) -> usize {
+        self.file_offset_absolute + self.get_cell_size() - self.detail.slack().len()
+    }
+
+    fn check_size(size: i32, input: &[u8]) -> bool {
+        let size_abs = size.unsigned_abs() as usize;
+        Self::MIN_CELL_VALUE_SIZE <= size_abs && size_abs <= input.len()
+    }
+
     fn read_value_bytes_direct(
         file_offset_absolute: usize,
         data_size_raw: u32,
@@ -445,60 +493,12 @@ impl CellKeyValue {
         (value_bytes, data_offsets_absolute)
     }
 
-    /// Reads the value content and stores it in self.detail.value_bytes
-    pub(crate) fn read_value_bytes(&mut self, file_info: &FileInfo, state: &mut State) {
-        let (value_bytes, data_offsets_absolute) = Self::read_value_bytes_direct(
-            self.file_offset_absolute,
-            self.detail.data_size_raw(),
-            self.detail.data_offset_relative(),
-            &self.data_type,
-            file_info,
-            &mut self.logs,
-        );
-
-        self.data_offsets_absolute.extend(data_offsets_absolute);
-        self.hash = Some(CellKeyValue::hash(
-            state,
-            self.detail.data_type_raw(),
-            self.detail.flags_raw(),
-            &value_bytes,
-        ));
-        let value_bytes_len = value_bytes.len() as u32;
-        self.detail.set_value_bytes_full(
-            &Some(value_bytes),
-            self.file_offset_absolute,
-            value_bytes_len,
-        );
-    }
-
-    /// Returns a CellValue containing `self.detail.value_bytes` interpreted as `self.data_type`
-    pub fn get_content(&self) -> (CellValue, Option<Logs>) {
-        let mut warnings = Logs::default();
-        let cell_value = self
-            .data_type
-            .get_value_content(self.detail.value_bytes().as_ref(), &mut warnings)
-            .or_else(|err| -> Result<CellValue, Error> {
-                warnings.add(LogCode::WarningContent, &err);
-                Ok(CellValue::Error)
-            })
-            .expect("Error handled in or_else");
-
-        match warnings.get() {
-            Some(_) => (cell_value, Some(warnings)),
-            _ => (cell_value, None),
-        }
-    }
-
     fn hash(state: &mut State, data_type_raw: u32, flags_raw: u16, value_bytes: &[u8]) -> Hash {
         state.hasher.reset();
         state.hasher.update(&data_type_raw.to_le_bytes());
         state.hasher.update(&flags_raw.to_le_bytes());
         state.hasher.update(value_bytes);
         state.hasher.finalize()
-    }
-
-    pub fn get_pretty_name(&self) -> String {
-        util::get_pretty_name(&self.detail.value_name())
     }
 }
 
