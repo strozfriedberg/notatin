@@ -15,8 +15,8 @@
  *
  */
 
-use crate::err::PyNotatinError;
 use crate::py_notatin_content::PyNotatinContent;
+use crate::py_notatin_key::PyNotatinValuesIterator;
 use pyo3::prelude::*;
 
 use notatin::{
@@ -135,34 +135,13 @@ pub struct PyNotatinValueVersionsIterator {
 }
 
 impl PyNotatinValueVersionsIterator {
-    fn reg_value_to_pyobject(
-        &self,
-        reg_value_result: Result<CellKeyValue, PyNotatinError>,
-        py: Python,
-    ) -> PyObject {
-        match reg_value_result {
-            Ok(reg_value) => {
-                match PyNotatinValue::from_cell_key_value(py, reg_value)
-                    .map(|entry| entry.to_object(py))
-                {
-                    Ok(py_reg_value) => py_reg_value,
-                    Err(e) => e.to_object(py),
-                }
-            }
-            Err(e) => {
-                let err = PyErr::from(e);
-                err.to_object(py)
-            }
-        }
-    }
-
     fn next(&mut self) -> Option<PyObject> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         match self.versions.get(self.index) {
             Some(value) => {
                 self.index += 1;
-                Some(self.reg_value_to_pyobject(
+                Some(PyNotatinValuesIterator::reg_value_to_pyobject(
                     Ok(value.clone()),
                     py,
                 ))

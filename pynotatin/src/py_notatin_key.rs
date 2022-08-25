@@ -186,6 +186,7 @@ impl PyNotatinKey {
     }
 }
 
+
 #[pyclass]
 pub struct PyNotatinValuesIterator {
     inner: CellKeyNode,
@@ -193,8 +194,7 @@ pub struct PyNotatinValuesIterator {
 }
 
 impl PyNotatinValuesIterator {
-    fn reg_value_to_pyobject(
-        &mut self,
+    pub(crate) fn reg_value_to_pyobject(
         reg_value_result: Result<CellKeyValue, PyNotatinError>,
         py: Python,
     ) -> PyObject {
@@ -220,7 +220,7 @@ impl PyNotatinValuesIterator {
         match self.inner.next_value(self.sub_values_iter_index) {
             Some((value, sub_values_iter_index)) => {
                 self.sub_values_iter_index = sub_values_iter_index;
-                Some(self.reg_value_to_pyobject(Ok(value), py))
+                Some(Self::reg_value_to_pyobject(Ok(value), py))
             }
             None => None,
         }
