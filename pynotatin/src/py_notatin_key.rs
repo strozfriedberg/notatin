@@ -17,7 +17,6 @@
 
 use pyo3::prelude::*;
 
-use crate::err::PyNotatinError;
 use crate::py_notatin_parser::{PyNotatinKeysIterator, PyNotatinParser};
 use crate::py_notatin_value::PyNotatinValue;
 use crate::util::date_to_pyobject;
@@ -195,22 +194,14 @@ pub struct PyNotatinValuesIterator {
 
 impl PyNotatinValuesIterator {
     pub(crate) fn reg_value_to_pyobject(
-        reg_value_result: Result<CellKeyValue, PyNotatinError>,
+        reg_value: CellKeyValue,
         py: Python,
     ) -> PyObject {
-        match reg_value_result {
-            Ok(reg_value) => {
-                match PyNotatinValue::from_cell_key_value(py, reg_value)
-                    .map(|entry| entry.to_object(py))
-                {
-                    Ok(py_reg_value) => py_reg_value,
-                    Err(e) => e.to_object(py),
-                }
-            }
-            Err(e) => {
-                let err = PyErr::from(e);
-                err.to_object(py)
-            }
+        match PyNotatinValue::from_cell_key_value(py, reg_value)
+            .map(|entry| entry.to_object(py))
+        {
+            Ok(py_reg_value) => py_reg_value,
+            Err(e) => e.to_object(py),
         }
     }
 
@@ -220,7 +211,7 @@ impl PyNotatinValuesIterator {
         match self.inner.next_value(self.sub_values_iter_index) {
             Some((value, sub_values_iter_index)) => {
                 self.sub_values_iter_index = sub_values_iter_index;
-                Some(Self::reg_value_to_pyobject(Ok(value), py))
+                Some(Self::reg_value_to_pyobject(value, py))
             }
             None => None,
         }
