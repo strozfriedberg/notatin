@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+pub mod common_writer;
 pub mod tsv_writer;
 pub mod xlsx_writer;
 
@@ -24,12 +25,13 @@ use notatin::{
     filter::FilterBuilder,
     parser::ParserIterator,
     parser_builder::ParserBuilder,
-    progress, util,
+    progress,
 };
 use std::{
     fs::File,
     io::{BufWriter, Write},
 };
+use common_writer::WriteCommon;
 use tsv_writer::WriteTsv;
 use xlsx_writer::WriteXlsx;
 
@@ -107,20 +109,18 @@ fn main() -> Result<(), Error> {
         WriteXlsx::new(output, recovered_only).write(&parser, filter)?;
     } else if output_type == OutputType::Tsv {
         WriteTsv::new(output, recovered_only)?.write(&parser, filter)?;
+    } else if output_type == OutputType::Common {
+        WriteCommon::write(output, &parser, filter)?;
     } else {
         let write_file = File::create(output)?;
-        if output_type == OutputType::Common {
-            util::write_common_export_format(&parser, filter, write_file)?;
-        } else {
-            let mut iter = ParserIterator::new(&parser);
-            if let Some(filter) = filter {
-                iter.with_filter(filter);
-            }
-            let mut writer = BufWriter::new(write_file);
-            for (index, key) in iter.iter().enumerate() {
-                console.update_progress(index)?;
-                writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
-            }
+        let mut iter = ParserIterator::new(&parser);
+        if let Some(filter) = filter {
+            iter.with_filter(filter);
+        }
+        let mut writer = BufWriter::new(write_file);
+        for (index, key) in iter.iter().enumerate() {
+            console.update_progress(index)?;
+            writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
         }
     }
     console.write(&format!("\nFinished writing {}\n", output))?;
