@@ -11,23 +11,17 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 pub(crate) struct WriteCommon {
-    writer: BufWriter<File>
+    writer: BufWriter<File>,
 }
 
 impl WriteCommon {
     pub(crate) fn new(output: &str) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
-        Ok(WriteCommon {
-            writer
-        })
+        Ok(WriteCommon { writer })
     }
 
-    pub(crate) fn write(
-        &mut self,
-        parser: &Parser,
-        filter: Option<Filter>,
-    ) -> Result<(), Error> {
+    pub(crate) fn write(&mut self, parser: &Parser, filter: Option<Filter>) -> Result<(), Error> {
         writeln!(
             &mut self.writer,
             "## Registry common export format\n\
@@ -114,7 +108,11 @@ impl WriteCommon {
         writeln!(&mut self.writer, "## total_keys: {}", keys)?;
         writeln!(&mut self.writer, "## total_values: {}", values)?;
         writeln!(&mut self.writer, "## total_unused_keys: {}", unused_keys)?;
-        writeln!(&mut self.writer, "## total_unused_values: {}", unused_values)?;
+        writeln!(
+            &mut self.writer,
+            "## total_unused_values: {}",
+            unused_values
+        )?;
         writeln!(
             &mut self.writer,
             "## total_deleted_from_transaction_log_keys: {}",
