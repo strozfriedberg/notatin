@@ -122,7 +122,7 @@ impl PyNotatinValue {
             py,
             PyNotatinValueVersionsIterator {
                 index: 0,
-                versions: self.inner.versions.clone()
+                versions: self.inner.versions.clone(),
             },
         )
     }

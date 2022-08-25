@@ -189,12 +189,8 @@ pub struct PyNotatinKeysIterator {
 }
 
 impl PyNotatinKeysIterator {
-    pub(crate) fn reg_key_to_pyobject(
-        reg_key: CellKeyNode,
-        py: Python,
-    ) -> PyObject {
-        match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py))
-        {
+    pub(crate) fn reg_key_to_pyobject(reg_key: CellKeyNode, py: Python) -> PyObject {
+        match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py)) {
             Ok(py_reg_key) => py_reg_key,
             Err(e) => e.to_object(py),
         }

@@ -185,7 +185,6 @@ impl PyNotatinKey {
     }
 }
 
-
 #[pyclass]
 pub struct PyNotatinValuesIterator {
     inner: CellKeyNode,
@@ -193,13 +192,8 @@ pub struct PyNotatinValuesIterator {
 }
 
 impl PyNotatinValuesIterator {
-    pub(crate) fn reg_value_to_pyobject(
-        reg_value: CellKeyValue,
-        py: Python,
-    ) -> PyObject {
-        match PyNotatinValue::from_cell_key_value(py, reg_value)
-            .map(|entry| entry.to_object(py))
-        {
+    pub(crate) fn reg_value_to_pyobject(reg_value: CellKeyValue, py: Python) -> PyObject {
+        match PyNotatinValue::from_cell_key_value(py, reg_value).map(|entry| entry.to_object(py)) {
             Ok(py_reg_value) => py_reg_value,
             Err(e) => e.to_object(py),
         }
@@ -231,10 +225,7 @@ impl PyNotatinSubKeysIterator {
         match self.sub_keys.get(self.index) {
             Some(key) => {
                 self.index += 1;
-                Some(PyNotatinKeysIterator::reg_key_to_pyobject(
-                    key.clone(),
-                    py,
-                ))
+                Some(PyNotatinKeysIterator::reg_key_to_pyobject(key.clone(), py))
             }
             None => None,
         }
