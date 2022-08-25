@@ -232,7 +232,7 @@ impl PyNotatinSubKeysIterator {
             Some(key) => {
                 self.index += 1;
                 Some(PyNotatinKeysIterator::reg_key_to_pyobject(
-                    Ok(key.clone()),
+                    key.clone(),
                     py,
                 ))
             }

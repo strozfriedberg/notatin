@@ -190,18 +190,13 @@ pub struct PyNotatinKeysIterator {
 
 impl PyNotatinKeysIterator {
     pub(crate) fn reg_key_to_pyobject(
-        reg_key_result: Result<CellKeyNode, PyNotatinError>,
+        reg_key: CellKeyNode,
         py: Python,
     ) -> PyObject {
-        match reg_key_result {
-            Ok(reg_key) => {
-                match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py))
-                {
-                    Ok(py_reg_key) => py_reg_key,
-                    Err(e) => e.to_object(py),
-                }
-            }
-            Err(e) => PyErr::from(e).to_object(py),
+        match PyNotatinKey::from_cell_key_node(py, reg_key).map(|entry| entry.to_object(py))
+        {
+            Ok(py_reg_key) => py_reg_key,
+            Err(e) => e.to_object(py),
         }
     }
 
@@ -210,7 +205,7 @@ impl PyNotatinKeysIterator {
         let py = gil.python();
         self.inner
             .next_key_preorder(&mut self.iterator_context)
-            .map(|key| Self::reg_key_to_pyobject(Ok(key), py))
+            .map(|key| Self::reg_key_to_pyobject(key, py))
     }
 }
 
