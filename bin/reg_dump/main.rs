@@ -15,6 +15,7 @@
  */
 
 pub mod common_writer;
+pub mod json_writer;
 pub mod tsv_writer;
 pub mod xlsx_writer;
 
@@ -23,15 +24,12 @@ use notatin::{
     cli_util::parse_paths,
     err::Error,
     filter::FilterBuilder,
-    parser::ParserIterator,
     parser_builder::ParserBuilder,
     progress,
 };
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-};
+
 use common_writer::WriteCommon;
+use json_writer::WriteJson;
 use tsv_writer::WriteTsv;
 use xlsx_writer::WriteXlsx;
 
@@ -105,6 +103,7 @@ fn main() -> Result<(), Error> {
 
     let mut console = progress::new(true);
     console.write("Writing file")?;
+
     if output_type == OutputType::Xlsx {
         WriteXlsx::new(output, recovered_only).write(&parser, filter)?;
     } else if output_type == OutputType::Tsv {
@@ -112,16 +111,7 @@ fn main() -> Result<(), Error> {
     } else if output_type == OutputType::Common {
         WriteCommon::write(output, &parser, filter)?;
     } else {
-        let write_file = File::create(output)?;
-        let mut iter = ParserIterator::new(&parser);
-        if let Some(filter) = filter {
-            iter.with_filter(filter);
-        }
-        let mut writer = BufWriter::new(write_file);
-        for (index, key) in iter.iter().enumerate() {
-            console.update_progress(index)?;
-            writeln!(&mut writer, "{}", serde_json::to_string(&key).unwrap())?;
-        }
+        WriteJson::write(output, &parser, filter, &mut console)?;
     }
     console.write(&format!("\nFinished writing {}\n", output))?;
     Ok(())
