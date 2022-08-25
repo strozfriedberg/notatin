@@ -106,7 +106,7 @@ fn main() -> Result<(), Error> {
     } else if output_type == OutputType::Tsv {
         WriteTsv::new(output, recovered_only)?.write(&parser, filter)?;
     } else if output_type == OutputType::Common {
-        WriteCommon::write(output, &parser, filter)?;
+        WriteCommon::new(output)?.write(&parser, filter)?;
     } else {
         WriteJson::write(output, &parser, filter, &mut console)?;
     }

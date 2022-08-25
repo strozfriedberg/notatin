@@ -10,104 +10,26 @@ use notatin::{
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-pub(crate) struct WriteCommon {}
+pub(crate) struct WriteCommon {
+    writer: BufWriter<File>
+}
 
 impl WriteCommon {
+    pub(crate) fn new(output: &str) -> Result<Self, Error> {
+        let write_file = File::create(output)?;
+        let writer = BufWriter::new(write_file);
+        Ok(WriteCommon {
+            writer
+        })
+    }
+
     pub(crate) fn write(
-        out_path: &str,
+        &mut self,
         parser: &Parser,
         filter: Option<Filter>,
     ) -> Result<(), Error> {
-        let output = File::create(out_path)?;
-        fn get_alloc_char(state: &CellState) -> &str {
-            match state {
-                CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => "U",
-                CellState::DeletedTransactionLog => "D",
-                CellState::ModifiedTransactionLog => "M",
-                CellState::Allocated => "A",
-            }
-        }
-
-        fn write_key<W: Write>(
-            writer: &mut BufWriter<W>,
-            key: &CellKeyNode,
-            unused_keys: &mut u32,
-            keys: &mut u32,
-            tx_log_deleted_keys: &mut u32,
-            tx_log_modified_keys: &mut u32,
-        ) -> Result<(), Error> {
-            let key_path = match key.cell_state {
-                CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
-                    *unused_keys += 1;
-                    &key.key_name
-                } // ## When including unused keys, only the recovered key name should be included, not the full path to the deleted key.
-                CellState::Allocated => {
-                    *keys += 1;
-                    &key.path[1..]
-                } // drop the first slash to match EZ's formatting
-                CellState::DeletedTransactionLog => {
-                    *tx_log_deleted_keys += 1;
-                    &key.path[1..]
-                } // drop the first slash to match EZ's formatting
-                CellState::ModifiedTransactionLog => {
-                    *tx_log_modified_keys += 1;
-                    &key.path[1..]
-                } // drop the first slash to match EZ's formatting
-            };
-            writeln!(
-                writer,
-                "key,{},{},{},,,,{}",
-                get_alloc_char(&key.cell_state),
-                key.file_offset_absolute,
-                util::escape_string(key_path),
-                util::format_date_time(key.last_key_written_date_and_time())
-            )?;
-            Ok(())
-        }
-
-        fn write_value<W: Write>(
-            writer: &mut BufWriter<W>,
-            key: &CellKeyNode,
-            value: &CellKeyValue,
-            unused_values: &mut u32,
-            values: &mut u32,
-            tx_log_deleted_values: &mut u32,
-            tx_log_modified_values: &mut u32,
-        ) -> Result<(), Error> {
-            let key_name = match value.cell_state {
-                CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
-                    *unused_values += 1;
-                    ""
-                } // ## When including unused values, do not include the parent key information
-                CellState::Allocated => {
-                    *values += 1;
-                    &key.key_name[..]
-                }
-                CellState::DeletedTransactionLog => {
-                    *tx_log_deleted_values += 1;
-                    &key.key_name[..]
-                }
-                CellState::ModifiedTransactionLog => {
-                    *tx_log_modified_values += 1;
-                    &key.key_name[..]
-                }
-            };
-            writeln!(
-                writer,
-                "value,{},{},{},{},{:?},{},",
-                get_alloc_char(&value.cell_state),
-                value.file_offset_absolute,
-                util::escape_string(key_name),
-                util::escape_string(&value.get_pretty_name()),
-                value.data_type as u32,
-                util::to_hex_string(&value.detail.value_bytes().unwrap_or_default()[..])
-            )?;
-            Ok(())
-        }
-
-        let mut writer = BufWriter::new(output);
         writeln!(
-            &mut writer,
+            &mut self.writer,
             "## Registry common export format\n\
             ## Key format\n\
             ## key,Is Free,Absolute offset in decimal,KeyPath,,,,LastWriteTime in UTC\n\
@@ -150,8 +72,7 @@ impl WriteCommon {
         let mut console = progress::new(true);
         for (index, key) in iter.iter().enumerate() {
             console.update_progress(index)?;
-            write_key(
-                &mut writer,
+            self.write_key(
                 &key,
                 &mut unused_keys,
                 &mut keys,
@@ -159,8 +80,7 @@ impl WriteCommon {
                 &mut tx_log_modified_keys,
             )?;
             for mk in &key.versions {
-                write_key(
-                    &mut writer,
+                self.write_key(
                     mk,
                     &mut unused_keys,
                     &mut keys,
@@ -170,8 +90,7 @@ impl WriteCommon {
             }
 
             for value in key.value_iter() {
-                write_value(
-                    &mut writer,
+                self.write_value(
                     &key,
                     &value,
                     &mut unused_values,
@@ -181,8 +100,7 @@ impl WriteCommon {
                 )?;
 
                 for mv in value.versions {
-                    write_value(
-                        &mut writer,
+                    self.write_value(
                         &key,
                         &mv,
                         &mut unused_values,
@@ -193,29 +111,115 @@ impl WriteCommon {
                 }
             }
         }
-        writeln!(&mut writer, "## total_keys: {}", keys)?;
-        writeln!(&mut writer, "## total_values: {}", values)?;
-        writeln!(&mut writer, "## total_unused_keys: {}", unused_keys)?;
-        writeln!(&mut writer, "## total_unused_values: {}", unused_values)?;
+        writeln!(&mut self.writer, "## total_keys: {}", keys)?;
+        writeln!(&mut self.writer, "## total_values: {}", values)?;
+        writeln!(&mut self.writer, "## total_unused_keys: {}", unused_keys)?;
+        writeln!(&mut self.writer, "## total_unused_values: {}", unused_values)?;
         writeln!(
-            &mut writer,
+            &mut self.writer,
             "## total_deleted_from_transaction_log_keys: {}",
             tx_log_deleted_keys
         )?;
         writeln!(
-            &mut writer,
+            &mut self.writer,
             "## total_deleted_from_transaction_log_values: {}",
             tx_log_deleted_values
         )?;
         writeln!(
-            &mut writer,
+            &mut self.writer,
             "## total_modified_from_transaction_log_keys: {}",
             tx_log_modified_keys
         )?;
         writeln!(
-            &mut writer,
+            &mut self.writer,
             "## total_modified_from_transaction_log_values: {}",
             tx_log_modified_values
+        )?;
+        Ok(())
+    }
+
+    fn get_alloc_char(state: &CellState) -> &str {
+        match state {
+            CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => "U",
+            CellState::DeletedTransactionLog => "D",
+            CellState::ModifiedTransactionLog => "M",
+            CellState::Allocated => "A",
+        }
+    }
+
+    fn write_key(
+        &mut self,
+        key: &CellKeyNode,
+        unused_keys: &mut u32,
+        keys: &mut u32,
+        tx_log_deleted_keys: &mut u32,
+        tx_log_modified_keys: &mut u32,
+    ) -> Result<(), Error> {
+        let key_path = match key.cell_state {
+            CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
+                *unused_keys += 1;
+                &key.key_name
+            } // ## When including unused keys, only the recovered key name should be included, not the full path to the deleted key.
+            CellState::Allocated => {
+                *keys += 1;
+                &key.path[1..]
+            } // drop the first slash to match EZ's formatting
+            CellState::DeletedTransactionLog => {
+                *tx_log_deleted_keys += 1;
+                &key.path[1..]
+            } // drop the first slash to match EZ's formatting
+            CellState::ModifiedTransactionLog => {
+                *tx_log_modified_keys += 1;
+                &key.path[1..]
+            } // drop the first slash to match EZ's formatting
+        };
+        writeln!(
+            self.writer,
+            "key,{},{},{},,,,{}",
+            Self::get_alloc_char(&key.cell_state),
+            key.file_offset_absolute,
+            util::escape_string(key_path),
+            util::format_date_time(key.last_key_written_date_and_time())
+        )?;
+        Ok(())
+    }
+
+    fn write_value(
+        &mut self,
+        key: &CellKeyNode,
+        value: &CellKeyValue,
+        unused_values: &mut u32,
+        values: &mut u32,
+        tx_log_deleted_values: &mut u32,
+        tx_log_modified_values: &mut u32,
+    ) -> Result<(), Error> {
+        let key_name = match value.cell_state {
+            CellState::DeletedPrimaryFile | CellState::DeletedPrimaryFileSlack => {
+                *unused_values += 1;
+                ""
+            } // ## When including unused values, do not include the parent key information
+            CellState::Allocated => {
+                *values += 1;
+                &key.key_name[..]
+            }
+            CellState::DeletedTransactionLog => {
+                *tx_log_deleted_values += 1;
+                &key.key_name[..]
+            }
+            CellState::ModifiedTransactionLog => {
+                *tx_log_modified_values += 1;
+                &key.key_name[..]
+            }
+        };
+        writeln!(
+            self.writer,
+            "value,{},{},{},{},{:?},{},",
+            Self::get_alloc_char(&value.cell_state),
+            value.file_offset_absolute,
+            util::escape_string(key_name),
+            util::escape_string(&value.get_pretty_name()),
+            value.data_type as u32,
+            util::to_hex_string(&value.detail.value_bytes().unwrap_or_default()[..])
         )?;
         Ok(())
     }
