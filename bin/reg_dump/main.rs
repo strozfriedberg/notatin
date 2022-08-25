@@ -21,10 +21,7 @@ pub mod xlsx_writer;
 
 use clap::{arg_enum, value_t, App, Arg};
 use notatin::{
-    cli_util::parse_paths,
-    err::Error,
-    filter::FilterBuilder,
-    parser_builder::ParserBuilder,
+    cli_util::parse_paths, err::Error, filter::FilterBuilder, parser_builder::ParserBuilder,
     progress,
 };
 

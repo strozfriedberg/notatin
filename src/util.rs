@@ -19,11 +19,7 @@ use crate::log::{LogCode, Logs};
 use chrono::{DateTime, Utc};
 use nom::{take, IResult};
 use std::{
-    borrow::Cow,
-    char::REPLACEMENT_CHARACTER,
-    convert::TryInto,
-    fmt::Write as FmtWrite,
-    mem, str,
+    borrow::Cow, char::REPLACEMENT_CHARACTER, convert::TryInto, fmt::Write as FmtWrite, mem, str,
 };
 use winstructs::guid::Guid;
 
