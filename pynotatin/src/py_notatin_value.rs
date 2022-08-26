@@ -16,13 +16,14 @@
  */
 
 use crate::py_notatin_content::PyNotatinContent;
+use crate::py_notatin_key::PyNotatinValuesIterator;
 use pyo3::prelude::*;
 
 use notatin::{
     cell_key_value::CellKeyValue,
     cell_value::{CellValue, DecodableValue, DecodeFormat},
 };
-use pyo3::{Py, PyResult, Python};
+use pyo3::{Py, PyIterProtocol, PyResult, Python};
 
 #[pyclass(subclass)]
 /// Returns an instance of a cell value.
@@ -77,6 +78,10 @@ impl PyNotatinValue {
             },
         )
     }
+
+    fn versions(&mut self) -> PyResult<Py<PyNotatinValueVersionsIterator>> {
+        self.versions_iterator()
+    }
 }
 
 impl PyNotatinValue {
@@ -107,6 +112,52 @@ impl PyNotatinValue {
             }
             _ => None,
         }
+    }
+
+    fn versions_iterator(&mut self) -> PyResult<Py<PyNotatinValueVersionsIterator>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+
+        Py::new(
+            py,
+            PyNotatinValueVersionsIterator {
+                index: 0,
+                versions: self.inner.versions.clone(),
+            },
+        )
+    }
+}
+
+#[pyclass]
+pub struct PyNotatinValueVersionsIterator {
+    index: usize,
+    versions: Vec<CellKeyValue>,
+}
+
+impl PyNotatinValueVersionsIterator {
+    fn next(&mut self) -> Option<PyObject> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        match self.versions.get(self.index) {
+            Some(value) => {
+                self.index += 1;
+                Some(PyNotatinValuesIterator::reg_value_to_pyobject(
+                    value.clone(),
+                    py,
+                ))
+            }
+            None => None,
+        }
+    }
+}
+
+#[pyproto]
+impl PyIterProtocol for PyNotatinValueVersionsIterator {
+    fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValueVersionsIterator>> {
+        Ok(slf.into())
+    }
+    fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
+        Ok(slf.next())
     }
 }
 

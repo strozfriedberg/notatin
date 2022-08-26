@@ -91,13 +91,73 @@ def test_it_works_with_logs(sample_parser2):
         assert keys == 45587
         assert values == 108178
 
+        m.seek(0)
+        builder = PyNotatinParserBuilder(m)
+        log1 = open(test_directory / "system.log1", "rb")
+        log2 = open(test_directory / "system.log2", "rb")
+        builder.with_transaction_log(log1)
+        builder.with_transaction_log(log2)
+        builder.recover_deleted(True)
+        parser = builder.build()
+        log1.close()
+        log2.close()
+        keys = 0
+        values = 0
+        for key in parser.reg_keys():
+            print(key.path)
+            keys += 1
+            for value in key.values():
+                values += 1
+        assert keys == 45618
+        assert values == 108422
+
+
+def test_recovered_value(sample_parser2):
+    with open(sample_parser2, "rb") as m:
+        parser = PyNotatinParserBuilder(m).build()
+        keys = 0
+        values = 0
+        for key in parser.reg_keys():
+            print(key.path)
+            keys += 1
+            for value in key.values():
+                values += 1
+                print("\t"+ value.name + "\t" + str(value.raw_data_type))
+        assert keys == 45527
+        assert values == 107925
+
+        m.seek(0)
+        builder = PyNotatinParserBuilder(m)
+        log1 = open(test_directory / "system.log1", "rb")
+        log2 = open(test_directory / "system.log2", "rb")
+        builder.with_transaction_log(log1)
+        builder.with_transaction_log(log2)
+        builder.recover_deleted(True)
+        parser = builder.build()
+        log1.close()
+        log2.close()
+
+        recovered = 0
+        for key in parser.reg_keys():
+            if key.pretty_path == "RegistryTest":
+                for value in key.values():
+                    if value.name == "Multibyte character 𐐷":
+                        assert value.content == "Multibyte character 𐐷 - modified"
+                        for recovered_val in value.versions():
+                            recovered += 1
+                            assert recovered_val.content == "Multibyte character 𐐷"
+                break
+        assert recovered == 1
+
 def test_get_key(sample_parser):
     with open(sample_parser, "rb") as m:
         parser = PyNotatinParserBuilder(m).build()
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
+        assert key.pretty_path == "Control Panel\\Accessibility"
         sub = key.find_key(parser, "Keyboard Response")
         assert sub.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response"
+        assert sub.pretty_path == "Control Panel\\Accessibility\\Keyboard Response"
 
 def test_sub_keys(sample_parser):
     with open(sample_parser, "rb") as m:

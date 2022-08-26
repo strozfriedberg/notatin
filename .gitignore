@@ -1,2 +1,10 @@
 /target
 Cargo.lock
+
+*venv*
+.vscode
+
+pynotatin/target
+pynotatin/tests/__pycache__
+
+.world/build_config.sh

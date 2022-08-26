@@ -39,6 +39,10 @@ class PyNotatinKey(object):
     @property
     def path(self) -> str: ...
 
+    """ Returns the pretty path (no root) of the key """
+    @property
+    def pretty_path(self) -> str: ...
+
     """ Returns the number of sub keys """
     @property
     def number_of_sub_keys(self) -> int: ...
@@ -70,6 +74,9 @@ class PyNotatinValue(object):
 
     """ Decodes the content using one of the supported decoders (see `PyNotatinDecodeFormat`) """
     def decode(self, format: PyNotatinDecodeFormat, offset: int) -> PyNotatinContent: ...
+
+    """ Returns an iterator that yields value versions, if `recover_deleted` was enabled """
+    def versions(self): ...
 
 class PyNotatinContent(object):
     """ Returns the decoded content """
