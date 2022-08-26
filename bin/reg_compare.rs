@@ -19,13 +19,13 @@ use clap::{App, Arg};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
+    cli_util::parse_paths,
     err::Error,
     filter::FilterBuilder,
     log::Logs,
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
     util::format_date_time,
-    cli_util::parse_paths,
 };
 use std::{
     collections::HashMap,
