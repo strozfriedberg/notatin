@@ -97,10 +97,10 @@ fn main() -> Result<(), Error> {
         }
         k_added += 1;
         if k_added % 1000 == 0 {
-            println!("{}/{} keys parsed from base", k_added, k_total);
+            update_parsed_keys(k_added, k_total);
         }
     }
-    println!("{}/{} keys parsed from base", k_added, k_total);
+    update_parsed_keys(k_added, k_total);
 
     let mut keys_added = Vec::new();
     let mut keys_modified = Vec::new();
@@ -150,10 +150,10 @@ fn main() -> Result<(), Error> {
         }
         k_added += 1;
         if k_added % 100 == 0 {
-            println!("{}/{} keys compared", k_added, k_total);
+            update_keys_compared(k_added, k_total);
         }
     }
-    println!("{}/{} keys compared", k_added, k_total);
+    update_keys_compared(k_added, k_total);
 
     // Any items remaining in original_map were deleted (not present in file2)
     for remaining in original_map {
@@ -249,4 +249,12 @@ fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
         cell_key_node.access_flags(&mut logs)
     )
     .unwrap();
+}
+
+fn update_parsed_keys(k_added: usize, k_total: usize) {
+    println!("{}/{} keys parsed from base", k_added, k_total);
+}
+
+fn update_keys_compared(k_added: usize, k_total: usize) {
+    println!("{}/{} keys compared", k_added, k_total);
 }
