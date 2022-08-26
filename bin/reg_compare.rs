@@ -25,6 +25,7 @@ use notatin::{
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
     util::format_date_time,
+    cli_util::parse_paths,
 };
 use std::{
     collections::HashMap,
@@ -224,24 +225,6 @@ fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Erro
         parser_builder.with_transaction_log(log);
     }
     parser_builder.build()
-}
-
-fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {
-    let mut logs = Vec::new();
-    let mut primary = String::new();
-    for component in paths.split(',') {
-        let lower = component.trim().trim_matches('\'').to_ascii_lowercase();
-        if lower.ends_with(".log1") || lower.ends_with(".log2") {
-            logs.push(component.trim().trim_matches('\'').to_string());
-        } else {
-            primary = component.trim().trim_matches('\'').to_string();
-        }
-    }
-    if logs.is_empty() {
-        (primary, None)
-    } else {
-        (primary, Some(logs))
-    }
 }
 
 fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue) {
