@@ -76,13 +76,23 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
         Ordering::Less => micros += nanos_e6,
         Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2),
     }
-    // input >= 999_999_500 will round to 1_000_000; python can't handle this. Cap it.
-    std::cmp::min(micros, 999_999)
+    micros
 }
 
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let gil = Python::acquire_gil();
     let py = gil.python();
+
+    let mut micros = nanos_to_micros_round_half_even(date.timestamp_subsec_nanos());
+    let mut seconds = date.second() as u8;
+
+    // If micros overflows, subtract from ms and increment seconds.
+    // For our expected inputs, we only need to handle the case of a second of overflow.
+    if micros >= 1_000_000 {
+        micros -= 1_000_000;
+        seconds += 1;
+    }
+
     PyDateTime::new(
         py,
         date.year(),
@@ -90,8 +100,8 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
         date.day() as u8,
         date.hour() as u8,
         date.minute() as u8,
-        date.second() as u8,
-        nanos_to_micros_round_half_even(date.timestamp_subsec_nanos()),
+        seconds,
+        micros,
         None,
     )
     .map(|dt| dt.to_object(py))
@@ -171,6 +181,6 @@ mod tests {
         assert_eq!(nanos_to_micros_round_half_even(764_026_600), 764_027);
         assert_eq!(nanos_to_micros_round_half_even(764_026_500), 764_026);
         assert_eq!(nanos_to_micros_round_half_even(764_027_500), 764_028);
-        assert_eq!(nanos_to_micros_round_half_even(999_999_500), 999_999);
+        assert_eq!(nanos_to_micros_round_half_even(999_999_500), 1_000_000);
     }
 }
