@@ -68,15 +68,16 @@ impl FileOrFileLike {
 }
 
 fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
-    let nanos_e7 = (nanos % 1000) / 100;
-    let nanos_e6 = (nanos % 10000) / 1000;
-    let mut micros = (nanos / 10000) * 10;
+    let nanos_e7 = (nanos % 1_000) / 100;
+    let nanos_e6 = (nanos % 10_000) / 1000;
+    let mut micros = (nanos / 10_000) * 10;
     match nanos_e7.cmp(&5) {
         Ordering::Greater => micros += nanos_e6 + 1,
         Ordering::Less => micros += nanos_e6,
         Ordering::Equal => micros += nanos_e6 + (nanos_e6 % 2),
     }
-    micros
+    // input >= 999_999_500 will round to 1_000_000; python can't handle this. Cap it.
+    std::cmp::min(micros, 999_999)
 }
 
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
@@ -166,9 +167,10 @@ mod tests {
 
     #[test]
     fn test_nanos_to_micros_round_half_even() {
-        assert_eq!(nanos_to_micros_round_half_even(764026300), 764026);
-        assert_eq!(nanos_to_micros_round_half_even(764026600), 764027);
-        assert_eq!(nanos_to_micros_round_half_even(764026500), 764026);
-        assert_eq!(nanos_to_micros_round_half_even(764027500), 764028);
+        assert_eq!(nanos_to_micros_round_half_even(764_026_300), 764_026);
+        assert_eq!(nanos_to_micros_round_half_even(764_026_600), 764_027);
+        assert_eq!(nanos_to_micros_round_half_even(764_026_500), 764_026);
+        assert_eq!(nanos_to_micros_round_half_even(764_027_500), 764_028);
+        assert_eq!(nanos_to_micros_round_half_even(999_999_500), 999_999);
     }
 }
