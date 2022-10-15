@@ -18,9 +18,9 @@
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::{cmp::Ordering, fs::File, io::BufReader};
 
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use notatin::file_info::ReadSeek;
-use pyo3::types::{PyDateTime, PyString};
+use pyo3::types::{IntoPyDict, PyDateTime, PyString, PyTzInfo};
 use pyo3::ToPyObject;
 use pyo3::{PyObject, PyResult, Python};
 use pyo3_file::PyFileLikeObject;
@@ -79,43 +79,36 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     micros
 }
 
-pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
-    let gil = Python::acquire_gil();
-    let py = gil.python();
-
+fn date_splitter(date: &DateTime<Utc>) -> PyResult<(f64, u32)> {
+    let mut unix_time:f64 = date.timestamp() as f64;
     let mut micros = nanos_to_micros_round_half_even(date.timestamp_subsec_nanos());
-    let mut seconds = date.second() as u8;
 
     // If micros overflows, subtract from ms and increment seconds.
     // For our expected inputs, we only need to handle the case of a second of overflow.
     if micros >= 1_000_000 {
         micros -= 1_000_000;
-        seconds += 1;
+        unix_time += 1.0;
     }
 
-    PyDateTime::new(
-        py,
-        date.year(),
-        date.month() as u8,
-        date.day() as u8,
-        date.hour() as u8,
-        date.minute() as u8,
-        seconds,
-        micros,
-        None,
-    )
-    .map(|dt| dt.to_object(py))
+    Ok((unix_time, micros))
 }
 
-pub fn get_utc() -> PyResult<PyObject> {
+pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
+    let (unix_time, micros) = date_splitter(date)?;
+
     let gil = Python::acquire_gil();
     let py = gil.python();
 
     let datetime = py.import("datetime")?;
-    let tz: PyObject = datetime.get("timezone")?.into();
-    let utc = tz.getattr(py, "utc")?;
+    let timezone = datetime.getattr("timezone")?;
+    let utc: &PyTzInfo = timezone.getattr("utc")?.extract()?;
 
-    Ok(utc)
+    let pdt = PyDateTime::from_timestamp(py, unix_time, Some(utc))?;
+
+    let kwargs = [("microsecond", micros)].into_py_dict(py);
+    let result = pdt.call_method("replace", (), Some(kwargs));
+
+    result.map(|dt| dt.to_object(py))
 }
 
 // Logging implementation from https://github.com/omerbenamram/pymft-rs
@@ -173,6 +166,8 @@ pub fn init_logging(py: Python) -> Result<(), SetLoggerError> {
 
 #[cfg(test)]
 mod tests {
+    use pyo3::types::{PyDateAccess, PyTimeAccess};
+
     use super::*;
 
     #[test]
@@ -182,5 +177,45 @@ mod tests {
         assert_eq!(nanos_to_micros_round_half_even(764_026_500), 764_026);
         assert_eq!(nanos_to_micros_round_half_even(764_027_500), 764_028);
         assert_eq!(nanos_to_micros_round_half_even(999_999_500), 1_000_000);
+    }
+
+    #[test]
+    fn test_date_splitter(){
+        let tests = [
+            ("2020-09-29T17:38:04.9999995Z", (1601401085.0f64, 0u32)),
+            ("2020-09-29T17:38:04.0000004Z", (1601401084.0f64, 0u32)),
+            ("2020-09-29T17:38:04.1234567Z", (1601401084.0f64, 123457u32)),
+        ];
+
+        for (test, expected) in tests {
+            let dt = DateTime::parse_from_rfc3339(test).unwrap().with_timezone(&Utc);
+            let res = date_splitter(&dt).unwrap();
+            assert_eq!(res, expected);
+        }
+    }
+
+    #[test]
+    fn test_date_to_pyobject() {
+        let tests = [
+            ("2020-09-29T17:38:04.9999995Z", (2020, 9, 29, 17, 38, 5, 0)),
+            ("2020-09-29T17:38:04.0000004Z", (2020, 9, 29, 17, 38, 4, 0)),
+            ("2020-09-29T17:38:04.1234567Z", (2020, 9, 29, 17, 38, 4, 123457)),
+        ];
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        for (test, (y, mo, d, h, min, s, us)) in tests {
+            let dt = DateTime::parse_from_rfc3339(test).unwrap().with_timezone(&Utc);
+
+            let po = date_to_pyobject(&dt).unwrap();
+            let pdt = po.as_ref(py).extract::<&PyDateTime>().unwrap();
+
+            assert_eq!(pdt.get_year(), y);
+            assert_eq!(pdt.get_month(), mo);
+            assert_eq!(pdt.get_day(), d);
+            assert_eq!(pdt.get_hour(), h);
+            assert_eq!(pdt.get_minute(), min);
+            assert_eq!(pdt.get_second(), s);
+            assert_eq!(pdt.get_microsecond(), us);
+        }
     }
 }
