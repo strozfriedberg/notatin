@@ -155,6 +155,7 @@ def test_get_key(sample_parser):
         key = parser.open("Control Panel\\Accessibility")
         assert key.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility"
         assert key.pretty_path == "Control Panel\\Accessibility"
+        assert key.last_key_written_date_and_time == datetime.datetime(2015, 2, 9, 21, 41, 7, 497832, tzinfo=None)
         sub = key.find_key(parser, "Keyboard Response")
         assert sub.path == "\\CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}\\Control Panel\\Accessibility\\Keyboard Response"
         assert sub.pretty_path == "Control Panel\\Accessibility\\Keyboard Response"
