@@ -18,9 +18,9 @@
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::{cmp::Ordering, fs::File, io::BufReader};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Timelike, TimeZone, NaiveDateTime, Utc};
 use notatin::file_info::ReadSeek;
-use pyo3::types::{IntoPyDict, PyDateTime, PyString, PyTzInfo};
+use pyo3::types::{IntoPyDict, PyDateAccess, PyDateTime, PyString, PyTimeAccess, PyTzInfo};
 use pyo3::ToPyObject;
 use pyo3::{PyObject, PyResult, Python};
 use pyo3_file::PyFileLikeObject;
@@ -79,16 +79,13 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     micros
 }
 
-fn date_splitter(date: &DateTime<Utc>) -> PyResult<(f64, u32)> {
-    let mut unix_time:f64 = date.timestamp() as f64;
+fn date_splitter(date: &DateTime<Utc>) -> PyResult<(i64, u32)> {
+    let mut unix_time = date.timestamp();
     let mut micros = nanos_to_micros_round_half_even(date.timestamp_subsec_nanos());
 
-    // If micros overflows, subtract from ms and increment seconds.
-    // For our expected inputs, we only need to handle the case of a second of overflow.
-    if micros >= 1_000_000 {
-        micros -= 1_000_000;
-        unix_time += 1.0;
-    }
+    let inc_sec = micros / 1_000_000;
+    micros %= 1_000_000;
+    unix_time += inc_sec as i64;
 
     Ok((unix_time, micros))
 }
@@ -99,16 +96,20 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let gil = Python::acquire_gil();
     let py = gil.python();
 
-    let datetime = py.import("datetime")?;
-    let timezone = datetime.getattr("timezone")?;
-    let utc: &PyTzInfo = timezone.getattr("utc")?.extract()?;
+    let rounded_date = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(unix_time, micros * 1_000), Utc);
 
-    let pdt = PyDateTime::from_timestamp(py, unix_time, Some(utc))?;
-
-    let kwargs = [("microsecond", micros)].into_py_dict(py);
-    let result = pdt.call_method("replace", (), Some(kwargs));
-
-    result.map(|dt| dt.to_object(py))
+    PyDateTime::new(
+        py,
+        rounded_date.year(),
+        rounded_date.month() as u8,
+        rounded_date.day() as u8,
+        rounded_date.hour() as u8,
+        rounded_date.minute() as u8,
+        rounded_date.second() as u8,
+        rounded_date.timestamp_subsec_micros(),
+        None,
+    )
+    .map(|dt| dt.to_object(py))
 }
 
 // Logging implementation from https://github.com/omerbenamram/pymft-rs
@@ -182,9 +183,10 @@ mod tests {
     #[test]
     fn test_date_splitter(){
         let tests = [
-            ("2020-09-29T17:38:04.9999995Z", (1601401085.0f64, 0u32)),
-            ("2020-09-29T17:38:04.0000004Z", (1601401084.0f64, 0u32)),
-            ("2020-09-29T17:38:04.1234567Z", (1601401084.0f64, 123457u32)),
+            ("2020-09-29T17:38:04.9999995Z", (1601401085, 0u32)),
+            ("2020-09-29T17:38:04.0000004Z", (1601401084, 0u32)),
+            ("2020-09-29T17:38:04.1234567Z", (1601401084, 123457u32)),
+            ("2020-12-31T23:59:59.9999995Z", (1609459200, 0u32)),
         ];
 
         for (test, expected) in tests {
@@ -200,6 +202,7 @@ mod tests {
             ("2020-09-29T17:38:04.9999995Z", (2020, 9, 29, 17, 38, 5, 0)),
             ("2020-09-29T17:38:04.0000004Z", (2020, 9, 29, 17, 38, 4, 0)),
             ("2020-09-29T17:38:04.1234567Z", (2020, 9, 29, 17, 38, 4, 123457)),
+            ("2020-12-31T23:59:59.9999995Z", (2021, 1, 1, 0, 0, 0, 0)),
         ];
         let gil = Python::acquire_gil();
         let py = gil.python();
