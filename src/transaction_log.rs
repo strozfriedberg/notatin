@@ -262,12 +262,11 @@ impl TransactionLog {
                     new_sequence_number = log_entry.sequence_number;
 
                     // save the prior buffer for use
-                    let prior_file_info =
-                        if parser.recover_deleted {
-                            Some(parser.file_info.clone())
-                        } else {
-                            None
-                        };
+                    let prior_file_info = if parser.recover_deleted {
+                        Some(parser.file_info.clone())
+                    } else {
+                        None
+                    };
 
                     // apply the updated bytes to the main file buffer for each dirty page
                     for dirty_page in &log_entry.dirty_pages {

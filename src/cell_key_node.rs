@@ -275,12 +275,7 @@ impl CellKeyNode {
     }
 
     fn update_modified_lists(&mut self, state: &State) {
-        let path =
-            if self.is_key_root() {
-                ""
-            } else {
-                &self.path
-            };
+        let path = if self.is_key_root() { "" } else { &self.path };
         if !self.cell_state.is_deleted_primary_file() {
             if let Some(deleted_keys) = state.deleted_keys.get(path) {
                 self.deleted_keys = deleted_keys.to_vec();

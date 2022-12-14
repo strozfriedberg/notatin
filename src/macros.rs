@@ -34,7 +34,10 @@ macro_rules! impl_flags_from_bits {
     ($bitflag_type: ident, $var_type: ident) => {
         impl $bitflag_type {
             #[allow(dead_code)]
-            pub(crate) fn from_bits_checked(flags: $var_type, logs: &mut $crate::log::Logs) -> Self {
+            pub(crate) fn from_bits_checked(
+                flags: $var_type,
+                logs: &mut $crate::log::Logs,
+            ) -> Self {
                 let flags_mapped = $bitflag_type::from_bits_truncate(flags);
                 if flags != flags_mapped.bits() {
                     fn f() {}

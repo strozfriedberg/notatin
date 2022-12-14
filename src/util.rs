@@ -115,7 +115,7 @@ pub(crate) fn from_ascii(slice: &[u8], logs: &mut Logs, err_detail: &str) -> Str
                         // error shouldn't happen here since we're constructing a valid UTF-16 char
                         logs.add(
                             LogCode::WarningConversion,
-                            &format!("{}: {}", err_detail, err ),
+                            &format!("{}: {}", err_detail, err),
                         );
                         REPLACEMENT_CHARACTER
                     })
