@@ -139,7 +139,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                     cell_key_value.slack_offset_absolute(),
                 );
                 if force_add || cell_key_value.is_free() {
-                    cell_key_value.read_value_bytes(self.file_info, &mut self.state);
+                    cell_key_value.read_value_bytes(self.file_info, self.state);
                     offset_ret = cell_key_value.get_cell_size();
                     cell_key_value.cell_state = cell_state;
                     self.state.deleted_values.add("", cell_key_value);
@@ -168,7 +168,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         let mut offset_ret = 1; // Return bytes to increment offset. If we encounter a parseable cell, we will increment by the size of the cell; if we don't, we inc by one.
         match CellKeyNode::read_from_slice(
             self.file_info,
-            &mut self.state,
+            self.state,
             input_orig,
             CellKeyNodeReadOptions {
                 offset: file_offset_absolute,

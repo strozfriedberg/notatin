@@ -328,18 +328,18 @@ impl CellKeyValue {
 
             let mut logs = Logs::default();
 
-            let value_name;
-            if value_name_size == 0 {
-                value_name = String::new();
-            } else {
-                value_name = util::string_from_bytes(
-                    flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII),
-                    value_name_bytes,
-                    value_name_size,
-                    &mut logs,
-                    "value_name",
-                );
-            }
+            let value_name =
+                if value_name_size == 0 {
+                    String::new()
+                } else {
+                    util::string_from_bytes(
+                        flags.contains(CellKeyValueFlags::VALUE_COMP_NAME_ASCII),
+                        value_name_bytes,
+                        value_name_size,
+                        &mut logs,
+                        "value_name",
+                    )
+                };
             detail_enum.set_value_name_full(&value_name, value_name_offset, value_name_size as u32);
 
             let slack_offset = input.as_ptr() as usize - start_pos_ptr;

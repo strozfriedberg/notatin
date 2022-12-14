@@ -275,12 +275,12 @@ impl CellKeyNode {
     }
 
     fn update_modified_lists(&mut self, state: &State) {
-        let path;
-        if self.is_key_root() {
-            path = "";
-        } else {
-            path = &self.path;
-        }
+        let path =
+            if self.is_key_root() {
+                ""
+            } else {
+                &self.path
+            };
         if !self.cell_state.is_deleted_primary_file() {
             if let Some(deleted_keys) = state.deleted_keys.get(path) {
                 self.deleted_keys = deleted_keys.to_vec();
@@ -433,12 +433,12 @@ impl CellKeyNode {
                     Ok(cell_sub_key_offsets_absolute) => {
                         let self_is_filter_match_or_descendent =
                             self.is_filter_match_or_descendent();
-                        let sub_filter;
-                        if self_is_filter_match_or_descendent && filter.return_sub_keys() {
-                            sub_filter = None;
-                        } else {
-                            sub_filter = Some(filter);
-                        }
+                        let sub_filter =
+                            if self_is_filter_match_or_descendent && filter.return_sub_keys() {
+                                None
+                            } else {
+                                Some(filter)
+                            };
                         for val in cell_sub_key_offsets_absolute.iter() {
                             let ret = Self::read(
                                 file_info,
