@@ -82,7 +82,7 @@ impl Parser {
             &mut self.state,
             CellKeyNodeReadOptions {
                 offset: self.file_info.get_file_offset(input),
-                cur_path: &String::new(),
+                cur_path: "",
                 filter: None, // root will always match, so no need for a filter here
                 self_is_filter_match_or_descendent: true,
                 sequence_num: None,
@@ -497,7 +497,7 @@ impl Parser {
                     CellKeyNodeReadOptions {
                         offset: bb.base.root_cell_offset_relative as usize
                             + self.file_info.hbin_offset_absolute,
-                        cur_path: &String::new(),
+                        cur_path: "",
                         filter: None,
                         self_is_filter_match_or_descendent: true,
                         sequence_num: None,

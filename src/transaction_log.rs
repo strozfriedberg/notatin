@@ -200,7 +200,7 @@ impl TransactionLog {
                     Err(e) => {
                         error_logs.add(
                             LogCode::WarningParse,
-                            &format!("Skipping log file; {}", Error::from(e).to_string()),
+                            &format!("Skipping log file; {}", Error::from(e)),
                         );
                     }
                 }
@@ -262,12 +262,11 @@ impl TransactionLog {
                     new_sequence_number = log_entry.sequence_number;
 
                     // save the prior buffer for use
-                    let prior_file_info;
-                    if parser.recover_deleted {
-                        prior_file_info = Some(parser.file_info.clone());
+                    let prior_file_info = if parser.recover_deleted {
+                        Some(parser.file_info.clone())
                     } else {
-                        prior_file_info = None;
-                    }
+                        None
+                    };
 
                     // apply the updated bytes to the main file buffer for each dirty page
                     for dirty_page in &log_entry.dirty_pages {
