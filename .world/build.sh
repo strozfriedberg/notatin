@@ -6,6 +6,12 @@ if [[ "$Linkage" == 'static' || ( "$Target" == 'windows' ) ]]; then
   exit
 fi
 
+if [[ "$Target" == 'windows_package' ]]; then
+  PYTHON=python
+else
+  PYTHON=python3
+fi
+
 BASEDIR=$(pwd)
 
 cargo test
@@ -18,6 +24,6 @@ cargo clippy --all-features --all-targets
 poetry run maturin develop
 poetry run pytest
 
-poetry run maturin build --release
+poetry run maturin build  --interpreter $PYTHON --release
 
 popd
