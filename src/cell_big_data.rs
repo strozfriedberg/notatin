@@ -119,10 +119,7 @@ impl CellBigData {
     fn parse_big_data_offsets<'a>(&self, file_info: &'a FileInfo) -> IResult<&'a [u8], Vec<u32>> {
         let slice = file_info
             .buffer
-            .get(
-                file_info.hbin_offset_absolute
-                    + self.segment_list_offset_relative as usize..,
-            )
+            .get(file_info.hbin_offset_absolute + self.segment_list_offset_relative as usize..)
             .ok_or(nom::Err::Error(nom::error::Error {
                 input: &file_info.buffer[..],
                 code: nom::error::ErrorKind::Eof,

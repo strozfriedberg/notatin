@@ -262,7 +262,7 @@ mod macros {
             $enum_var:ident,
             $get_full_field_info:ident
         ) => {
-            paste::item!{
+            paste::item! {
                 let mut $enum_var: [<$class_name_prefix Enum>];
                 if $get_full_field_info {
                     $enum_var = [<$class_name_prefix Enum>]::Full(Box::default());

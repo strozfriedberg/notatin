@@ -496,8 +496,7 @@ pub(crate) fn decode_lznt1(
         if (header & SUB_BLOCK_IS_COMPRESSED_FLAG) == 0 {
             let block_size: usize = (header & SUB_BLOCK_SIZE_MASK) as usize + 1;
             decompressed.extend(
-                source[source_offset + source_index
-                    ..source_offset + source_index + block_size]
+                source[source_offset + source_index..source_offset + source_index + block_size]
                     .to_vec(),
             );
             source_index += block_size;
