@@ -121,7 +121,7 @@ impl CellBigData {
             .buffer
             .get(
                 file_info.hbin_offset_absolute
-                    + self.segment_list_offset_relative as usize as usize..,
+                    + self.segment_list_offset_relative as usize..,
             )
             .ok_or(nom::Err::Error(nom::error::Error {
                 input: &file_info.buffer[..],
