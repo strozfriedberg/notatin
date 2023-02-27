@@ -208,7 +208,7 @@ mod macros {
 
                 impl Default for [<$class_name_prefix Enum>] {
                     fn default() -> Self {
-                        Self::Light(Box::new([<$class_name_prefix Light>]::default()))
+                        Self::Light(Box::default())
                     }
                 }
 
@@ -262,12 +262,12 @@ mod macros {
             $enum_var:ident,
             $get_full_field_info:ident
         ) => {
-            paste::item!{
+            paste::item! {
                 let mut $enum_var: [<$class_name_prefix Enum>];
                 if $get_full_field_info {
-                    $enum_var = [<$class_name_prefix Enum>]::Full(Box::new([<$class_name_prefix Full>]::default()));
+                    $enum_var = [<$class_name_prefix Enum>]::Full(Box::default());
                 } else {
-                    $enum_var = [<$class_name_prefix Enum>]::Light(Box::new([<$class_name_prefix Light>]::default()));
+                    $enum_var = [<$class_name_prefix Enum>]::Light(Box::default());
                 }
             }
         };

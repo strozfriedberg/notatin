@@ -15,7 +15,7 @@
  */
 
 use crate::err::Error;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek};
 use std::path::Path;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -53,7 +53,7 @@ impl FileInfo {
 
 pub trait ReadSeek: Read + Seek {
     fn tell(&mut self) -> io::Result<u64> {
-        self.seek(SeekFrom::Current(0))
+        self.stream_position()
     }
 }
 
