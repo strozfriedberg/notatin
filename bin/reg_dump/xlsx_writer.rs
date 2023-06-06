@@ -280,11 +280,11 @@ impl WriteXlsx {
         Ok(())
     }
 
-    fn write_string_handle_overflow<'a>(
+    fn write_string_handle_overflow(
         primary_sheet: &mut WorksheetState,
         overflow_sheet: &mut WorksheetState,
         primary_sheet_col: u16,
-        val: Cow<'a, str>,
+        val: Cow<str>,
         link_format: &Format,
     ) -> Result<(), Error> {
         if val.len() > Self::MAX_EXCEL_CELL_LEN {
