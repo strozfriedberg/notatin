@@ -1076,7 +1076,7 @@ mod tests {
         };
         let mut state = State::default();
         let (_, key_node) =
-            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, &String::new(), None)
+            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, "", None)
                 .unwrap();
         let hash_array: [u8; blake3::OUT_LEN] = [
             0xfa, 0x8e, 0x6e, 0xc3, 0xf0, 0xa9, 0xbf, 0xf5, 0xbb, 0x82, 0x82, 0x0a, 0x44, 0xcb,
@@ -1138,7 +1138,7 @@ mod tests {
 
         state.get_full_field_info = true;
         let (_, key_node) =
-            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, &String::new(), None)
+            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, "", None)
                 .unwrap();
         let expected_full_output = CellKeyNode {
             detail: CellKeyNodeDetailEnum::Full(Box::new(CellKeyNodeDetailFull {
@@ -1290,7 +1290,7 @@ mod tests {
             &mut state,
             &file_info.buffer[0..10],
             0,
-            &String::new(),
+            "",
             None,
         );
         let remaining = &file_info.buffer[4..10];

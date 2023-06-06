@@ -870,7 +870,7 @@ mod tests {
             &mut state,
             CellKeyNodeReadOptions {
                 offset: 16155688,
-                cur_path: &String::new(),
+                cur_path: "",
                 filter: None,
                 self_is_filter_match_or_descendent: false,
                 sequence_num: None,
