@@ -43,7 +43,7 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
+    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, XlsxError> {
         Ok(
             WriteXlsx {
                 workbook: Workbook::new(output)?,
