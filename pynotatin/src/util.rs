@@ -95,7 +95,10 @@ pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let gil = Python::acquire_gil();
     let py = gil.python();
 
-    let rounded_date = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(unix_time, micros * 1_000), Utc);
+    let rounded_date = DateTime::<Utc>::from_utc(
+        NaiveDateTime::from_timestamp(unix_time, micros * 1_000),
+        Utc
+    );
 
     PyDateTime::new(
         py,
