@@ -19,6 +19,7 @@ use clap::{App, Arg};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
+    cli_util::parse_paths,
     err::Error,
     filter::FilterBuilder,
     log::Logs,
@@ -96,10 +97,10 @@ fn main() -> Result<(), Error> {
         }
         k_added += 1;
         if k_added % 1000 == 0 {
-            println!("{}/{} keys parsed from base", k_added, k_total);
+            update_parsed_keys(k_added, k_total);
         }
     }
-    println!("{}/{} keys parsed from base", k_added, k_total);
+    update_parsed_keys(k_added, k_total);
 
     let mut keys_added = Vec::new();
     let mut keys_modified = Vec::new();
@@ -149,10 +150,10 @@ fn main() -> Result<(), Error> {
         }
         k_added += 1;
         if k_added % 100 == 0 {
-            println!("{}/{} keys compared", k_added, k_total);
+            update_keys_compared(k_added, k_total);
         }
     }
-    println!("{}/{} keys compared", k_added, k_total);
+    update_keys_compared(k_added, k_total);
 
     // Any items remaining in original_map were deleted (not present in file2)
     for remaining in original_map {
@@ -226,24 +227,6 @@ fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Erro
     parser_builder.build()
 }
 
-fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {
-    let mut logs = Vec::new();
-    let mut primary = String::new();
-    for component in paths.split(',') {
-        let lower = component.trim().trim_matches('\'').to_ascii_lowercase();
-        if lower.ends_with(".log1") || lower.ends_with(".log2") {
-            logs.push(component.trim().trim_matches('\'').to_string());
-        } else {
-            primary = component.trim().trim_matches('\'').to_string();
-        }
-    }
-    if logs.is_empty() {
-        (primary, None)
-    } else {
-        (primary, Some(logs))
-    }
-}
-
 fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue) {
     writeln!(
         writer,
@@ -266,4 +249,12 @@ fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
         cell_key_node.access_flags(&mut logs)
     )
     .unwrap();
+}
+
+fn update_parsed_keys(k_added: usize, k_total: usize) {
+    println!("{}/{} keys parsed from base", k_added, k_total);
+}
+
+fn update_keys_compared(k_added: usize, k_total: usize) {
+    println!("{}/{} keys compared", k_added, k_total);
 }

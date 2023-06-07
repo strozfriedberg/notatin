@@ -37,37 +37,6 @@ pub struct CellBigData {
 }
 
 impl CellBigData {
-    pub(crate) fn is_big_data_block(input: &[u8]) -> bool {
-        match input.get(4..) {
-            Some(slice) => {
-                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).map_or(false, |_| true)
-            }
-            None => false,
-        }
-    }
-
-    /// Uses nom to parse a big data (db) hive bin cell. Returns a tuple of Self and the starting ptr offset
-    fn from_bytes(input: &[u8]) -> IResult<&[u8], (Self, usize)> {
-        let offset = input.as_ptr() as usize;
-        let (input, size) = le_i32(input)?;
-        let (input, _signature) = tag("db")(input)?;
-        let (input, count) = le_u16(input)?;
-        let (input, segment_list_offset_relative) = le_u32(input)?;
-
-        Ok((
-            input,
-            (
-                CellBigData {
-                    size: size.unsigned_abs(),
-                    count,
-                    segment_list_offset_relative,
-                    logs: Logs::default(),
-                },
-                offset,
-            ),
-        ))
-    }
-
     /// Returns a tuple of the full content buffer and the absolute data offsets
     pub(crate) fn get_big_data_bytes(
         file_info: &FileInfo,
@@ -102,6 +71,37 @@ impl CellBigData {
         Ok((
             data_type.get_value_bytes(&big_data_buffer[..]),
             data_offsets_absolute.iter().map(|x| *x as usize).collect(),
+        ))
+    }
+
+    pub(crate) fn is_big_data_block(input: &[u8]) -> bool {
+        match input.get(4..) {
+            Some(slice) => {
+                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).map_or(false, |_| true)
+            }
+            None => false,
+        }
+    }
+
+    /// Uses nom to parse a big data (db) hive bin cell. Returns a tuple of Self and the starting ptr offset
+    fn from_bytes(input: &[u8]) -> IResult<&[u8], (Self, usize)> {
+        let offset = input.as_ptr() as usize;
+        let (input, size) = le_i32(input)?;
+        let (input, _signature) = tag("db")(input)?;
+        let (input, count) = le_u16(input)?;
+        let (input, segment_list_offset_relative) = le_u32(input)?;
+
+        Ok((
+            input,
+            (
+                CellBigData {
+                    size: size.unsigned_abs(),
+                    count,
+                    segment_list_offset_relative,
+                    logs: Logs::default(),
+                },
+                offset,
+            ),
         ))
     }
 
