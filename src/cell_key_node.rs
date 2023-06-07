@@ -416,7 +416,7 @@ impl CellKeyNode {
                                 ),
                                 Ok(kn) => {
                                     if let Some(mut kn) = kn {
-                                        if kn.iteration_state.filter_state == None {
+                                        if kn.iteration_state.filter_state.is_none() {
                                             if self_is_filter_match_or_descendent {
                                                 kn.iteration_state.filter_state =
                                                     Some(FilterMatchState::Descendent);
