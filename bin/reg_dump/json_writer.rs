@@ -17,7 +17,7 @@ impl WriteJson {
         console: &mut Box<dyn progress::UpdateProgressTrait>,
     ) -> Result<(), Error> {
         let write_file = File::create(out_path)?;
-        let mut iter = ParserIterator::new(&parser);
+        let mut iter = ParserIterator::new(parser);
         if let Some(filter) = filter {
             iter.with_filter(filter);
         }
