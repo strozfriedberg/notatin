@@ -1434,9 +1434,9 @@ checksum = "85e60b0d1b5f99db2556934e21937020776a5d31520bf169e851ac44e6420214"
 
 [[package]]
 name = "xlsxwriter"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "374513f77973dc4454bc76f68d749bf665e3b4624916d4f5ad47fcfcbfe8d2c8"
+checksum = "21f7eb250da9497cc9c4ff55c01a436b8adde7e97c4f3f528bf1b0701af6435b"
 dependencies = [
  "libxlsxwriter-sys",
 ]

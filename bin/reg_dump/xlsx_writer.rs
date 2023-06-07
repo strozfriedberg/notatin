@@ -43,12 +43,14 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Self {
-        WriteXlsx {
-            workbook: Workbook::new(output),
-            recovered_only,
-            console: progress::new(true),
-        }
+    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
+        Ok(
+            WriteXlsx {
+                workbook: Workbook::new(output)?,
+                recovered_only,
+                console: progress::new(true),
+            }
+        )
     }
 
     pub(crate) fn write(&mut self, parser: &Parser, filter: Option<Filter>) -> Result<(), Error> {
