@@ -92,13 +92,13 @@ fn date_splitter(date: &DateTime<Utc>) -> (i64, u32) {
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let (unix_time, micros) = date_splitter(date);
 
-    let gil = Python::acquire_gil();
-    let py = gil.python();
-
     let rounded_date = DateTime::<Utc>::from_utc(
         NaiveDateTime::from_timestamp(unix_time, micros * 1_000),
         Utc
     );
+
+    let gil = Python::acquire_gil();
+    let py = gil.python();
 
     PyDateTime::new(
         py,
