@@ -90,12 +90,10 @@ impl WriteXlsx {
             0,
             Self::ROW_HEIGHT,
             Some(
-                self
-                    .workbook
-                    .add_format()
+                Format::new()
                     .set_bold()
-                    .set_border_bottom(FormatBorder::Medium),
-            ),
+                    .set_border_bottom(FormatBorder::Medium)
+            )
         )?;
 
         reg_items_sheet.write_string(Self::COL_INDEX, "Index")?;
