@@ -79,7 +79,7 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     micros
 }
 
-fn date_splitter(date: &DateTime<Utc>) -> PyResult<(i64, u32)> {
+fn date_splitter(date: &DateTime<Utc>) -> (i64, u32) {
     let mut unix_time = date.timestamp();
     let mut micros = nanos_to_micros_round_half_even(date.timestamp_subsec_nanos());
 
@@ -87,11 +87,11 @@ fn date_splitter(date: &DateTime<Utc>) -> PyResult<(i64, u32)> {
     micros %= 1_000_000;
     unix_time += inc_sec as i64;
 
-    Ok((unix_time, micros))
+    (unix_time, micros)
 }
 
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
-    let (unix_time, micros) = date_splitter(date)?;
+    let (unix_time, micros) = date_splitter(date);
 
     let gil = Python::acquire_gil();
     let py = gil.python();
@@ -191,7 +191,7 @@ mod tests {
 
         for (test, expected) in tests {
             let dt = DateTime::parse_from_rfc3339(test).unwrap().with_timezone(&Utc);
-            let res = date_splitter(&dt).unwrap();
+            let res = date_splitter(&dt);
             assert_eq!(res, expected);
         }
     }
