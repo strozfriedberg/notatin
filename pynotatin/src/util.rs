@@ -20,9 +20,8 @@ use std::{cmp::Ordering, fs::File, io::BufReader};
 
 use chrono::{DateTime, Datelike, Timelike, NaiveDateTime, Utc};
 use notatin::file_info::ReadSeek;
+use pyo3::{PyObject, PyResult, Python, ToPyObject};
 use pyo3::types::{PyDateTime, PyString};
-use pyo3::ToPyObject;
-use pyo3::{PyObject, PyResult, Python};
 use pyo3_file::PyFileLikeObject;
 
 #[derive(Debug)]
