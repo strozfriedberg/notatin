@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = ">= 1.0"
 winstructs = ">= 0.3.0"
-blake3 = "0.3.8"
+blake3 = ">= 0.3.8"
 regex = "1.5.4"
 crossterm = "0.21.0"
 paste = "1.0"
