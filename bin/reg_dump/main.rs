@@ -66,7 +66,7 @@ fn main() -> Result<(), Error> {
         .arg(
             Arg::from_usage("<TYPE> 'output type'")
                 .short('t')
-                .possible_values(&OutputType::variants())
+                .possible_values(OutputType::variants())
                 .case_insensitive(true)
                 .default_value("jsonl"),
         )
