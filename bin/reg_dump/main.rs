@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
         ))
         .arg(
             Arg::with_name("input")
-                .short("i")
+                .short('i')
                 .long("input")
                 .value_name("FILE(S)")
                 .help("Base registry file with optional transaction log(s) (Comma separated list)")
@@ -56,7 +56,7 @@ fn main() -> Result<(), Error> {
         )
         .arg(
             Arg::with_name("output")
-                .short("o")
+                .short('o')
                 .long("output")
                 .value_name("FILE")
                 .help("Output file")
@@ -65,7 +65,7 @@ fn main() -> Result<(), Error> {
         )
         .arg(
             Arg::from_usage("<TYPE> 'output type'")
-                .short("t")
+                .short('t')
                 .possible_values(&OutputType::variants())
                 .case_insensitive(true)
                 .default_value("jsonl"),
