@@ -83,6 +83,7 @@ mod tests {
     #[test]
     fn test_from_bits_checked() {
         bitflags! {
+            #[derive(Debug, PartialEq)]
             pub struct TestFlags: u16 {
                 const TEST_1 = 0x0001;
                 const TEST_2 = 0x0002;

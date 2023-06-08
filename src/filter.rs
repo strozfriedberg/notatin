@@ -199,6 +199,7 @@ impl RegQuery {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct FilterFlags: u16 {
         const FILTER_NO_MATCH     = 0x0001;
         const FILTER_ITERATE_KEYS = 0x0002;

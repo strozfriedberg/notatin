@@ -785,7 +785,7 @@ impl Iterator for CellKeyNodeValueIterator<'_> {
 
 bitflags! {
     #[allow(non_camel_case_types)]
-    #[derive(Default)]
+    #[derive(Debug, Default, PartialEq)]
     pub struct AccessFlags: u32 {
         /// This key was accessed before a Windows registry was initialized with the NtInitializeRegistry() routine during the boot
         const ACCESSED_BEFORE_INIT = 0x00000001;
@@ -798,7 +798,7 @@ impl_flags_from_bits! { AccessFlags, u32 }
 
 bitflags! {
     #[allow(non_camel_case_types)]
-    #[derive(Default)]
+    #[derive(Debug, Default, PartialEq)]
     pub struct KeyNodeFlags: u16 {
         /// Is volatile (not used, a key node on a disk isn't expected to have this flag set)
         const KEY_VOLATILE       = 0x0001;
