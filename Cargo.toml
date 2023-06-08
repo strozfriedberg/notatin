@@ -9,7 +9,7 @@ bitflags = "1.2"
 enum-primitive-derive = ">= 0.2.1"
 md5 = ">= 0.7.0"
 nom = "6"
-num = "0.4"
+num = ">= 0.4"
 num-traits = "0.2.14"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
