@@ -9,7 +9,10 @@ use notatin::{
 };
 use std::{borrow::Cow, convert::TryFrom};
 use xlsxwriter::{
-    Format, FormatBorder, FormatColor, FormatUnderline, Workbook, Worksheet, XlsxError,
+    Format, Workbook, Worksheet, XlsxError
+};
+use xlsxwriter::format::{
+    FormatBorder, FormatColor, FormatUnderline
 };
 
 pub(crate) struct WriteXlsx {
@@ -43,12 +46,14 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Self {
-        WriteXlsx {
-            workbook: Workbook::new(output),
-            recovered_only,
-            console: progress::new(true),
-        }
+    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, XlsxError> {
+        Ok(
+            WriteXlsx {
+                workbook: Workbook::new(output)?,
+                recovered_only,
+                console: progress::new(true),
+            }
+        )
     }
 
     pub(crate) fn write(&mut self, parser: &Parser, filter: Option<Filter>) -> Result<(), Error> {
@@ -85,12 +90,10 @@ impl WriteXlsx {
             0,
             Self::ROW_HEIGHT,
             Some(
-                &self
-                    .workbook
-                    .add_format()
+                Format::new()
                     .set_bold()
-                    .set_border_bottom(FormatBorder::Medium),
-            ),
+                    .set_border_bottom(FormatBorder::Medium)
+            )
         )?;
 
         reg_items_sheet.write_string(Self::COL_INDEX, "Index")?;
@@ -113,8 +116,8 @@ impl WriteXlsx {
         }
 
         if let Some(logs) = parser.get_parse_logs().get() {
-            let mut link_format = self.workbook.add_format();
-            link_format = link_format.set_underline(FormatUnderline::Single);
+            let mut link_format = Format::new();
+            link_format.set_underline(FormatUnderline::Single);
             for log in logs {
                 logs_sheet.write_string(0, &format!("{:?}", log.code))?;
                 Self::check_write_string(
@@ -280,11 +283,11 @@ impl WriteXlsx {
         Ok(())
     }
 
-    fn write_string_handle_overflow<'a>(
+    fn write_string_handle_overflow(
         primary_sheet: &mut WorksheetState,
         overflow_sheet: &mut WorksheetState,
         primary_sheet_col: u16,
-        val: Cow<'a, str>,
+        val: Cow<str>,
         link_format: &Format,
     ) -> Result<(), Error> {
         if val.len() > Self::MAX_EXCEL_CELL_LEN {
@@ -355,24 +358,24 @@ impl WriteXlsx {
         shaded: bool,
         upper_line: bool,
     ) -> (Format, Format) {
-        let mut row_format = self.workbook.add_format();
-        let mut link_format = self.workbook.add_format();
+        let mut row_format = Format::new();
+        let mut link_format = Format::new();
         if shaded {
-            row_format = row_format.set_bg_color(FormatColor::Custom(Self::COLOR_LIGHT_GREY));
-            link_format = link_format.set_bg_color(FormatColor::Custom(Self::COLOR_LIGHT_GREY));
+            row_format.set_bg_color(FormatColor::Custom(Self::COLOR_LIGHT_GREY));
+            link_format.set_bg_color(FormatColor::Custom(Self::COLOR_LIGHT_GREY));
         }
         if upper_line {
-            row_format = row_format.set_border_top(FormatBorder::Hair);
-            link_format = link_format.set_border_top(FormatBorder::Hair);
+            row_format.set_border_top(FormatBorder::Hair);
+            link_format.set_border_top(FormatBorder::Hair);
         }
         if cell_state.is_deleted() {
-            row_format = row_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_RED));
-            link_format = link_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_RED));
+            row_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_RED));
+            link_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_RED));
         } else if cell_state == CellState::ModifiedTransactionLog {
-            row_format = row_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_GREY));
-            link_format = link_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_GREY));
+            row_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_GREY));
+            link_format.set_font_color(FormatColor::Custom(Self::COLOR_DARK_GREY));
         }
-        link_format = link_format.set_underline(FormatUnderline::Single);
+        link_format.set_underline(FormatUnderline::Single);
         (row_format, link_format)
     }
 }

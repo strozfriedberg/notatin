@@ -18,11 +18,10 @@
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::{cmp::Ordering, fs::File, io::BufReader};
 
-use chrono::{DateTime, Datelike, Timelike, TimeZone, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Timelike, NaiveDateTime, Utc};
 use notatin::file_info::ReadSeek;
-use pyo3::types::{IntoPyDict, PyDateAccess, PyDateTime, PyString, PyTimeAccess, PyTzInfo};
-use pyo3::ToPyObject;
-use pyo3::{PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, ToPyObject};
+use pyo3::types::{PyDateTime, PyString};
 use pyo3_file::PyFileLikeObject;
 
 #[derive(Debug)]
@@ -79,7 +78,7 @@ fn nanos_to_micros_round_half_even(nanos: u32) -> u32 {
     micros
 }
 
-fn date_splitter(date: &DateTime<Utc>) -> PyResult<(i64, u32)> {
+fn date_splitter(date: &DateTime<Utc>) -> (i64, u32) {
     let mut unix_time = date.timestamp();
     let mut micros = nanos_to_micros_round_half_even(date.timestamp_subsec_nanos());
 
@@ -87,16 +86,19 @@ fn date_splitter(date: &DateTime<Utc>) -> PyResult<(i64, u32)> {
     micros %= 1_000_000;
     unix_time += inc_sec as i64;
 
-    Ok((unix_time, micros))
+    (unix_time, micros)
 }
 
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
-    let (unix_time, micros) = date_splitter(date)?;
+    let (unix_time, micros) = date_splitter(date);
+
+    let rounded_date = DateTime::<Utc>::from_utc(
+        NaiveDateTime::from_timestamp(unix_time, micros * 1_000),
+        Utc
+    );
 
     let gil = Python::acquire_gil();
     let py = gil.python();
-
-    let rounded_date = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(unix_time, micros * 1_000), Utc);
 
     PyDateTime::new(
         py,
@@ -191,7 +193,7 @@ mod tests {
 
         for (test, expected) in tests {
             let dt = DateTime::parse_from_rfc3339(test).unwrap().with_timezone(&Utc);
-            let res = date_splitter(&dt).unwrap();
+            let res = date_splitter(&dt);
             assert_eq!(res, expected);
         }
     }

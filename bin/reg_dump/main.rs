@@ -102,7 +102,7 @@ fn main() -> Result<(), Error> {
     console.write("Writing file")?;
 
     if output_type == OutputType::Xlsx {
-        WriteXlsx::new(output, recovered_only).write(&parser, filter)?;
+        WriteXlsx::new(output, recovered_only)?.write(&parser, filter)?;
     } else if output_type == OutputType::Tsv {
         WriteTsv::new(output, recovered_only)?.write(&parser, filter)?;
     } else if output_type == OutputType::Common {
