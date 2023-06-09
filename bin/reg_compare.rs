@@ -15,7 +15,7 @@
  */
 
 use blake3::Hash;
-use clap::{App, Arg};
+use clap::{Arg, Command, arg};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
@@ -34,45 +34,51 @@ use std::{
 };
 
 fn main() -> Result<(), Error> {
-    let matches = App::new("Notatin Registry Compare")
+    let matches = Command::new("Notatin Registry Compare")
     .version("0.1")
-    .arg(Arg::from_usage("-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'"))
-    .arg(Arg::with_name("base")
+    .arg(arg!(-f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"))
+    .arg(Arg::new("base")
         .short('b')
         .long("base")
         .value_name("FILES")
         .help("Base registry file with optional transaction file(s) (Comma separated list)")
         .required(true)
-        .takes_value(true))
-    .arg(Arg::with_name("comparison")
+        .number_of_values(1))
+    .arg(Arg::new("comparison")
         .short('c')
         .long("comparison")
         .value_name("FILES")
         .help("Comparison registry file with optional transaction file(s) (Comma separated list)")
         .required(true)
-        .takes_value(true))
-    .arg(Arg::with_name("output")
+        .number_of_values(1))
+    .arg(Arg::new("output")
         .short('o')
         .long("output")
         .value_name("FILE")
         .help("Output file")
         .required(true)
-        .takes_value(true))
+        .number_of_values(1))
     .get_matches();
 
-    let (base_primary, base_logs) = parse_paths(matches.value_of("base").expect("Required value"));
-    let (comparison_primary, comparison_logs) =
-        parse_paths(matches.value_of("comparison").expect("Required value"));
+    let (base_primary, base_logs) = parse_paths(
+        matches.get_one::<String>("base")
+               .expect("Required value")
+    );
 
-    let output = matches.value_of("output").expect("Required value");
+    let (comparison_primary, comparison_logs) = parse_paths(
+        matches.get_one::<String>("comparison")
+               .expect("Required value")
+    );
+
+    let output: &str = matches.get_one::<String>("output")
+                              .expect("Required value");
 
     let write_file = File::create(output)?;
     let mut writer = BufWriter::new(write_file);
 
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
-    let mut parser1 = get_parser(base_primary, base_logs)?;
-    let filter = match matches.value_of("filter") {
+    let filter = match matches.get_one::<String>("filter") {
         Some(f) => Some(
             FilterBuilder::new()
                 .add_key_path(f)
@@ -82,6 +88,7 @@ fn main() -> Result<(), Error> {
         None => None,
     };
 
+    let mut parser1 = get_parser(base_primary, base_logs)?;
     let (k_total, _) = parser1.count_all_keys_and_values(filter.as_ref());
     let mut k_added = 0;
 

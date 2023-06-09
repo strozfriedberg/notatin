@@ -19,7 +19,8 @@ pub mod json_writer;
 pub mod tsv_writer;
 pub mod xlsx_writer;
 
-use clap::{arg_enum, value_t, App, Arg};
+use clap::{arg, Arg, Command, ValueEnum};
+use clap::builder::{EnumValueParser, PossibleValue};
 use notatin::{
     cli_util::parse_paths, err::Error, filter::FilterBuilder, parser_builder::ParserBuilder,
     progress,
@@ -31,53 +32,56 @@ use tsv_writer::WriteTsv;
 use xlsx_writer::WriteXlsx;
 
 fn main() -> Result<(), Error> {
-    let matches = App::new("Notatin Registry Dump")
+    let matches = Command::new("Notatin Registry Dump")
         .version("0.2")
-        .arg(Arg::from_usage(
-            "-r --recover 'Recover deleted and versioned keys and values'",
+        .arg(arg!(
+            -r --recover "Recover deleted and versioned keys and values"
         ))
-        .arg(Arg::from_usage(
-            "--recovered-only 'Only export recovered items (applicable for tsv and xlsx output only)'",
+        .arg(arg!(
+            --"recovered-only" "Only export recovered items (applicable for tsv and xlsx output only)"
         ))
-        .arg(Arg::from_usage(
-            "--full-field-info 'Get the offset and length for each key/value field (applicable for jsonl output only)'",
+        .arg(arg!(
+            --"full-field-info" "Get the offset and length for each key/value field (applicable for jsonl output only)"
         ))
-        .arg(Arg::from_usage(
-            "-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'",
+        .arg(arg!(
+            -f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"
         ))
         .arg(
-            Arg::with_name("input")
+            Arg::new("input")
                 .short('i')
                 .long("input")
                 .value_name("FILE(S)")
                 .help("Base registry file with optional transaction log(s) (Comma separated list)")
                 .required(true)
-                .takes_value(true),
+                .number_of_values(1),
         )
         .arg(
-            Arg::with_name("output")
+            Arg::new("output")
                 .short('o')
                 .long("output")
                 .value_name("FILE")
                 .help("Output file")
                 .required(true)
-                .takes_value(true),
+                .number_of_values(1),
         )
         .arg(
-            Arg::from_usage("<TYPE> 'output type'")
+            arg!(<TYPE> "output type")
                 .short('t')
-                .possible_values(OutputType::variants())
-                .case_insensitive(true)
+                .value_parser(EnumValueParser::<OutputType>::new())
+                .ignore_case(true)
                 .default_value("jsonl"),
         )
         .get_matches();
 
-    let (input, logs) = parse_paths(matches.value_of("input").expect("Required value"));
-    let output = matches.value_of("output").expect("Required value");
-    let recover = matches.is_present("recover");
-    let recovered_only = matches.is_present("recovered-only");
-    let get_full_field_info = matches.is_present("full-field-info");
-    let output_type = value_t!(matches, "TYPE", OutputType).unwrap_or_else(|e| e.exit());
+    let (input, logs) = parse_paths(
+        matches.get_one::<String>("input")
+               .expect("Required value")
+    );
+    let output = *matches.get_one("output").expect("Required value");
+    let recover = matches.get_flag("recover");
+    let recovered_only = matches.get_flag("recovered-only");
+    let get_full_field_info = matches.get_flag("full-field-info");
+    let output_type = *matches.get_one::<OutputType>("TYPE").expect("Unrecognized value");
 
     let mut parser_builder = ParserBuilder::from_path(input);
     parser_builder.update_console(true);
@@ -88,7 +92,7 @@ fn main() -> Result<(), Error> {
     }
     let parser = parser_builder.build()?;
 
-    let filter = match matches.value_of("filter") {
+    let filter = match matches.get_one::<String>("filter") {
         Some(f) => Some(
             FilterBuilder::new()
                 .add_key_path(f)
@@ -114,12 +118,30 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-arg_enum! {
-    #[derive(PartialEq, Debug)]
-    pub enum OutputType {
-        Jsonl,
-        Common,
-        Tsv,
-        Xlsx
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OutputType {
+    Jsonl,
+    Common,
+    Tsv,
+    Xlsx
+}
+
+impl ValueEnum for OutputType {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            OutputType::Jsonl,
+            OutputType::Common,
+            OutputType::Tsv,
+            OutputType::Xlsx
+        ]
+    }
+
+    fn to_possible_value<'a>(&self) -> Option<PossibleValue> {
+        Some(match self {
+            OutputType::Jsonl => PossibleValue::new("jsonl"),
+            OutputType::Common => PossibleValue::new("common"),
+            OutputType::Tsv => PossibleValue::new("tsv"),
+            OutputType::Xlsx => PossibleValue::new("xlsx")
+        })
     }
 }
