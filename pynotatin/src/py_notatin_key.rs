@@ -22,7 +22,7 @@ use crate::py_notatin_value::PyNotatinValue;
 use crate::util::date_to_pyobject;
 use notatin::{cell_key_node::CellKeyNode, cell_key_value::CellKeyValue};
 use pyo3::exceptions::PyNotImplementedError;
-use pyo3::{Py, PyIterProtocol, PyResult, Python};
+use pyo3::{Py, PyResult, Python};
 
 #[pyclass(subclass)]
 pub struct PyNotatinKey {
@@ -130,6 +130,14 @@ impl PyNotatinKey {
     pub fn number_of_key_values(&self, py: Python) -> PyObject {
         self.inner.detail.number_of_key_values().to_object(py)
     }
+
+    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValuesIterator>> {
+        slf.values()
+    }
+
+    fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
+        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyNotatinKey` is not supported. Try iterating over `PyNotatinKey(...).values() or PyNotatinKey(...).sub_keys()`"))
+    }
 }
 
 impl PyNotatinKey {
@@ -232,31 +240,23 @@ impl PyNotatinSubKeysIterator {
     }
 }
 
-#[pyproto]
-impl PyIterProtocol for PyNotatinKey {
-    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValuesIterator>> {
-        slf.values()
-    }
-    fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyNotatinKey` is not supported. Try iterating over `PyNotatinKey(...).values() or PyNotatinKey(...).sub_keys()`"))
-    }
-}
-
-#[pyproto]
-impl PyIterProtocol for PyNotatinValuesIterator {
+#[pymethods]
+impl PyNotatinValuesIterator {
     fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValuesIterator>> {
         Ok(slf.into())
     }
+
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
         Ok(slf.next())
     }
 }
 
-#[pyproto]
-impl PyIterProtocol for PyNotatinSubKeysIterator {
+#[pymethods]
+impl PyNotatinSubKeysIterator {
     fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinSubKeysIterator>> {
         Ok(slf.into())
     }
+
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
         Ok(slf.next())
     }

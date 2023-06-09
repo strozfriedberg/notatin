@@ -23,7 +23,7 @@ use notatin::{
     cell_key_value::CellKeyValue,
     cell_value::{CellValue, DecodableValue, DecodeFormat},
 };
-use pyo3::{Py, PyIterProtocol, PyResult, Python};
+use pyo3::{Py, PyResult, Python};
 
 #[pyclass(subclass)]
 /// Returns an instance of a cell value.
@@ -151,11 +151,12 @@ impl PyNotatinValueVersionsIterator {
     }
 }
 
-#[pyproto]
-impl PyIterProtocol for PyNotatinValueVersionsIterator {
+#[pymethods]
+impl PyNotatinValueVersionsIterator {
     fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinValueVersionsIterator>> {
         Ok(slf.into())
     }
+
     fn __next__(mut slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
         Ok(slf.next())
     }
