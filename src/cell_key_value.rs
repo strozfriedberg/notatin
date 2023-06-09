@@ -208,7 +208,7 @@ impl CellKeyValueDataTypes {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
     pub struct CellKeyValueFlags: u16 {
         const VALUE_COMP_NAME_ASCII = 1; // Name is an ASCII string / Otherwise the name is an Unicode (UTF-16 little-endian) string
         const IS_TOMBSTONE          = 2; // Is a tombstone value (the flag is used starting from Insider Preview builds of Windows 10 "Redstone 1"), a tombstone value also has the Data type field set to REG_NONE, the Data size field set to 0, and the Data offset field set to 0xFFFFFFFF
