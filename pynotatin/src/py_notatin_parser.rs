@@ -27,7 +27,6 @@ use notatin::{
 };
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
-use pyo3::PyIterProtocol;
 
 #[pyclass(subclass)]
 /// Returns an instance of the parser.
@@ -114,6 +113,14 @@ impl PyNotatinParser {
             _ => return Ok(None),
         }
         Ok(None)
+    }
+
+    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
+        slf.reg_keys()
+    }
+
+fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
+        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyNotatinParser` is not supported. Try iterating over `PyNotatinParser(...).reg_keys()`"))
     }
 }
 
@@ -205,18 +212,8 @@ impl PyNotatinKeysIterator {
     }
 }
 
-#[pyproto]
-impl PyIterProtocol for PyNotatinParser {
-    fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
-        slf.reg_keys()
-    }
-    fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
-        Err(PyErr::new::<PyNotImplementedError, _>("Using `next()` over `PyNotatinParser` is not supported. Try iterating over `PyNotatinParser(...).reg_keys()`"))
-    }
-}
-
-#[pyproto]
-impl PyIterProtocol for PyNotatinKeysIterator {
+#[pymethods]
+impl PyNotatinKeysIterator {
     fn __iter__(slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
         Ok(slf.into())
     }
