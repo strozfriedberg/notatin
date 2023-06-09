@@ -35,16 +35,16 @@ fn main() -> Result<(), Error> {
     let matches = Command::new("Notatin Registry Dump")
         .version("0.2")
         .arg(arg!(
-            "-r --recover 'Recover deleted and versioned keys and values'"
+            -r --recover "Recover deleted and versioned keys and values"
         ))
         .arg(arg!(
-            "--recovered-only 'Only export recovered items (applicable for tsv and xlsx output only)'"
+            --recovered-only "Only export recovered items (applicable for tsv and xlsx output only)"
         ))
         .arg(arg!(
-            "--full-field-info 'Get the offset and length for each key/value field (applicable for jsonl output only)'"
+            --full-field-info "Get the offset and length for each key/value field (applicable for jsonl output only)"
         ))
         .arg(arg!(
-            "-f --filter=[STRING] 'Key path for filter (ex: \'ControlSet001\\Services\')'"
+            -f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"
         ))
         .arg(
             Arg::new("input")
