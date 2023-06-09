@@ -65,7 +65,7 @@ fn main() -> Result<(), Error> {
                 .number_of_values(1),
         )
         .arg(
-            arg!("<TYPE> 'output type'")
+            arg!(<TYPE> "output type")
                 .short('t')
                 .value_parser(EnumValueParser::<OutputType>::new())
                 .ignore_case(true)
