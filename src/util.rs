@@ -17,7 +17,7 @@
 use crate::err::Error;
 use crate::log::{LogCode, Logs};
 use chrono::{DateTime, Utc};
-use nom::{take, IResult};
+use nom::{IResult, bytes::complete::take};
 use std::{
     borrow::Cow, char::REPLACEMENT_CHARACTER, convert::TryInto, fmt::Write as FmtWrite, mem, str,
 };
@@ -139,7 +139,7 @@ pub(crate) fn parser_eat_remaining(
 ) -> IResult<&[u8], &[u8]> {
     let cell_size_usize = cell_size as usize;
     if bytes_consumed < cell_size_usize {
-        take!(input, cell_size_usize - bytes_consumed)
+        take(cell_size_usize - bytes_consumed)(input)
     } else {
         Ok((input, &input[0..0]))
     }
