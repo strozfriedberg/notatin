@@ -14,7 +14,12 @@
  * limitations under the License.
  */
 
-use nom::{alt, named, tag};
+use nom::{
+    IResult,
+    branch::alt,
+    bytes::complete::tag,
+    combinator::map,
+};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -59,19 +64,21 @@ pub enum CellType {
 
 impl CellType {
     pub(crate) fn read_cell_type(input: &[u8]) -> Self {
-        named!(
-            cell_type<CellType>,
-            alt!(
-                tag!("nk") => { |_| CellType::CellKey } |
-                tag!("vk") => { |_| CellType::CellValue } |
-                tag!("sk") => { |_| CellType::CellSecurity } |
-                tag!("lf") => { |_| CellType::CellFastLeaf } |
-                tag!("li") => { |_| CellType::CellIndexLeaf } |
-                tag!("lh") => { |_| CellType::CellHashLeaf } |
-                tag!("ri") => { |_| CellType::CellIndexRoot } |
-                tag!("db") => { |_| CellType::CellBigData }
-            )
-        );
+        fn cell_type(b: &[u8]) -> IResult<&[u8], CellType> {
+            alt(
+                (
+                    map(tag("nk"), |_| CellType::CellKey),
+                    map(tag("vk"), |_| CellType::CellValue),
+                    map(tag("sk"), |_| CellType::CellSecurity),
+                    map(tag("lf"), |_| CellType::CellFastLeaf),
+                    map(tag("li"), |_| CellType::CellIndexLeaf),
+                    map(tag("lh"), |_| CellType::CellHashLeaf),
+                    map(tag("ri"), |_| CellType::CellIndexRoot),
+                    map(tag("db"), |_| CellType::CellBigData)
+                )
+            )(b)
+        }
+
         match cell_type(input) {
             Ok((_, cell_type)) => cell_type,
             Err(_) => CellType::CellOther,

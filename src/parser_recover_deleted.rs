@@ -22,8 +22,13 @@ use crate::file_info::FileInfo;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::LogCode;
 use crate::state::State;
-use nom::number::complete::le_i32;
-use nom::{alt, named, tag};
+use nom::{
+    IResult,
+    branch::alt,
+    bytes::complete::tag,
+    combinator::map,
+    number::complete::le_i32
+};
 
 pub(crate) struct ParserRecoverDeleted<'a> {
     pub file_info: &'a FileInfo,
@@ -215,13 +220,16 @@ impl<'a> ParserRecoverDeleted<'a> {
             let input = &input_orig[offset..]; // direct access ok; loop checks for offset < input_orig.len()
             let file_offset_absolute = file_offset_absolute_start + offset;
             let (input, _size) = le_i32(input)?;
-            named!(
-                cell_type<CellType>,
-                alt!(
-                    tag!("nk") => { |_| CellType::CellKey } |
-                    tag!("vk") => { |_| CellType::CellValue }
-                )
-            );
+
+            fn cell_type(b: &[u8]) -> IResult<&[u8], CellType> {
+                alt(
+                    (
+                        map(tag("nk"), |_| CellType::CellKey),
+                        map(tag("vk"), |_| CellType::CellValue)
+                    )
+                )(b)
+            }
+
             match cell_type(input) {
                 Ok((_, cell_type)) => match cell_type {
                     CellType::CellValue => {
