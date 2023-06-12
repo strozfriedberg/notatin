@@ -33,9 +33,9 @@ use bitflags::bitflags;
 use blake3::Hash;
 use enum_primitive_derive::Primitive;
 use nom::{
-    bytes::complete::tag,
-    number::complete::{le_i32, le_u16, le_u32},
-    take, IResult,
+    IResult,
+    bytes::complete::{tag, take},
+    number::complete::{le_i32, le_u16, le_u32}
 };
 use num_traits::FromPrimitive;
 use serde::{Serialize, Serializer};
@@ -319,7 +319,7 @@ impl CellKeyValue {
             read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, flags_raw, u16, le_u16 };
             read_value_offset_length! { input, start_pos_ptr, get_full_field_info, detail_enum, padding, u16, le_u16 };
             let value_name_offset = input.as_ptr() as usize - start_pos_ptr;
-            let (input, value_name_bytes) = take!(input, value_name_size)?;
+            let (input, value_name_bytes) = take(value_name_size)(input)?;
 
             let flags = CellKeyValueFlags::from_bits(flags_raw).unwrap_or_default();
 

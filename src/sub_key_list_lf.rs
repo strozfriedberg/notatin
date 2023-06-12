@@ -18,9 +18,9 @@ use crate::hive_bin_cell;
 use crate::log::Logs;
 use crate::util;
 use nom::{
-    bytes::complete::tag,
+    IResult,
+    bytes::complete::{tag, take},
     number::complete::{le_i32, le_u16, le_u32},
-    take, IResult,
 };
 use serde::Serialize;
 
@@ -83,7 +83,7 @@ impl SubKeyListLfItem {
     fn from_bytes() -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
         |input: &[u8]| {
             let (input, named_key_offset_relative) = le_u32(input)?;
-            let (input, name_hint) = take!(input, 4usize)?;
+            let (input, name_hint) = take(4usize)(input)?;
             let mut logs = Logs::default();
             Ok((
                 input,

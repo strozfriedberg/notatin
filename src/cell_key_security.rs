@@ -17,9 +17,9 @@
 use crate::err::Error;
 use crate::log::Logs;
 use nom::{
-    bytes::complete::tag,
-    number::complete::{le_i32, le_u16, le_u32},
-    take, IResult,
+    IResult,
+    bytes::complete::{tag, take},
+    number::complete::{le_i32, le_u16, le_u32}
 };
 use serde::Serialize;
 use std::io::Cursor;
@@ -62,7 +62,7 @@ impl CellKeySecurity {
         let (input, blink) = le_u32(input)?;
         let (input, reference_count) = le_u32(input)?;
         let (input, security_descriptor_size) = le_u32(input)?;
-        let (input, security_descriptor) = take!(input, security_descriptor_size)?;
+        let (input, security_descriptor) = take(security_descriptor_size)(input)?;
 
         Ok((
             input,

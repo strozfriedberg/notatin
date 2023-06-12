@@ -40,11 +40,11 @@ use bitflags::bitflags;
 use blake3::Hash;
 use chrono::{DateTime, Utc};
 use nom::{
+    IResult,
     branch::alt,
-    bytes::complete::tag,
+    bytes::complete::{tag, take},
     multi::count,
-    number::complete::{le_i32, le_u16, le_u32, le_u64},
-    take, IResult,
+    number::complete::{le_i32, le_u16, le_u32, le_u64}
 };
 use serde::Serialize;
 use winstructs::security::SecurityDescriptor;
@@ -555,7 +555,7 @@ impl CellKeyNode {
 
             let mut logs = Logs::default();
 
-            let (input, key_name_bytes) = take!(input, key_name_size)?;
+            let (input, key_name_bytes) = take(key_name_size)(input)?;
             let key_node_flags = KeyNodeFlags::from_bits_checked(key_node_flag_bits, &mut logs);
             //let access_flags = AccessFlags::from_bits_checked(access_flag_bits, &mut logs);
 
