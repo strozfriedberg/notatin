@@ -93,7 +93,8 @@ fn round_to_usec_half_even(date: &DateTime<Utc>) -> DateTime<Utc> {
     let (unix_time, micros) = date_splitter(date);
 
     DateTime::<Utc>::from_utc(
-        NaiveDateTime::from_timestamp_opt(unix_time, micros * 1_000).unwrap(),
+        NaiveDateTime::from_timestamp_opt(unix_time, micros * 1_000)
+            .expect("impossible"),
         Utc
     )
 }
