@@ -89,13 +89,17 @@ fn date_splitter(date: &DateTime<Utc>) -> (i64, u32) {
     (unix_time, micros)
 }
 
-pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
+fn round_to_usec_half_even(date: &DateTime<Utc>) -> DateTime<Utc> {
     let (unix_time, micros) = date_splitter(date);
 
-    let rounded_date = DateTime::<Utc>::from_utc(
-        NaiveDateTime::from_timestamp(unix_time, micros * 1_000),
+    DateTime::<Utc>::from_utc(
+        NaiveDateTime::from_timestamp_opt(unix_time, micros * 1_000).unwrap(),
         Utc
-    );
+    )
+}
+
+pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
+    let rounded_date = round_to_usec_half_even(date);
 
     let gil = Python::acquire_gil();
     let py = gil.python();
