@@ -127,24 +127,24 @@ fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
 impl PyNotatinParser {
     /// Returns an iterator that yields reg keys as Python objects
     fn reg_keys_iterator(&mut self) -> PyResult<Py<PyNotatinKeysIterator>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let inner = match self.inner.take() {
-            Some(inner) => inner,
-            None => {
-                return Err(PyErr::new::<PyRuntimeError, _>(
-                    "PyNotatinParser can only be used once",
-                ));
-            }
-        };
-        let iterator_context = ParserIteratorContext::from_parser(&inner, true, None);
-        Py::new(
-            py,
-            PyNotatinKeysIterator {
-                inner,
-                iterator_context,
-            },
-        )
+        Python::with_gil(|py| {
+            let inner = match self.inner.take() {
+                Some(inner) => inner,
+                None => {
+                    return Err(PyErr::new::<PyRuntimeError, _>(
+                        "PyNotatinParser can only be used once",
+                    ));
+                }
+            };
+            let iterator_context = ParserIteratorContext::from_parser(&inner, true, None);
+            Py::new(
+                py,
+                PyNotatinKeysIterator {
+                    inner,
+                    iterator_context,
+                },
+            )
+        })
     }
 }
 
@@ -204,11 +204,11 @@ impl PyNotatinKeysIterator {
     }
 
     fn next(&mut self) -> Option<PyObject> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        self.inner
-            .next_key_preorder(&mut self.iterator_context)
-            .map(|key| Self::reg_key_to_pyobject(key, py))
+        Python::with_gil(|py| {
+            self.inner
+                .next_key_preorder(&mut self.iterator_context)
+                .map(|key| Self::reg_key_to_pyobject(key, py))
+        })
     }
 }
 
