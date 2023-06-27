@@ -157,39 +157,38 @@ impl PyNotatinKey {
     }
 
     fn reg_values_iterator(&mut self) -> PyResult<Py<PyNotatinValuesIterator>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        Py::new(
-            py,
-            PyNotatinValuesIterator {
-                inner: self.inner.clone(),
-                sub_values_iter_index: 0,
-            },
-        )
+        Python::with_gil(|py| {
+            Py::new(
+                py,
+                PyNotatinValuesIterator {
+                    inner: self.inner.clone(),
+                    sub_values_iter_index: 0,
+                },
+           )
+        })
     }
 
     fn sub_keys_iterator(
         &mut self,
         parser: &mut PyNotatinParser,
     ) -> PyResult<Py<PyNotatinSubKeysIterator>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        self.inner.init_sub_key_iter();
-        match &mut parser.inner {
-            Some(parser) => {
-                let sub_keys = self.inner.read_sub_keys(parser);
+        Python::with_gil(|py| {
+            self.inner.init_sub_key_iter();
+            match &mut parser.inner {
+                Some(parser) => {
+                    let sub_keys = self.inner.read_sub_keys(parser);
 
-                Py::new(py, PyNotatinSubKeysIterator { index: 0, sub_keys })
+                    Py::new(py, PyNotatinSubKeysIterator { index: 0, sub_keys })
+                }
+                _ => Py::new(
+                    py,
+                    PyNotatinSubKeysIterator {
+                        index: 0,
+                        sub_keys: Vec::new(),
+                    },
+                ),
             }
-            _ => Py::new(
-                py,
-                PyNotatinSubKeysIterator {
-                    index: 0,
-                    sub_keys: Vec::new(),
-                },
-            ),
-        }
+        })
     }
 }
 
