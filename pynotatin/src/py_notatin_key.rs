@@ -207,15 +207,15 @@ impl PyNotatinValuesIterator {
     }
 
     fn next(&mut self) -> Option<PyObject> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.inner.next_value(self.sub_values_iter_index) {
-            Some((value, sub_values_iter_index)) => {
-                self.sub_values_iter_index = sub_values_iter_index;
-                Some(Self::reg_value_to_pyobject(value, py))
+        Python::with_gil(|py| {
+            match self.inner.next_value(self.sub_values_iter_index) {
+                Some((value, sub_values_iter_index)) => {
+                    self.sub_values_iter_index = sub_values_iter_index;
+                    Some(Self::reg_value_to_pyobject(value, py))
+                }
+                None => None,
             }
-            None => None,
-        }
+        })
     }
 }
 
@@ -227,15 +227,15 @@ pub struct PyNotatinSubKeysIterator {
 
 impl PyNotatinSubKeysIterator {
     fn next(&mut self) -> Option<PyObject> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.sub_keys.get(self.index) {
-            Some(key) => {
-                self.index += 1;
-                Some(PyNotatinKeysIterator::reg_key_to_pyobject(key.clone(), py))
+        Python::with_gil(|py| {
+            match self.sub_keys.get(self.index) {
+                Some(key) => {
+                    self.index += 1;
+                    Some(PyNotatinKeysIterator::reg_key_to_pyobject(key.clone(), py))
+                }
+                None => None,
             }
-            None => None,
-        }
+        })
     }
 }
 
