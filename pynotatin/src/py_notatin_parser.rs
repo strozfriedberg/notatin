@@ -56,15 +56,13 @@ impl PyNotatinParser {
     fn open(&mut self, path: &str) -> PyResult<Option<Py<PyNotatinKey>>> {
         match &mut self.inner {
             Some(parser) => match parser.get_key(path, false) {
-                Ok(key) => {
-                    if let Some(key) = key {
+                Ok(key) => match key {
+                    Some(key) => {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
                         Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                    }
-                    else {
-                        Ok(None)
-                    }
+                    },
+                    _ => Ok(None)
                 },
                 Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
             },
@@ -76,15 +74,13 @@ impl PyNotatinParser {
     fn root(&mut self) -> PyResult<Option<Py<PyNotatinKey>>> {
         match &mut self.inner {
             Some(parser) => match parser.get_root_key() {
-                Ok(key) => {
-                    if let Some(key) = key {
+                Ok(key) => match key {
+                    Some(key) => {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
                         Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                    }
-                    else {
-                        Ok(None)
-                    }
+                    },
+                    _ => Ok(None)
                 },
                 Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
             },
@@ -96,15 +92,13 @@ impl PyNotatinParser {
     fn get_parent(&mut self, key: &mut PyNotatinKey) -> PyResult<Option<Py<PyNotatinKey>>> {
         match &mut self.inner {
             Some(parser) => match parser.get_parent_key(&mut key.inner) {
-                Ok(key) => {
-                    if let Some(key) = key {
+                Ok(key) => match key {
+                    Some(key) => {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
                         Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                    }
-                    else {
-                        Ok(None)
-                    }
+                    },
+                    _ => Ok(None)
                 },
                 Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
             },
