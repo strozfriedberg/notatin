@@ -96,15 +96,12 @@ impl PyNotatinParser {
                     if let Some(key) = key {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
-                        let ret = PyNotatinKey::from_cell_key_node(py, key);
-                        if let Ok(py_reg_key) = ret {
-                            return Ok(Some(py_reg_key));
-                        }
+                        return Ok(PyNotatinKey::from_cell_key_node(py, key).ok());
                     }
-                }
-                Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
+                },
+                Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
             },
-            _ => return Ok(None),
+            _ => return Ok(None)
         }
         Ok(None)
     }
