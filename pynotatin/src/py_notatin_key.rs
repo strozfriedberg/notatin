@@ -50,14 +50,10 @@ impl PyNotatinKey {
             Some(value) => {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
-                let ret = PyNotatinValue::from_cell_key_value(py, value);
-                if let Ok(py_reg_value) = ret {
-                    return Some(py_reg_value);
-                }
-            }
-            _ => return None,
+                PyNotatinValue::from_cell_key_value(py, value).ok()
+            },
+            _ => None
         }
-        None
     }
 
     /// sub_keys(self, parser, /)
