@@ -20,7 +20,7 @@ use crate::py_notatin_content::PyNotatinContent;
 use crate::py_notatin_key::PyNotatinKey;
 use crate::py_notatin_value::{PyNotatinDecodeFormat, PyNotatinValue};
 use crate::util::{init_logging, FileOrFileLike};
-use notatin::{
+use ::notatin::{
     cell_key_node::CellKeyNode,
     parser::{Parser, ParserIteratorContext},
     parser_builder::ParserBuilder,
