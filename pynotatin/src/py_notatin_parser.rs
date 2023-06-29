@@ -22,6 +22,7 @@ use crate::py_notatin_value::{PyNotatinDecodeFormat, PyNotatinValue};
 use crate::util::{init_logging, FileOrFileLike};
 use ::notatin::{
     cell_key_node::CellKeyNode,
+    err::Error,
     parser::{Parser, ParserIteratorContext},
     parser_builder::ParserBuilder,
 };
@@ -54,17 +55,17 @@ impl PyNotatinParser {
 
     /// Returns the key for the `path` parameter.
     fn open(&mut self, path: &str) -> PyResult<Option<Py<PyNotatinKey>>> {
-        key_for(|parser| parser.get_key(path, false))
+        self.key_for(|parser| parser.get_key(path, false))
     }
 
     /// Returns the root key.
     fn root(&mut self) -> PyResult<Option<Py<PyNotatinKey>>> {
-        key_for(|parser| parser.get_root_key())
+        self.key_for(|parser| parser.get_root_key())
     }
 
     /// Returns the parent key for the `key` parameter.
     fn get_parent(&mut self, key: &mut PyNotatinKey) -> PyResult<Option<Py<PyNotatinKey>>> {
-        key_for(|parser| parser.get_parent_key(&mut key.inner))
+        self.key_for(|parser| parser.get_parent_key(&mut key.inner))
     }
 
     fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
@@ -77,7 +78,7 @@ fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
 }
 
 impl PyNotatinParser {
-    fn key_for(&mut self, func: F) -> PyResult<Option<Py<PyNotatinKey>>>
+    fn key_for<F>(&mut self, func: F) -> PyResult<Option<Py<PyNotatinKey>>>
     where
         F: FnOnce(&mut Parser) -> Result<Option<CellKeyNode>, Error>
     {
