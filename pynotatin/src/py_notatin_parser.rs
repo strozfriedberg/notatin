@@ -54,50 +54,17 @@ impl PyNotatinParser {
 
     /// Returns the key for the `path` parameter.
     fn open(&mut self, path: &str) -> PyResult<Option<Py<PyNotatinKey>>> {
-        match &mut self.inner {
-            Some(parser) => match parser.get_key(path, false) {
-                Ok(key) => match key {
-                    Some(key) => Python::with_gil(|py| {
-                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                    }),
-                    _ => Ok(None)
-                },
-                Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
-            },
-            _ => Ok(None)
-        }
+        key_for(|parser| parser.get_key(path, false))
     }
 
     /// Returns the root key.
     fn root(&mut self) -> PyResult<Option<Py<PyNotatinKey>>> {
-        match &mut self.inner {
-            Some(parser) => match parser.get_root_key() {
-                Ok(key) => match key {
-                    Some(key) => Python::with_gil(|py| {
-                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                    }),
-                    _ => Ok(None)
-                },
-                Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
-            },
-            _ => Ok(None)
-        }
+        key_for(|parser| parser.get_root_key())
     }
 
     /// Returns the parent key for the `key` parameter.
     fn get_parent(&mut self, key: &mut PyNotatinKey) -> PyResult<Option<Py<PyNotatinKey>>> {
-        match &mut self.inner {
-            Some(parser) => match parser.get_parent_key(&mut key.inner) {
-                Ok(key) => match key {
-                    Some(key) => Python::with_gil(|py| {
-                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                    }),
-                    _ => Ok(None)
-                },
-                Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
-            },
-            _ => Ok(None)
-        }
+        key_for(|parser| parser.get_parent_key(&mut key.inner))
     }
 
     fn __iter__(mut slf: PyRefMut<Self>) -> PyResult<Py<PyNotatinKeysIterator>> {
@@ -110,6 +77,24 @@ fn __next__(_slf: PyRefMut<Self>) -> PyResult<Option<PyObject>> {
 }
 
 impl PyNotatinParser {
+    fn key_for(&mut self, func: F) -> PyResult<Option<Py<PyNotatinKey>>>
+    where
+        F: FnOnce(&mut Parser) -> Result<Option<CellKeyNode>, Error>
+    {
+        match &mut self.inner {
+            Some(parser) => match func(parser) {
+                Ok(key) => match key {
+                    Some(key) => Python::with_gil(|py| {
+                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                    }),
+                    _ => Ok(None)
+                },
+                Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
+            },
+            _ => Ok(None)
+        }
+    }
+
     /// Returns an iterator that yields reg keys as Python objects
     fn reg_keys_iterator(&mut self) -> PyResult<Py<PyNotatinKeysIterator>> {
         Python::with_gil(|py| {
