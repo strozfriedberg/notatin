@@ -58,9 +58,9 @@ impl PyNotatinParser {
             Some(parser) => match parser.get_key(path, false) {
                 Ok(key) => match key {
                     Some(key) => {
-                        let gil = Python::acquire_gil();
-                        let py = gil.python();
-                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                        Python::with_gil(|py| {
+                            Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                        })
                     },
                     _ => Ok(None)
                 },
@@ -76,9 +76,9 @@ impl PyNotatinParser {
             Some(parser) => match parser.get_root_key() {
                 Ok(key) => match key {
                     Some(key) => {
-                        let gil = Python::acquire_gil();
-                        let py = gil.python();
-                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                        Python::with_gil(|py| {
+                            Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                        })
                     },
                     _ => Ok(None)
                 },
@@ -94,9 +94,9 @@ impl PyNotatinParser {
             Some(parser) => match parser.get_parent_key(&mut key.inner) {
                 Ok(key) => match key {
                     Some(key) => {
-                        let gil = Python::acquire_gil();
-                        let py = gil.python();
-                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                        Python::with_gil(|py| {
+                            Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                        })
                     },
                     _ => Ok(None)
                 },
