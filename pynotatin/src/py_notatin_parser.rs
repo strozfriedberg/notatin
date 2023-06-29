@@ -78,14 +78,16 @@ impl PyNotatinParser {
                     if let Some(key) = key {
                         let gil = Python::acquire_gil();
                         let py = gil.python();
-                        return Ok(PyNotatinKey::from_cell_key_node(py, key).ok());
+                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                    }
+                    else {
+                        Ok(None)
                     }
                 },
-                Err(e) => return Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
+                Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
             },
-            _ => return Ok(None),
+            _ => Ok(None)
         }
-        Ok(None)
     }
 
     /// Returns the parent key for the `key` parameter.
