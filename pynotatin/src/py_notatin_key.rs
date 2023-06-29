@@ -68,9 +68,9 @@ impl PyNotatinKey {
         match &mut parser.inner {
             Some(parser) => match self.inner.get_sub_key_by_path(parser, path) {
                 Some(key) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    PyNotatinKey::from_cell_key_node(py, key).ok()
+                    Python::with_gil(|py| {
+                        PyNotatinKey::from_cell_key_node(py, key).ok()
+                    })
                 },
                 _ => None
             },
