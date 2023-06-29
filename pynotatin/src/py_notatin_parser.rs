@@ -57,11 +57,9 @@ impl PyNotatinParser {
         match &mut self.inner {
             Some(parser) => match parser.get_key(path, false) {
                 Ok(key) => match key {
-                    Some(key) => {
-                        Python::with_gil(|py| {
-                            Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                        })
-                    },
+                    Some(key) => Python::with_gil(|py| {
+                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                    }),
                     _ => Ok(None)
                 },
                 Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
@@ -75,11 +73,9 @@ impl PyNotatinParser {
         match &mut self.inner {
             Some(parser) => match parser.get_root_key() {
                 Ok(key) => match key {
-                    Some(key) => {
-                        Python::with_gil(|py| {
-                            Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                        })
-                    },
+                    Some(key) => Python::with_gil(|py| {
+                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                    }),
                     _ => Ok(None)
                 },
                 Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
@@ -93,11 +89,9 @@ impl PyNotatinParser {
         match &mut self.inner {
             Some(parser) => match parser.get_parent_key(&mut key.inner) {
                 Ok(key) => match key {
-                    Some(key) => {
-                        Python::with_gil(|py| {
-                            Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
-                        })
-                    },
+                    Some(key) => Python::with_gil(|py| {
+                        Ok(PyNotatinKey::from_cell_key_node(py, key).ok())
+                    }),
                     _ => Ok(None)
                 },
                 Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string()))
