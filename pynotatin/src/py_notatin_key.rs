@@ -48,9 +48,9 @@ impl PyNotatinKey {
     fn value(&mut self, name: &str) -> Option<Py<PyNotatinValue>> {
         match self.inner.get_value(name) {
             Some(value) => {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                PyNotatinValue::from_cell_key_value(py, value).ok()
+                Python::with_gil(|py| {
+                    PyNotatinValue::from_cell_key_value(py, value).ok()
+                })
             },
             _ => None
         }
