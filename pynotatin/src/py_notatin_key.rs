@@ -47,11 +47,9 @@ impl PyNotatinKey {
     /// Returns an option with the requested value, or None.
     fn value(&mut self, name: &str) -> Option<Py<PyNotatinValue>> {
         match self.inner.get_value(name) {
-            Some(value) => {
-                Python::with_gil(|py| {
-                    PyNotatinValue::from_cell_key_value(py, value).ok()
-                })
-            },
+            Some(value) => Python::with_gil(|py| {
+                PyNotatinValue::from_cell_key_value(py, value).ok()
+            }),
             _ => None
         }
     }
@@ -67,11 +65,9 @@ impl PyNotatinKey {
     fn find_key(&mut self, parser: &mut PyNotatinParser, path: &str) -> Option<Py<PyNotatinKey>> {
         match &mut parser.inner {
             Some(parser) => match self.inner.get_sub_key_by_path(parser, path) {
-                Some(key) => {
-                    Python::with_gil(|py| {
-                        PyNotatinKey::from_cell_key_node(py, key).ok()
-                    })
-                },
+                Some(key) => Python::with_gil(|py| {
+                    PyNotatinKey::from_cell_key_node(py, key).ok()
+                }),
                 _ => None
             },
             _ => None
