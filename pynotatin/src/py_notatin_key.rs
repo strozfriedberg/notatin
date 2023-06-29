@@ -70,16 +70,12 @@ impl PyNotatinKey {
                 Some(key) => {
                     let gil = Python::acquire_gil();
                     let py = gil.python();
-                    let ret = PyNotatinKey::from_cell_key_node(py, key);
-                    if let Ok(py_reg_key) = ret {
-                        return Some(py_reg_key);
-                    }
-                }
-                _ => return None,
+                    PyNotatinKey::from_cell_key_node(py, key).ok()
+                },
+                _ => None
             },
-            _ => return None,
+            _ => None
         }
-        None
     }
 
     /// name(self, /)
