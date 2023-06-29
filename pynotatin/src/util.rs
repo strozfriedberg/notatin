@@ -21,7 +21,7 @@ use std::{cmp::Ordering, fs::File, io::BufReader};
 use chrono::{DateTime, Datelike, Timelike, NaiveDateTime, Utc};
 use notatin::file_info::ReadSeek;
 use pyo3::{PyObject, PyResult, Python, ToPyObject};
-use pyo3::types::{PyDateTime, PyString};
+use pyo3::types::PyDateTime;
 use pyo3_file::PyFileLikeObject;
 
 #[derive(Debug)]
@@ -39,10 +39,8 @@ impl FileOrFileLike {
     pub fn from_pyobject(path_or_file_like: PyObject) -> PyResult<FileOrFileLike> {
         Python::with_gil(|py| {
             // is a path
-            if let Ok(string_ref) = path_or_file_like.downcast::<PyString>(py) {
-                return Ok(FileOrFileLike::File(
-                    string_ref.to_string_lossy().to_string(),
-                ));
+            if let Ok(s) = path_or_file_like.extract(py) {
+                return Ok(FileOrFileLike::File(s));
             }
 
             // We only need read + seek
