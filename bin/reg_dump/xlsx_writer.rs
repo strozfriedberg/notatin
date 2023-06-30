@@ -162,7 +162,7 @@ impl WriteXlsx {
                 reg_items_sheet,
                 overflow_sheet,
                 Self::COL_KEY_PATH,
-                sanitize_for_xml_1_0(cell_key_node.path),
+                &sanitize_for_xml_1_0(&cell_key_node.path),
                 &link_format,
             )?;
             reg_items_sheet.write_string(
@@ -189,7 +189,7 @@ impl WriteXlsx {
                 reg_items_sheet,
                 overflow_sheet,
                 Self::COL_LOGS,
-                sanitize_for_xml_1_0(cell_key_node.logs.to_string()),
+                &sanitize_for_xml_1_0(&cell_key_node.logs.to_string()),
                 &link_format,
             )?;
 
@@ -241,21 +241,21 @@ impl WriteXlsx {
             reg_items_sheet,
             overflow_sheet,
             Self::COL_KEY_PATH,
-            sanitize_for_xml_1_0(cell_key_node.path),
+            &sanitize_for_xml_1_0(&cell_key_node.path),
             &link_format,
         )?;
         Self::check_write_string(
             reg_items_sheet,
             overflow_sheet,
             Self::COL_VALUE_NAME,
-            sanitize_for_xml_1_0(value.get_pretty_name()),
+            &sanitize_for_xml_1_0(&value.get_pretty_name()),
             &link_format,
         )?;
         Self::check_write_string(
             reg_items_sheet,
             overflow_sheet,
             Self::COL_VALUE_DATA,
-            sanitize_cell(value.get_content().0),
+            &sanitize_cell(&value.get_content().0),
             &link_format
         )?;
         reg_items_sheet.write_string(Self::COL_STATUS, &format!("{:?}", value.cell_state))?;
@@ -278,7 +278,7 @@ impl WriteXlsx {
             reg_items_sheet,
             overflow_sheet,
             Self::COL_LOGS,
-            sanitize_for_xml_1_0(value.logs.to_string()),
+            &sanitize_for_xml_1_0(&value.logs.to_string()),
             &link_format,
         )?;
         Ok(())
@@ -344,7 +344,7 @@ impl WriteXlsx {
                 primary_sheet,
                 overflow_sheet,
                 primary_sheet_col,
-                val,
+                val.into(),
                 link_format,
             )
         } else {
@@ -382,33 +382,32 @@ impl WriteXlsx {
 
 fn is_legal_xml_1_0(c: char) -> bool {
     // Some Unicode code points are illegal in XML 1.0
-    match c {
-        '\u{0009}' | '\u{000A}' | '\u{000D}' => true,
-        '\u{0020}'..='\u{D7FF}' => true,
-        '\u{E000}'..='\u{FFFD}' => true,
-        '\u{10000}'..='\u{10FFFF}' => true,
-        _ => false
-    }
+    matches!(c, 
+        '\u{0009}' | '\u{000A}' | '\u{000D}' |
+        '\u{0020}'..='\u{D7FF}' |
+        '\u{E000}'..='\u{FFFD}' |
+        '\u{10000}'..='\u{10FFFF}'
+    )
 }
 
-fn sanitize_for_xml_1_0(s: &str) -> &str {
+fn sanitize_for_xml_1_0(s: &str) -> Cow<str> {
     // Replace code points illegal in XML 1.0 with U+FFFD
     let i = s.chars().position(|c| !is_legal_xml_1_0(c));
     match i {
-        None => s,
+        None => s.into(),
         Some(i) => s.chars().take(i).chain(
             s.chars().skip(i).map(|c| match c {
                 _ if is_legal_xml_1_0(c) => c,
                 _  => '\u{FFFD}'
             }
-        )).collect()
+        )).collect::<String>().into()
     }
 }
 
-fn sanitize_cell(v: CellValue) -> &str {
+fn sanitize_cell(v: &CellValue) -> Cow<str> {
     match v {
         CellValue::String(v) => sanitize_for_xml_1_0(v),
-        v => format!("{}", v)
+        v => format!("{}", v).into()
     }
 }
 
