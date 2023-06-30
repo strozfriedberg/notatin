@@ -115,16 +115,15 @@ impl PyNotatinValue {
     }
 
     fn versions_iterator(&mut self) -> PyResult<Py<PyNotatinValueVersionsIterator>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        Py::new(
-            py,
-            PyNotatinValueVersionsIterator {
-                index: 0,
-                versions: self.inner.versions.clone(),
-            },
-        )
+        Python::with_gil(|py| {
+            Py::new(
+                py,
+                PyNotatinValueVersionsIterator {
+                    index: 0,
+                    versions: self.inner.versions.clone(),
+                },
+            )
+        })
     }
 }
 
@@ -136,18 +135,18 @@ pub struct PyNotatinValueVersionsIterator {
 
 impl PyNotatinValueVersionsIterator {
     fn next(&mut self) -> Option<PyObject> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.versions.get(self.index) {
-            Some(value) => {
-                self.index += 1;
-                Some(PyNotatinValuesIterator::reg_value_to_pyobject(
-                    value.clone(),
-                    py
-                ))
+        Python::with_gil(|py| {
+            match self.versions.get(self.index) {
+                Some(value) => {
+                    self.index += 1;
+                    Some(PyNotatinValuesIterator::reg_value_to_pyobject(
+                        value.clone(),
+                        py
+                    ))
+                }
+                None => None,
             }
-            None => None,
-        }
+        })
     }
 }
 
@@ -253,172 +252,171 @@ mod tests {
             .inner
             .detail
             .set_value_bytes(&Some(vec![53, 0, 46, 0, 48, 0, 0, 0]), 0);
-        let gil = Python::acquire_gil();
-        let py = gil.python();
 
-        let content: std::result::Result<String, pyo3::PyErr> =
-            py_reg_value.content(py).unwrap().extract(py);
-        assert_eq!(content.unwrap(), "5.0".to_string());
+        Python::with_gil(|py| {
+            let content: std::result::Result<String, pyo3::PyErr> =
+                py_reg_value.content(py).unwrap().extract(py);
+            assert_eq!(content.unwrap(), "5.0".to_string());
+        })
     }
 
     #[test]
     fn test_decode_content() -> Result<(), PyErr> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        Python::with_gil(|py| {
+            let mut lznt1_file = File::open("../test_data/lznt1_buffer").unwrap();
+            let mut lznt1_buffer = Vec::new();
+            lznt1_file.read_to_end(&mut lznt1_buffer).unwrap();
+            let py_notatin_value = PyNotatinValue {
+                inner: CellKeyValue {
+                    detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
+                        size: FieldLight { value: 48 },
+                        signature: FieldLight {
+                            value: "vk".to_string(),
+                        },
+                        value_name_size: FieldLight { value: 4 },
+                        data_size_raw: FieldLight {
+                            value: lznt1_buffer.len() as u32,
+                        },
+                        data_offset_relative: FieldLight { value: 3864 },
+                        data_type_raw: FieldLight { value: 1 },
+                        flags_raw: FieldLight { value: 1 },
+                        padding: FieldLight { value: 0 },
+                        value_name: FieldLight {
+                            value: "test".to_string(),
+                        },
+                        value_bytes: FieldLight {
+                            value: Some(lznt1_buffer.clone()),
+                        },
+                        slack: FieldLight { value: vec![] },
+                    })),
+                    file_offset_absolute: 0,
+                    data_type: CellKeyValueDataTypes::REG_BIN,
+                    flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
+                    cell_state: CellState::Allocated,
+                    data_offsets_absolute: Vec::new(),
+                    logs: Logs::default(),
+                    versions: Vec::new(),
+                    hash: None,
+                    sequence_num: None,
+                    updated_by_sequence_num: None,
+                },
+            };
 
-        let mut lznt1_file = File::open("../test_data/lznt1_buffer").unwrap();
-        let mut lznt1_buffer = Vec::new();
-        lznt1_file.read_to_end(&mut lznt1_buffer).unwrap();
-        let py_notatin_value = PyNotatinValue {
-            inner: CellKeyValue {
-                detail: CellKeyValueDetailEnum::Light(Box::new(CellKeyValueDetailLight {
-                    size: FieldLight { value: 48 },
-                    signature: FieldLight {
-                        value: "vk".to_string(),
-                    },
-                    value_name_size: FieldLight { value: 4 },
-                    data_size_raw: FieldLight {
-                        value: lznt1_buffer.len() as u32,
-                    },
-                    data_offset_relative: FieldLight { value: 3864 },
-                    data_type_raw: FieldLight { value: 1 },
-                    flags_raw: FieldLight { value: 1 },
-                    padding: FieldLight { value: 0 },
-                    value_name: FieldLight {
-                        value: "test".to_string(),
-                    },
-                    value_bytes: FieldLight {
-                        value: Some(lznt1_buffer.clone()),
-                    },
-                    slack: FieldLight { value: vec![] },
-                })),
-                file_offset_absolute: 0,
-                data_type: CellKeyValueDataTypes::REG_BIN,
-                flags: CellKeyValueFlags::VALUE_COMP_NAME_ASCII,
-                cell_state: CellState::Allocated,
-                data_offsets_absolute: Vec::new(),
-                logs: Logs::default(),
-                versions: Vec::new(),
-                hash: None,
-                sequence_num: None,
-                updated_by_sequence_num: None,
-            },
-        };
+            let decoded_value = py_notatin_value
+                .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<Vec<u8>>(py)?;
 
-        let decoded_value = py_notatin_value
-            .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<Vec<u8>>(py)?;
+            let mut lznt1_decoded_file = File::open("../test_data/lznt1_decoded_buffer").unwrap();
+            let mut lznt1_decoded_buffer = Vec::new();
+            lznt1_decoded_file
+                .read_to_end(&mut lznt1_decoded_buffer)
+                .unwrap();
+            assert_eq!(lznt1_decoded_buffer, decoded_value);
 
-        let mut lznt1_decoded_file = File::open("../test_data/lznt1_decoded_buffer").unwrap();
-        let mut lznt1_decoded_buffer = Vec::new();
-        lznt1_decoded_file
-            .read_to_end(&mut lznt1_decoded_buffer)
-            .unwrap();
-        assert_eq!(lznt1_decoded_buffer, decoded_value);
+            let py_notatin_content = PyNotatinContent {
+                inner: CellValue::Binary(lznt1_buffer),
+            };
+            let decoded_value = py_notatin_content
+                .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<Vec<u8>>(py)?;
+            assert_eq!(lznt1_decoded_buffer, decoded_value);
 
-        let py_notatin_content = PyNotatinContent {
-            inner: CellValue::Binary(lznt1_buffer),
-        };
-        let decoded_value = py_notatin_content
-            .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<Vec<u8>>(py)?;
-        assert_eq!(lznt1_decoded_buffer, decoded_value);
+            let decoded_value = py_notatin_content
+                .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
+                .extract::<PyNotatinContent>(py)?
+                .decode(py, &PyNotatinDecodeFormat::utf16_multiple(), 1860)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<Vec<String>>(py)?;
+            let expected_output = vec![
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\LOGONUI.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\EXPLORER.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\WUAUCLT.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\TASKHOST.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\EXPLORER.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\NOTEPAD.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\PROGRAM FILES\WINDOWS NT\ACCESSORIES\WORDPAD.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CONSENT.EXE".to_string(),
+                r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CONHOST.EXE".to_string(),
+            ];
+            assert_eq!(expected_output, decoded_value);
 
-        let decoded_value = py_notatin_content
-            .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
-            .extract::<PyNotatinContent>(py)?
-            .decode(py, &PyNotatinDecodeFormat::utf16_multiple(), 1860)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<Vec<String>>(py)?;
-        let expected_output = vec![
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\LOGONUI.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\EXPLORER.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\WUAUCLT.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\TASKHOST.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\EXPLORER.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\NOTEPAD.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\PROGRAM FILES\WINDOWS NT\ACCESSORIES\WORDPAD.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CONSENT.EXE".to_string(),
-            r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CONHOST.EXE".to_string(),
-        ];
-        assert_eq!(expected_output, decoded_value);
+            let decoded_value = py_notatin_content
+                .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
+                .extract::<PyNotatinContent>(py)?
+                .decode(py, &PyNotatinDecodeFormat::utf16(), 1860)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<String>(py)?;
+            let expected_output = r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string();
+            assert_eq!(expected_output, decoded_value);
 
-        let decoded_value = py_notatin_content
-            .decode(py, &PyNotatinDecodeFormat::lznt1(), 8)?
-            .extract::<PyNotatinContent>(py)?
-            .decode(py, &PyNotatinDecodeFormat::utf16(), 1860)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<String>(py)?;
-        let expected_output = r"\DEVICE\HARDDISKVOLUME2\WINDOWS\SYSTEM32\CSRSS.EXE".to_string();
-        assert_eq!(expected_output, decoded_value);
+            let mut utf16_multiple_file = File::open("../test_data/utf16_multiple_buffer").unwrap();
+            let mut utf16_multiple_buffer = Vec::new();
+            utf16_multiple_file
+                .read_to_end(&mut utf16_multiple_buffer)
+                .unwrap();
+            let py_notatin_content = PyNotatinContent {
+                inner: CellValue::Binary(utf16_multiple_buffer),
+            };
+            let decoded_value = py_notatin_content
+                .decode(py, &PyNotatinDecodeFormat::utf16_multiple(), 0)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<Vec<String>>(py)?;
+            let expected_output = vec![
+                "NAS_requested_data.7z".to_string(),
+                "BlackHarrier_D7_i686_FDE_20141219.dd.7z".to_string(),
+                "BlackHarrier_D7_amd64_20141217.7z".to_string(),
+                "BlackHarrier_D7_amd64_FDE_20141217.7z".to_string(),
+                r"C:\Users\jmroberts\Desktop\USB_Research\IEF.zip".to_string(),
+                "Company_Report_10222013.vir.zip".to_string(),
+                "LYNC.7z".to_string(),
+                "viruses.zip".to_string(),
+                "ALLDATA.txt.bz2".to_string(),
+            ];
+            assert_eq!(expected_output, decoded_value);
 
-        let mut utf16_multiple_file = File::open("../test_data/utf16_multiple_buffer").unwrap();
-        let mut utf16_multiple_buffer = Vec::new();
-        utf16_multiple_file
-            .read_to_end(&mut utf16_multiple_buffer)
-            .unwrap();
-        let py_notatin_content = PyNotatinContent {
-            inner: CellValue::Binary(utf16_multiple_buffer),
-        };
-        let decoded_value = py_notatin_content
-            .decode(py, &PyNotatinDecodeFormat::utf16_multiple(), 0)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<Vec<String>>(py)?;
-        let expected_output = vec![
-            "NAS_requested_data.7z".to_string(),
-            "BlackHarrier_D7_i686_FDE_20141219.dd.7z".to_string(),
-            "BlackHarrier_D7_amd64_20141217.7z".to_string(),
-            "BlackHarrier_D7_amd64_FDE_20141217.7z".to_string(),
-            r"C:\Users\jmroberts\Desktop\USB_Research\IEF.zip".to_string(),
-            "Company_Report_10222013.vir.zip".to_string(),
-            "LYNC.7z".to_string(),
-            "viruses.zip".to_string(),
-            "ALLDATA.txt.bz2".to_string(),
-        ];
-        assert_eq!(expected_output, decoded_value);
+            let utf16 = vec![
+                0x4E, 0x00, 0x41, 0x00, 0x53, 0x00, 0x5F, 0x00, 0x72, 0x00, 0x65, 0x00, 0x71, 0x00,
+                0x75, 0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00, 0x65, 0x00, 0x64, 0x00, 0x5F, 0x00,
+                0x64, 0x00, 0x61, 0x00, 0x74, 0x00, 0x61, 0x00, 0x2E, 0x00, 0x37, 0x00, 0x7A, 0x00,
+            ];
+            let py_notatin_content = PyNotatinContent {
+                inner: CellValue::Binary(utf16),
+            };
+            let decoded_value = py_notatin_content
+                .decode(py, &PyNotatinDecodeFormat::utf16(), 0)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<String>(py)?;
+            let expected_output = "NAS_requested_data.7z".to_string();
+            assert_eq!(expected_output, decoded_value);
 
-        let utf16 = vec![
-            0x4E, 0x00, 0x41, 0x00, 0x53, 0x00, 0x5F, 0x00, 0x72, 0x00, 0x65, 0x00, 0x71, 0x00,
-            0x75, 0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00, 0x65, 0x00, 0x64, 0x00, 0x5F, 0x00,
-            0x64, 0x00, 0x61, 0x00, 0x74, 0x00, 0x61, 0x00, 0x2E, 0x00, 0x37, 0x00, 0x7A, 0x00,
-        ];
-        let py_notatin_content = PyNotatinContent {
-            inner: CellValue::Binary(utf16),
-        };
-        let decoded_value = py_notatin_content
-            .decode(py, &PyNotatinDecodeFormat::utf16(), 0)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<String>(py)?;
-        let expected_output = "NAS_requested_data.7z".to_string();
-        assert_eq!(expected_output, decoded_value);
+            let py_notatin_content = PyNotatinContent {
+                inner: CellValue::String("Abgngva havg grfg.".to_string()),
+            };
+            let decoded_value = py_notatin_content
+                .decode(py, &PyNotatinDecodeFormat::rot13(), 0)?
+                .extract::<PyNotatinContent>(py)?
+                .content(py)
+                .unwrap()
+                .extract::<String>(py)?;
+            let expected_output = "Notatin unit test.".to_string();
+            assert_eq!(expected_output, decoded_value);
 
-        let py_notatin_content = PyNotatinContent {
-            inner: CellValue::String("Abgngva havg grfg.".to_string()),
-        };
-        let decoded_value = py_notatin_content
-            .decode(py, &PyNotatinDecodeFormat::rot13(), 0)?
-            .extract::<PyNotatinContent>(py)?
-            .content(py)
-            .unwrap()
-            .extract::<String>(py)?;
-        let expected_output = "Notatin unit test.".to_string();
-        assert_eq!(expected_output, decoded_value);
-
-        Ok(())
+            Ok(())
+        })
     }
 }

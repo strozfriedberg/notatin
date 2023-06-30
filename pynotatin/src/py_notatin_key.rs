@@ -47,17 +47,11 @@ impl PyNotatinKey {
     /// Returns an option with the requested value, or None.
     fn value(&mut self, name: &str) -> Option<Py<PyNotatinValue>> {
         match self.inner.get_value(name) {
-            Some(value) => {
-                let gil = Python::acquire_gil();
-                let py = gil.python();
-                let ret = PyNotatinValue::from_cell_key_value(py, value);
-                if let Ok(py_reg_value) = ret {
-                    return Some(py_reg_value);
-                }
-            }
-            _ => return None,
+            Some(value) => Python::with_gil(|py| {
+                PyNotatinValue::from_cell_key_value(py, value).ok()
+            }),
+            _ => None
         }
-        None
     }
 
     /// sub_keys(self, parser, /)
@@ -71,19 +65,13 @@ impl PyNotatinKey {
     fn find_key(&mut self, parser: &mut PyNotatinParser, path: &str) -> Option<Py<PyNotatinKey>> {
         match &mut parser.inner {
             Some(parser) => match self.inner.get_sub_key_by_path(parser, path) {
-                Some(key) => {
-                    let gil = Python::acquire_gil();
-                    let py = gil.python();
-                    let ret = PyNotatinKey::from_cell_key_node(py, key);
-                    if let Ok(py_reg_key) = ret {
-                        return Some(py_reg_key);
-                    }
-                }
-                _ => return None,
+                Some(key) => Python::with_gil(|py| {
+                    PyNotatinKey::from_cell_key_node(py, key).ok()
+                }),
+                _ => None
             },
-            _ => return None,
+            _ => None
         }
-        None
     }
 
     /// name(self, /)
@@ -157,39 +145,38 @@ impl PyNotatinKey {
     }
 
     fn reg_values_iterator(&mut self) -> PyResult<Py<PyNotatinValuesIterator>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        Py::new(
-            py,
-            PyNotatinValuesIterator {
-                inner: self.inner.clone(),
-                sub_values_iter_index: 0,
-            },
-        )
+        Python::with_gil(|py| {
+            Py::new(
+                py,
+                PyNotatinValuesIterator {
+                    inner: self.inner.clone(),
+                    sub_values_iter_index: 0,
+                },
+           )
+        })
     }
 
     fn sub_keys_iterator(
         &mut self,
         parser: &mut PyNotatinParser,
     ) -> PyResult<Py<PyNotatinSubKeysIterator>> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        self.inner.init_sub_key_iter();
-        match &mut parser.inner {
-            Some(parser) => {
-                let sub_keys = self.inner.read_sub_keys(parser);
+        Python::with_gil(|py| {
+            self.inner.init_sub_key_iter();
+            match &mut parser.inner {
+                Some(parser) => {
+                    let sub_keys = self.inner.read_sub_keys(parser);
 
-                Py::new(py, PyNotatinSubKeysIterator { index: 0, sub_keys })
+                    Py::new(py, PyNotatinSubKeysIterator { index: 0, sub_keys })
+                }
+                _ => Py::new(
+                    py,
+                    PyNotatinSubKeysIterator {
+                        index: 0,
+                        sub_keys: Vec::new(),
+                    },
+                ),
             }
-            _ => Py::new(
-                py,
-                PyNotatinSubKeysIterator {
-                    index: 0,
-                    sub_keys: Vec::new(),
-                },
-            ),
-        }
+        })
     }
 }
 
@@ -208,15 +195,15 @@ impl PyNotatinValuesIterator {
     }
 
     fn next(&mut self) -> Option<PyObject> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.inner.next_value(self.sub_values_iter_index) {
-            Some((value, sub_values_iter_index)) => {
-                self.sub_values_iter_index = sub_values_iter_index;
-                Some(Self::reg_value_to_pyobject(value, py))
+        Python::with_gil(|py| {
+            match self.inner.next_value(self.sub_values_iter_index) {
+                Some((value, sub_values_iter_index)) => {
+                    self.sub_values_iter_index = sub_values_iter_index;
+                    Some(Self::reg_value_to_pyobject(value, py))
+                }
+                None => None,
             }
-            None => None,
-        }
+        })
     }
 }
 
@@ -228,15 +215,15 @@ pub struct PyNotatinSubKeysIterator {
 
 impl PyNotatinSubKeysIterator {
     fn next(&mut self) -> Option<PyObject> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.sub_keys.get(self.index) {
-            Some(key) => {
-                self.index += 1;
-                Some(PyNotatinKeysIterator::reg_key_to_pyobject(key.clone(), py))
+        Python::with_gil(|py| {
+            match self.sub_keys.get(self.index) {
+                Some(key) => {
+                    self.index += 1;
+                    Some(PyNotatinKeysIterator::reg_key_to_pyobject(key.clone(), py))
+                }
+                None => None,
             }
-            None => None,
-        }
+        })
     }
 }
 

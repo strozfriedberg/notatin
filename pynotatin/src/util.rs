@@ -21,7 +21,7 @@ use std::{cmp::Ordering, fs::File, io::BufReader};
 use chrono::{DateTime, Datelike, Timelike, NaiveDateTime, Utc};
 use notatin::file_info::ReadSeek;
 use pyo3::{PyObject, PyResult, Python, ToPyObject};
-use pyo3::types::{PyDateTime, PyString};
+use pyo3::types::PyDateTime;
 use pyo3_file::PyFileLikeObject;
 
 #[derive(Debug)]
@@ -37,21 +37,18 @@ pub enum FileOrFileLike {
 
 impl FileOrFileLike {
     pub fn from_pyobject(path_or_file_like: PyObject) -> PyResult<FileOrFileLike> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
+        Python::with_gil(|py| {
+            // is a path
+            if let Ok(s) = path_or_file_like.extract(py) {
+                return Ok(FileOrFileLike::File(s));
+            }
 
-        // is a path
-        if let Ok(string_ref) = path_or_file_like.cast_as::<PyString>(py) {
-            return Ok(FileOrFileLike::File(
-                string_ref.to_string_lossy().to_string(),
-            ));
-        }
-
-        // We only need read + seek
-        match PyFileLikeObject::with_requirements(path_or_file_like, true, false, true) {
-            Ok(f) => Ok(FileOrFileLike::FileLike(f)),
-            Err(e) => Err(e),
-        }
+            // We only need read + seek
+            match PyFileLikeObject::with_requirements(path_or_file_like, true, false, true) {
+                Ok(f) => Ok(FileOrFileLike::FileLike(f)),
+                Err(e) => Err(e),
+            }
+        })
     }
 
     pub(crate) fn to_read_seek(path_or_file_like: &PyObject) -> PyResult<Box<dyn ReadSeek + Send>> {
@@ -102,21 +99,20 @@ fn round_to_usec_half_even(date: &DateTime<Utc>) -> DateTime<Utc> {
 pub fn date_to_pyobject(date: &DateTime<Utc>) -> PyResult<PyObject> {
     let rounded_date = round_to_usec_half_even(date);
 
-    let gil = Python::acquire_gil();
-    let py = gil.python();
-
-    PyDateTime::new(
-        py,
-        rounded_date.year(),
-        rounded_date.month() as u8,
-        rounded_date.day() as u8,
-        rounded_date.hour() as u8,
-        rounded_date.minute() as u8,
-        rounded_date.second() as u8,
-        rounded_date.timestamp_subsec_micros(),
-        None,
-    )
-    .map(|dt| dt.to_object(py))
+    Python::with_gil(|py| {
+        PyDateTime::new(
+            py,
+            rounded_date.year(),
+            rounded_date.month() as u8,
+            rounded_date.day() as u8,
+            rounded_date.hour() as u8,
+            rounded_date.minute() as u8,
+            rounded_date.second() as u8,
+            rounded_date.timestamp_subsec_micros(),
+            None,
+        )
+        .map(|dt| dt.to_object(py))
+    })
 }
 
 // Logging implementation from https://github.com/omerbenamram/pymft-rs
@@ -135,19 +131,19 @@ impl Log for PyLogger {
         if self.enabled(record.metadata()) {
             if let Level::Warn = self.level {
                 let level_string = record.level().to_string();
-                let gil = Python::acquire_gil();
-                let py = gil.python();
+                Python::with_gil(|py| {
 
-                let message = format!(
-                    "{:<5} [{}] {}",
-                    level_string,
-                    record.module_path().unwrap_or_default(),
-                    record.args()
-                );
+                    let message = format!(
+                        "{:<5} [{}] {}",
+                        level_string,
+                        record.module_path().unwrap_or_default(),
+                        record.args()
+                    );
 
-                self.warnings_module
-                    .call_method(py, "warn", (message,), None)
-                    .ok();
+                    self.warnings_module
+                        .call_method(py, "warn", (message,), None)
+                        .ok();
+                });
             }
         }
     }
@@ -211,21 +207,21 @@ mod tests {
             ("2020-09-29T17:38:04.1234567Z", (2020, 9, 29, 17, 38, 4, 123457)),
             ("2020-12-31T23:59:59.9999995Z", (2021, 1, 1, 0, 0, 0, 0)),
         ];
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        for (test, (y, mo, d, h, min, s, us)) in tests {
-            let dt = DateTime::parse_from_rfc3339(test).unwrap().with_timezone(&Utc);
+        Python::with_gil(|py| {
+            for (test, (y, mo, d, h, min, s, us)) in tests {
+                let dt = DateTime::parse_from_rfc3339(test).unwrap().with_timezone(&Utc);
 
-            let po = date_to_pyobject(&dt).unwrap();
-            let pdt = po.as_ref(py).extract::<&PyDateTime>().unwrap();
+                let po = date_to_pyobject(&dt).unwrap();
+                let pdt = po.as_ref(py).extract::<&PyDateTime>().unwrap();
 
-            assert_eq!(pdt.get_year(), y);
-            assert_eq!(pdt.get_month(), mo);
-            assert_eq!(pdt.get_day(), d);
-            assert_eq!(pdt.get_hour(), h);
-            assert_eq!(pdt.get_minute(), min);
-            assert_eq!(pdt.get_second(), s);
-            assert_eq!(pdt.get_microsecond(), us);
-        }
+                assert_eq!(pdt.get_year(), y);
+                assert_eq!(pdt.get_month(), mo);
+                assert_eq!(pdt.get_day(), d);
+                assert_eq!(pdt.get_hour(), h);
+                assert_eq!(pdt.get_minute(), min);
+                assert_eq!(pdt.get_second(), s);
+                assert_eq!(pdt.get_microsecond(), us);
+            }
+        });
     }
 }
