@@ -17,6 +17,8 @@ BASEDIR=$(pwd)
 cargo test
 cargo clippy --all-features --all-targets
 
+cargo build --release --features="build-binary"
+
 pushd pynotatin
 
 cargo test --no-default-features # --no-default-features is specified to avoid a bug in PyO3 (https://aeshirey.github.io/code/2020/04/01/tests-and-pyo3.html)
