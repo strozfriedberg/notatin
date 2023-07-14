@@ -261,3 +261,31 @@ fn read_checked(buffer: &[u8], file_offset_absolute: usize) -> Option<&[u8]> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_checked() {
+        let buffer = vec![0, 1, 2, 3, 4];
+        let ret0: &[u8] = &buffer[0..];
+        let ret4: &[u8] = &buffer[4..];
+        assert_eq!(None, read_checked(&buffer, 5));
+        assert_eq!(Some(ret0), read_checked(&buffer, 0));
+        assert_eq!(Some(ret4), read_checked(&buffer, 4));
+    }
+
+    #[test]
+    fn test_read_range_checked() {
+        let buffer = vec![0, 1, 2, 3, 4];
+        let ret0: &[u8] = &buffer[0..2];
+        let ret1: &[u8] = &buffer[1..4];
+        let ret4: &[u8] = &buffer[4..5];
+        assert_eq!(None, read_range_checked(&buffer, 5, 0));
+        assert_eq!(None, read_range_checked(&buffer, 5, 1));
+        assert_eq!(Some(ret0), read_range_checked(&buffer, 0, 2));
+        assert_eq!(Some(ret1), read_range_checked(&buffer, 1, 3 ));
+        assert_eq!(Some(ret4), read_range_checked(&buffer, 4, 1));
+    }
+}
