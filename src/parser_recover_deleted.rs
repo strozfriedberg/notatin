@@ -40,10 +40,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         &mut self,
         mut file_offset_absolute: usize,
     ) -> Result<usize, Error> {
-        let slice = self
-            .file_info
-            .buffer
-            .get(file_offset_absolute..)
+        let slice = read_checked(&self.file_info.buffer, file_offset_absolute)
             .ok_or_else(|| Error::buffer("find_free_keys_and_values"))?;
         let (input, hbin_header) = HiveBinHeader::from_bytes(self.file_info, slice)?;
 
@@ -62,10 +59,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         mut file_offset_absolute: usize,
         hbin_max: usize,
     ) -> Result<usize, Error> {
-        let mut input = self
-            .file_info
-            .buffer
-            .get(file_offset_absolute..)
+        let mut input = read_checked(&self.file_info.buffer, file_offset_absolute)
             .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: initial"))?;
         while file_offset_absolute < hbin_max {
             let (input_cell_type, size) = le_i32(input)?;
@@ -75,50 +69,37 @@ impl<'a> ParserRecoverDeleted<'a> {
             } else {
                 match CellType::read_cell_type(input_cell_type) {
                     CellType::CellValue => {
-                        self.read_cell_key_value(
-                            self.file_info
-                                .buffer
-                                .get(file_offset_absolute..)
-                                .ok_or_else(|| {
-                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_value")
-                                })?,
-                            file_offset_absolute,
-                            CellState::DeletedPrimaryFile,
-                            false,
-                        );
+                        if let Some(value_slack) = read_checked(&self.file_info.buffer, file_offset_absolute) {
+                            self.read_cell_key_value(
+                                value_slack,
+                                file_offset_absolute,
+                                CellState::DeletedPrimaryFile,
+                                false,
+                            );
+                        }
                     }
                     CellType::CellKey => {
-                        self.read_cell_key_node(
-                            self.file_info
-                                .buffer
-                                .get(file_offset_absolute..)
-                                .ok_or_else(|| {
-                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_node")
-                                })?,
-                            file_offset_absolute,
-                            CellState::DeletedPrimaryFile,
-                            false,
-                        );
+                        if let Some(key_slack) = read_checked(&self.file_info.buffer, file_offset_absolute) {
+                            self.read_cell_key_node(
+                                key_slack,
+                                file_offset_absolute,
+                                CellState::DeletedPrimaryFile,
+                                false,
+                            );
+                        }
                     }
                     _ => {
-                        self.find_cells_in_slack(
-                            self.file_info
-                                .buffer
-                                .get(file_offset_absolute..file_offset_absolute + size_abs)
-                                .ok_or_else(|| {
-                                    Error::buffer("find_unused_cells_in_hbin: find_cells_in_slack")
-                                })?,
-                            file_offset_absolute,
-                        );
+                        if let Some(slack) = read_range_checked(&self.file_info.buffer, file_offset_absolute, size_abs) {
+                            self.find_cells_in_slack(slack, file_offset_absolute);
+                        }
                     }
                 }
             }
             file_offset_absolute += size_abs;
-            input = self
-                .file_info
-                .buffer
-                .get(file_offset_absolute..file_offset_absolute + size_abs)
-                .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: after increment"))?;
+            match read_range_checked(&self.file_info.buffer, file_offset_absolute, size_abs) {
+                Some(data) => input = data,
+                None => break
+            };
         }
 
         Ok(file_offset_absolute)
@@ -256,3 +237,25 @@ impl<'a> ParserRecoverDeleted<'a> {
         Ok(())
     }
 }
+
+fn read_range_checked(buffer: &[u8], file_offset_absolute: usize, size: usize) -> Option<&[u8]> {
+    if file_offset_absolute < buffer.len() {
+        Some(buffer
+            .get(file_offset_absolute..std::cmp::min(file_offset_absolute + size, buffer.len()))
+            .expect("read_range_checked failure - but, we just checked this..."))
+    }
+    else {
+        None
+    }
+ }
+
+ fn read_checked(buffer: &[u8], file_offset_absolute: usize) -> Option<&[u8]> {
+     if file_offset_absolute < buffer.len() {
+         Some(buffer
+             .get(file_offset_absolute..)
+             .expect("read_checked failure - but, we just checked this..."))
+     }
+     else {
+         None
+     }
+  }
