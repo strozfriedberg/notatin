@@ -17,9 +17,9 @@
 use crate::err::Error;
 use crate::log::Logs;
 use nom::{
-    IResult,
     bytes::complete::{tag, take},
-    number::complete::{le_i32, le_u16, le_u32}
+    number::complete::{le_i32, le_u16, le_u32},
+    IResult,
 };
 use serde::Serialize;
 use std::io::Cursor;

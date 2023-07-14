@@ -33,9 +33,9 @@ use bitflags::bitflags;
 use blake3::Hash;
 use enum_primitive_derive::Primitive;
 use nom::{
-    IResult,
     bytes::complete::{tag, take},
-    number::complete::{le_i32, le_u16, le_u32}
+    number::complete::{le_i32, le_u16, le_u32},
+    IResult,
 };
 use num_traits::FromPrimitive;
 use serde::{Serialize, Serializer};

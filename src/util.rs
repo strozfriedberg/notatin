@@ -17,7 +17,7 @@
 use crate::err::Error;
 use crate::log::{LogCode, Logs};
 use chrono::{DateTime, Utc};
-use nom::{IResult, bytes::complete::take};
+use nom::{bytes::complete::take, IResult};
 use std::{
     borrow::Cow, char::REPLACEMENT_CHARACTER, convert::TryInto, fmt::Write as FmtWrite, mem, str,
 };
@@ -157,10 +157,8 @@ pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
             .expect("impossible")
             .and_hms_nano_opt(0, 0, 0, 0)
             .expect("impossible")
-        + chrono::Duration::nanoseconds(
-            (filetime_nanos - UNIX_EPOCH_NANOS) as i64
-        ),
-        Utc
+            + chrono::Duration::nanoseconds((filetime_nanos - UNIX_EPOCH_NANOS) as i64),
+        Utc,
     )
 }
 

@@ -22,13 +22,7 @@ use crate::file_info::FileInfo;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::LogCode;
 use crate::state::State;
-use nom::{
-    IResult,
-    branch::alt,
-    bytes::complete::tag,
-    combinator::map,
-    number::complete::le_i32
-};
+use nom::{branch::alt, bytes::complete::tag, combinator::map, number::complete::le_i32, IResult};
 
 pub(crate) struct ParserRecoverDeleted<'a> {
     pub file_info: &'a FileInfo,
@@ -69,7 +63,9 @@ impl<'a> ParserRecoverDeleted<'a> {
             } else {
                 match CellType::read_cell_type(input_cell_type) {
                     CellType::CellValue => {
-                        if let Some(value_slack) = read_checked(&self.file_info.buffer, file_offset_absolute) {
+                        if let Some(value_slack) =
+                            read_checked(&self.file_info.buffer, file_offset_absolute)
+                        {
                             self.read_cell_key_value(
                                 value_slack,
                                 file_offset_absolute,
@@ -79,7 +75,9 @@ impl<'a> ParserRecoverDeleted<'a> {
                         }
                     }
                     CellType::CellKey => {
-                        if let Some(key_slack) = read_checked(&self.file_info.buffer, file_offset_absolute) {
+                        if let Some(key_slack) =
+                            read_checked(&self.file_info.buffer, file_offset_absolute)
+                        {
                             self.read_cell_key_node(
                                 key_slack,
                                 file_offset_absolute,
@@ -89,7 +87,11 @@ impl<'a> ParserRecoverDeleted<'a> {
                         }
                     }
                     _ => {
-                        if let Some(slack) = read_range_checked(&self.file_info.buffer, file_offset_absolute, size_abs) {
+                        if let Some(slack) = read_range_checked(
+                            &self.file_info.buffer,
+                            file_offset_absolute,
+                            size_abs,
+                        ) {
                             self.find_cells_in_slack(slack, file_offset_absolute);
                         }
                     }
@@ -98,7 +100,7 @@ impl<'a> ParserRecoverDeleted<'a> {
             file_offset_absolute += size_abs;
             match read_range_checked(&self.file_info.buffer, file_offset_absolute, size_abs) {
                 Some(data) => input = data,
-                None => break
+                None => break,
             };
         }
 
@@ -203,12 +205,10 @@ impl<'a> ParserRecoverDeleted<'a> {
             let (input, _size) = le_i32(input)?;
 
             fn cell_type(b: &[u8]) -> IResult<&[u8], CellType> {
-                alt(
-                    (
-                        map(tag("nk"), |_| CellType::CellKey),
-                        map(tag("vk"), |_| CellType::CellValue)
-                    )
-                )(b)
+                alt((
+                    map(tag("nk"), |_| CellType::CellKey),
+                    map(tag("vk"), |_| CellType::CellValue),
+                ))(b)
             }
 
             match cell_type(input) {
@@ -240,22 +240,24 @@ impl<'a> ParserRecoverDeleted<'a> {
 
 fn read_range_checked(buffer: &[u8], file_offset_absolute: usize, size: usize) -> Option<&[u8]> {
     if file_offset_absolute < buffer.len() {
-        Some(buffer
-            .get(file_offset_absolute..std::cmp::min(file_offset_absolute + size, buffer.len()))
-            .expect("read_range_checked failure - but, we just checked this..."))
-    }
-    else {
+        Some(
+            buffer
+                .get(file_offset_absolute..std::cmp::min(file_offset_absolute + size, buffer.len()))
+                .expect("read_range_checked failure - but, we just checked this..."),
+        )
+    } else {
         None
     }
- }
+}
 
- fn read_checked(buffer: &[u8], file_offset_absolute: usize) -> Option<&[u8]> {
-     if file_offset_absolute < buffer.len() {
-         Some(buffer
-             .get(file_offset_absolute..)
-             .expect("read_checked failure - but, we just checked this..."))
-     }
-     else {
-         None
-     }
-  }
+fn read_checked(buffer: &[u8], file_offset_absolute: usize) -> Option<&[u8]> {
+    if file_offset_absolute < buffer.len() {
+        Some(
+            buffer
+                .get(file_offset_absolute..)
+                .expect("read_checked failure - but, we just checked this..."),
+        )
+    } else {
+        None
+    }
+}

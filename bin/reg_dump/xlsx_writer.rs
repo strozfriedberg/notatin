@@ -9,12 +9,8 @@ use notatin::{
     progress, util,
 };
 use std::{borrow::Cow, convert::TryFrom};
-use xlsxwriter::{
-    Format, Workbook, Worksheet, XlsxError
-};
-use xlsxwriter::format::{
-    FormatBorder, FormatColor, FormatUnderline
-};
+use xlsxwriter::format::{FormatBorder, FormatColor, FormatUnderline};
+use xlsxwriter::{Format, Workbook, Worksheet, XlsxError};
 
 pub(crate) struct WriteXlsx {
     workbook: Workbook,
@@ -48,13 +44,11 @@ impl WriteXlsx {
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
     pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, XlsxError> {
-        Ok(
-            WriteXlsx {
-                workbook: Workbook::new(output)?,
-                recovered_only,
-                console: progress::new(true),
-            }
-        )
+        Ok(WriteXlsx {
+            workbook: Workbook::new(output)?,
+            recovered_only,
+            console: progress::new(true),
+        })
     }
 
     pub(crate) fn write(&mut self, parser: &Parser, filter: Option<Filter>) -> Result<(), Error> {
@@ -93,8 +87,8 @@ impl WriteXlsx {
             Some(
                 Format::new()
                     .set_bold()
-                    .set_border_bottom(FormatBorder::Medium)
-            )
+                    .set_border_bottom(FormatBorder::Medium),
+            ),
         )?;
 
         reg_items_sheet.write_string(Self::COL_INDEX, "Index")?;
@@ -256,7 +250,7 @@ impl WriteXlsx {
             overflow_sheet,
             Self::COL_VALUE_DATA,
             &sanitize_cell(&value.get_content().0),
-            &link_format
+            &link_format,
         )?;
         reg_items_sheet.write_string(Self::COL_STATUS, &format!("{:?}", value.cell_state))?;
         if let Some(sequence_num) = value.sequence_num {
@@ -382,7 +376,7 @@ impl WriteXlsx {
 
 fn is_legal_xml_1_0(c: char) -> bool {
     // Some Unicode code points are illegal in XML 1.0
-    matches!(c, 
+    matches!(c,
         '\u{0009}' | '\u{000A}' | '\u{000D}' |
         '\u{0020}'..='\u{D7FF}' |
         '\u{E000}'..='\u{FFFD}' |
@@ -395,19 +389,22 @@ fn sanitize_for_xml_1_0(s: &str) -> Cow<str> {
     let i = s.chars().position(|c| !is_legal_xml_1_0(c));
     match i {
         None => s.into(),
-        Some(i) => s.chars().take(i).chain(
-            s.chars().skip(i).map(|c| match c {
+        Some(i) => s
+            .chars()
+            .take(i)
+            .chain(s.chars().skip(i).map(|c| match c {
                 _ if is_legal_xml_1_0(c) => c,
-                _  => '\u{FFFD}'
-            }
-        )).collect::<String>().into()
+                _ => '\u{FFFD}',
+            }))
+            .collect::<String>()
+            .into(),
     }
 }
 
 fn sanitize_cell(v: &CellValue) -> Cow<str> {
     match v {
         CellValue::String(v) => sanitize_for_xml_1_0(v),
-        v => format!("{}", v).into()
+        v => format!("{}", v).into(),
     }
 }
 
