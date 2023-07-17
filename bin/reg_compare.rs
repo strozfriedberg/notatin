@@ -58,6 +58,9 @@ fn main() -> Result<(), Error> {
         .help("Output file")
         .required(true)
         .number_of_values(1))
+    .arg(arg!(
+            -d --diff "Export normal diff format output"
+    ))
     .get_matches();
 
     let (base_primary, base_logs) = parse_paths(
@@ -72,6 +75,8 @@ fn main() -> Result<(), Error> {
 
     let output: &str = matches.get_one::<String>("output")
                               .expect("Required value");
+
+    let use_diff_format = matches.get_flag("diff");
 
     let write_file = File::create(output)?;
     let mut writer = BufWriter::new(write_file);
@@ -176,53 +181,94 @@ fn main() -> Result<(), Error> {
             }
         };
     }
-    let total_changes = keys_deleted.len()
-        + keys_added.len()
-        + keys_modified.len()
-        + values_deleted.len()
-        + values_added.len()
-        + values_modified.len();
 
-    if !keys_deleted.is_empty() {
-        writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
-        for k in keys_deleted {
-            write_key(&mut writer, &k);
+    if use_diff_format {
+        if !keys_deleted.is_empty() {
+            for k in keys_deleted {
+                write_key_prefix(&mut writer, &k, "< ");
+            }
         }
-    }
-    if !keys_added.is_empty() {
-        writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
-        for k in keys_added {
-            write_key(&mut writer, &k);
+        if !keys_added.is_empty() {
+            for k in keys_added {
+                write_key_prefix(&mut writer, &k, "> ");
+            }
         }
-    }
-    if !keys_modified.is_empty() {
-        writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
-        for k in keys_modified {
-            write_key(&mut writer, &k.0);
-            write_key(&mut writer, &k.1);
+        if !keys_modified.is_empty() {
+            for k in &keys_modified {
+                write_key_prefix(&mut writer, &k.0, "< ");
+            }
+            writeln!(writer, "---");
+            for k in &keys_modified {
+                write_key_prefix(&mut writer, &k.1, "> ");
+            }
         }
-    }
-    if !values_deleted.is_empty() {
-        writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
-        for v in values_deleted {
-            write_value(&mut writer, &v.0, &v.1);
+        if !values_deleted.is_empty() {
+            for v in values_deleted {
+                write_value_prefix(&mut writer, &v.0, &v.1, "< ");
+            }
         }
-    }
-    if !values_added.is_empty() {
-        writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
-        for v in values_added {
-            write_value(&mut writer, &v.0, &v.1);
+        if !values_added.is_empty() {
+            for v in values_added {
+                write_value_prefix(&mut writer, &v.0, &v.1, "> ");
+            }
         }
-    }
-    if !values_modified.is_empty() {
-        writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
-        for v in values_modified {
-            write_value(&mut writer, &v.0, &v.1);
-            write_value(&mut writer, &v.0, &v.2);
+        if !values_modified.is_empty() {
+            for v in &values_modified {
+                write_value_prefix(&mut writer, &v.0, &v.1, "< ");
+            }
+            writeln!(writer, "---");
+            for v in &values_modified {
+                write_value_prefix(&mut writer, &v.0, &v.2, "> ");
+            }
         }
-    }
-    writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
+    } else {
+        let total_changes = keys_deleted.len()
+            + keys_added.len()
+            + keys_modified.len()
+            + values_deleted.len()
+            + values_added.len()
+            + values_modified.len();
 
+        if !keys_deleted.is_empty() {
+            writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
+            for k in keys_deleted {
+                write_key(&mut writer, &k);
+            }
+        }
+        if !keys_added.is_empty() {
+            writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
+            for k in keys_added {
+                write_key(&mut writer, &k);
+            }
+        }
+        if !keys_modified.is_empty() {
+            writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
+            for k in keys_modified {
+                write_key(&mut writer, &k.0);
+                write_key(&mut writer, &k.1);
+            }
+        }
+        if !values_deleted.is_empty() {
+            writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
+            for v in values_deleted {
+                write_value(&mut writer, &v.0, &v.1);
+            }
+        }
+        if !values_added.is_empty() {
+            writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
+            for v in values_added {
+                write_value(&mut writer, &v.0, &v.1);
+            }
+        }
+        if !values_modified.is_empty() {
+            writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
+            for v in values_modified {
+                write_value(&mut writer, &v.0, &v.1);
+                write_value(&mut writer, &v.0, &v.2);
+            }
+        }
+        writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
+    }
     Ok(())
 }
 
@@ -235,9 +281,14 @@ fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Erro
 }
 
 fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue) {
+    write_value_prefix(writer, cell_key_node_path, value, "")
+}
+
+fn write_value_prefix(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
     writeln!(
         writer,
-        "{}\t{}\t{:?}",
+        "{}{}\t{}\t{:?}",
+        diff_prefix,
         cell_key_node_path,
         value.get_pretty_name(),
         value.get_content().0
@@ -246,10 +297,15 @@ fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &C
 }
 
 fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
+    write_key_prefix(writer, cell_key_node, "")
+}
+
+fn write_key_prefix(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode, diff_prefix: &str) {
     let mut logs = Logs::default();
     writeln!(
         writer,
-        "{}\t{}\t{:?}\t{:?}",
+        "{}{}\t{}\t{:?}\t{:?}",
+        diff_prefix,
         cell_key_node.path,
         format_date_time(cell_key_node.last_key_written_date_and_time()),
         cell_key_node.key_node_flags(&mut logs),
