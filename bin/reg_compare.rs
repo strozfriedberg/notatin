@@ -15,6 +15,7 @@
  */
 
 use blake3::Hash;
+use chrono::{DateTime, Utc};
 use clap::{Arg, Command, arg};
 use notatin::{
     cell_key_node::CellKeyNode,
@@ -31,6 +32,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
+    time::SystemTime
 };
 
 fn main() -> Result<(), Error> {
@@ -183,42 +185,97 @@ fn main() -> Result<(), Error> {
     }
 
     if use_diff_format {
+        let now = DateTime::<Utc>::from(SystemTime::now()).to_rfc3339();
+
+        writeln!(writer, "--- base {}", now)?;
+        writeln!(writer, "+++ comp {}", now)?; 
+
+        let mut lline = 1;
+        let mut rline = 1;
+
         if !keys_deleted.is_empty() {
+            writeln!(
+                writer,
+                "@@ -{},{} +{},{} @@",
+                lline, keys_deleted.len(),
+                rline, 0
+            )?;
+            lline += keys_deleted.len();
             for k in keys_deleted {
-                write_key_prefix(&mut writer, &k, "< ");
+                write_key_prefix(&mut writer, &k, "- ");
             }
         }
+
         if !keys_added.is_empty() {
+            writeln!(
+                writer,
+                "@@ -{},{} +{},{} @@",
+                lline, 0,
+                rline, keys_added.len()
+            )?;
+            rline += keys_added.len();
             for k in keys_added {
-                write_key_prefix(&mut writer, &k, "> ");
+                write_key_prefix(&mut writer, &k, "+ ");
             }
         }
+
         if !keys_modified.is_empty() {
+            writeln!(
+                writer,
+                "@@ -{},{} +{},{} @@",
+                lline, keys_modified.len(),
+                rline, keys_modified.len()
+            )?;
+            lline += keys_modified.len();
+            rline += keys_modified.len();
             for k in &keys_modified {
-                write_key_prefix(&mut writer, &k.0, "< ");
+                write_key_prefix(&mut writer, &k.0, "- ");
             }
-            writeln!(writer, "---");
             for k in &keys_modified {
-                write_key_prefix(&mut writer, &k.1, "> ");
+                write_key_prefix(&mut writer, &k.1, "+ ");
             }
         }
+
         if !values_deleted.is_empty() {
+            writeln!(
+                writer,
+                "@@ -{},{} +{},{} @@",
+                lline, values_deleted.len(),
+                rline, 0
+            )?;
+            lline += values_deleted.len();
             for v in values_deleted {
-                write_value_prefix(&mut writer, &v.0, &v.1, "< ");
+                write_value_prefix(&mut writer, &v.0, &v.1, "- ");
             }
         }
+
         if !values_added.is_empty() {
+            writeln!(
+                writer,
+                "@@ -{},{} +{},{} @@",
+                lline, 0,
+                rline, values_added.len()
+            )?;
+            rline += values_added.len();
             for v in values_added {
-                write_value_prefix(&mut writer, &v.0, &v.1, "> ");
+                write_value_prefix(&mut writer, &v.0, &v.1, "+ ");
             }
         }
+
         if !values_modified.is_empty() {
+            writeln!(
+                writer,
+                "@@ -{},{} +{},{} @@",
+                lline, values_modified.len(),
+                rline, values_modified.len()
+            )?;
+            lline += values_modified.len();
+            rline += values_modified.len();
             for v in &values_modified {
-                write_value_prefix(&mut writer, &v.0, &v.1, "< ");
+                write_value_prefix(&mut writer, &v.0, &v.1, "- ");
             }
-            writeln!(writer, "---");
             for v in &values_modified {
-                write_value_prefix(&mut writer, &v.0, &v.2, "> ");
+                write_value_prefix(&mut writer, &v.0, &v.2, "+ ");
             }
         }
     } else {
