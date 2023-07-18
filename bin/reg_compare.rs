@@ -265,6 +265,9 @@ fn write_diff<W: Write>(
     writeln!(writer, "--- base {}", now)?;
     writeln!(writer, "+++ comp {}", now)?;
 
+    let del_prefix = "+ ";
+    let add_prefix = "- ";
+
     let mut lline = 1;
     let mut rline = 1;
 
@@ -277,7 +280,7 @@ fn write_diff<W: Write>(
         )?;
         lline += keys_deleted.len();
         for k in keys_deleted {
-            write_key(writer, &k, "- ");
+            write_key(writer, &k, del_prefix);
         }
     }
 
@@ -290,7 +293,7 @@ fn write_diff<W: Write>(
         )?;
         rline += keys_added.len();
         for k in keys_added {
-            write_key(writer, &k, "+ ");
+            write_key(writer, &k, add_prefix);
         }
     }
 
@@ -304,10 +307,10 @@ fn write_diff<W: Write>(
         lline += keys_modified.len();
         rline += keys_modified.len();
         for k in &keys_modified {
-            write_key(writer, &k.0, "- ");
+            write_key(writer, &k.0, del_prefix);
         }
         for k in &keys_modified {
-            write_key(writer, &k.1, "+ ");
+            write_key(writer, &k.1, add_prefix);
         }
     }
 
@@ -320,7 +323,7 @@ fn write_diff<W: Write>(
         )?;
         lline += values_deleted.len();
         for v in values_deleted {
-            write_value(writer, &v.0, &v.1, "- ");
+            write_value(writer, &v.0, &v.1, del_prefix);
         }
     }
 
@@ -333,7 +336,7 @@ fn write_diff<W: Write>(
         )?;
         rline += values_added.len();
         for v in values_added {
-            write_value(writer, &v.0, &v.1, "+ ");
+            write_value(writer, &v.0, &v.1, add_prefix);
         }
     }
 
@@ -347,10 +350,10 @@ fn write_diff<W: Write>(
         lline += values_modified.len();
         rline += values_modified.len();
         for v in &values_modified {
-            write_value(writer, &v.0, &v.1, "- ");
+            write_value(writer, &v.0, &v.1, del_prefix);
         }
         for v in &values_modified {
-            write_value(writer, &v.0, &v.2, "+ ");
+            write_value(writer, &v.0, &v.2, add_prefix);
         }
     }
     Ok(())
