@@ -251,7 +251,7 @@ fn write_report<W: Write>(
     Ok(())
 }
 
-fn write_diff_keys_deleted<W: Write>(
+fn write_diff_k_del<W: Write>(
     writer: &mut W,
     mut lline: usize,
     keys_deleted: Vec<CellKeyNode>,
@@ -272,7 +272,7 @@ fn write_diff_keys_deleted<W: Write>(
     Ok((lline, rline))
 }
 
-fn write_diff_keys_added<W: Write>(
+fn write_diff_k_add<W: Write>(
     writer: &mut W,
     lline: usize,
     keys_added: Vec<CellKeyNode>,
@@ -293,7 +293,7 @@ fn write_diff_keys_added<W: Write>(
     Ok((lline, rline))
 }
 
-fn write_diff_keys_modified<W: Write>(
+fn write_diff_k_mod<W: Write>(
     writer: &mut W,
     mut lline: usize,
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
@@ -319,7 +319,7 @@ fn write_diff_keys_modified<W: Write>(
     Ok((lline, rline))
 }
 
-fn write_diff_values_deleted<W: Write>(
+fn write_diff_v_del<W: Write>(
     writer: &mut W,
     mut lline: usize,
     values_deleted: Vec<(String, CellKeyValue)>,
@@ -340,7 +340,7 @@ fn write_diff_values_deleted<W: Write>(
     Ok((lline, rline))
 }
 
-fn write_diff_values_added<W: Write>(
+fn write_diff_v_add<W: Write>(
     writer: &mut W,
     lline: usize,
     values_added: Vec<(String, CellKeyValue)>,
@@ -361,7 +361,7 @@ fn write_diff_values_added<W: Write>(
     Ok((lline, rline))
 }
 
-fn write_diff_values_modified<W: Write>(
+fn write_diff_v_mod<W: Write>(
     writer: &mut W,
     mut lline: usize,
     values_modified: Vec<(String, CellKeyValue, CellKeyValue)>,
@@ -403,47 +403,12 @@ fn write_diff<W: Write>(
     let mut lline = 1;
     let mut rline = 1;
 
-    (lline, rline) = write_diff_keys_deleted(
-        writer,
-        lline,
-        keys_deleted,
-        rline
-    )?;
-
-    (lline, rline) = write_diff_keys_added(
-        writer,
-        lline,
-        keys_added,
-        rline
-    )?;
-
-    (lline, rline) = write_diff_keys_modified(
-        writer,
-        lline,
-        keys_modified,
-        rline
-    )?;
-
-    (lline, rline) = write_diff_values_deleted(
-        writer,
-        lline,
-        values_deleted,
-        rline
-    )?;
-
-    (lline, rline) = write_diff_values_added(
-        writer,
-        lline,
-        values_added,
-        rline
-    )?;
-
-    (lline, rline) = write_diff_values_modified(
-        writer,
-        lline,
-        values_modified,
-        rline
-    )?;
+    (lline, rline) = write_diff_k_del(writer, lline, keys_deleted, rline)?;
+    (lline, rline) = write_diff_k_add(writer, lline, keys_added, rline)?;
+    (lline, rline) = write_diff_k_mod(writer, lline, keys_modified, rline)?;
+    (lline, rline) = write_diff_v_del(writer, lline, values_deleted, rline)?;
+    (lline, rline) = write_diff_v_add(writer, lline, values_added, rline)?;
+    (lline, rline) = write_diff_v_mod(writer, lline, values_modified, rline)?;
 
     Ok(())
 }
