@@ -387,7 +387,7 @@ fn write_diff_v_mod<W: Write>(
 }
 
 fn write_diff<W: Write>(
-    writer: &mut W,
+    w: &mut W,
     keys_deleted: Vec<CellKeyNode>,
     keys_added: Vec<CellKeyNode>,
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
@@ -397,18 +397,18 @@ fn write_diff<W: Write>(
 ) -> Result<(), Error> {
     let now = DateTime::<Utc>::from(SystemTime::now()).to_rfc3339();
 
-    writeln!(writer, "--- base {}", now)?;
-    writeln!(writer, "+++ comp {}", now)?;
+    writeln!(w, "--- base {}", now)?;
+    writeln!(w, "+++ comp {}", now)?;
 
     let mut lline = 1;
     let mut rline = 1;
 
-    (lline, rline) = write_diff_k_del(writer, lline, keys_deleted, rline)?;
-    (lline, rline) = write_diff_k_add(writer, lline, keys_added, rline)?;
-    (lline, rline) = write_diff_k_mod(writer, lline, keys_modified, rline)?;
-    (lline, rline) = write_diff_v_del(writer, lline, values_deleted, rline)?;
-    (lline, rline) = write_diff_v_add(writer, lline, values_added, rline)?;
-    (lline, rline) = write_diff_v_mod(writer, lline, values_modified, rline)?;
+    (lline, rline) = write_diff_k_del(w, lline, keys_deleted, rline)?;
+    (lline, rline) = write_diff_k_add(w, lline, keys_added, rline)?;
+    (lline, rline) = write_diff_k_mod(w, lline, keys_modified, rline)?;
+    (lline, rline) = write_diff_v_del(w, lline, values_deleted, rline)?;
+    (lline, rline) = write_diff_v_add(w, lline, values_added, rline)?;
+    (lline, rline) = write_diff_v_mod(w, lline, values_modified, rline)?;
 
     Ok(())
 }
