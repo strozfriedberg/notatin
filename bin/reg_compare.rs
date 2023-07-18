@@ -400,3 +400,8 @@ fn update_parsed_keys(k_added: usize, k_total: usize) {
 fn update_keys_compared(k_added: usize, k_total: usize) {
     println!("{}/{} keys compared", k_added, k_total);
 }
+
+#[cfg(test)]
+mod tests {
+
+}
