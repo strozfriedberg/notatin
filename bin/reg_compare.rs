@@ -251,6 +251,141 @@ fn write_report<W: Write>(
     Ok(())
 }
 
+fn write_diff_keys_deleted<W: Write>(
+    writer: &mut W,
+    mut lline: usize,
+    keys_deleted: Vec<CellKeyNode>,
+    rline: usize
+) -> Result<(usize, usize), Error> {
+    if !keys_deleted.is_empty() {
+        writeln!(
+            writer,
+            "@@ -{},{} +{},{} @@",
+            lline, keys_deleted.len(),
+            rline, 0
+        )?;
+        lline += keys_deleted.len();
+        for k in keys_deleted {
+            write_key(writer, &k, "- ");
+        }
+    }
+    Ok((lline, rline))
+}
+
+fn write_diff_keys_added<W: Write>(
+    writer: &mut W,
+    lline: usize,
+    keys_added: Vec<CellKeyNode>,
+    mut rline: usize
+) -> Result<(usize, usize), Error> {
+    if !keys_added.is_empty() {
+        writeln!(
+            writer,
+            "@@ -{},{} +{},{} @@",
+            lline, 0,
+            rline, keys_added.len()
+        )?;
+        rline += keys_added.len();
+        for k in keys_added {
+            write_key(writer, &k, "+ ");
+        }
+    }
+    Ok((lline, rline))
+}
+
+fn write_diff_keys_modified<W: Write>(
+    writer: &mut W,
+    mut lline: usize,
+    keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
+    mut rline: usize
+) -> Result<(usize, usize), Error> {
+
+    if !keys_modified.is_empty() {
+        writeln!(
+            writer,
+            "@@ -{},{} +{},{} @@",
+            lline, keys_modified.len(),
+            rline, keys_modified.len()
+        )?;
+        lline += keys_modified.len();
+        rline += keys_modified.len();
+        for k in &keys_modified {
+            write_key(writer, &k.0, "- ");
+        }
+        for k in &keys_modified {
+            write_key(writer, &k.1, "+ ");
+        }
+    }
+    Ok((lline, rline))
+}
+
+fn write_diff_values_deleted<W: Write>(
+    writer: &mut W,
+    mut lline: usize,
+    values_deleted: Vec<(String, CellKeyValue)>,
+    rline: usize
+) -> Result<(usize, usize), Error> {
+    if !values_deleted.is_empty() {
+        writeln!(
+            writer,
+            "@@ -{},{} +{},{} @@",
+            lline, values_deleted.len(),
+            rline, 0
+        )?;
+        lline += values_deleted.len();
+        for v in values_deleted {
+            write_value(writer, &v.0, &v.1, "- ");
+        }
+    }
+    Ok((lline, rline))
+}
+
+fn write_diff_values_added<W: Write>(
+    writer: &mut W,
+    lline: usize,
+    values_added: Vec<(String, CellKeyValue)>,
+    mut rline: usize
+) -> Result<(usize, usize), Error> {
+    if !values_added.is_empty() {
+        writeln!(
+            writer,
+            "@@ -{},{} +{},{} @@",
+            lline, 0,
+            rline, values_added.len()
+        )?;
+        rline += values_added.len();
+        for v in values_added {
+            write_value(writer, &v.0, &v.1, "+ ");
+        }
+    }
+    Ok((lline, rline))
+}
+
+fn write_diff_values_modified<W: Write>(
+    writer: &mut W,
+    mut lline: usize,
+    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>,
+    mut rline: usize
+) -> Result<(usize, usize), Error> {
+    if !values_modified.is_empty() {
+        writeln!(
+            writer,
+            "@@ -{},{} +{},{} @@",
+            lline, values_modified.len(),
+            rline, values_modified.len()
+        )?;
+        lline += values_modified.len();
+        rline += values_modified.len();
+        for v in &values_modified {
+            write_value(writer, &v.0, &v.1, "- ");
+        }
+        for v in &values_modified {
+            write_value(writer, &v.0, &v.2, "+ ");
+        }
+    }
+    Ok((lline, rline))
+}
+
 fn write_diff<W: Write>(
     writer: &mut W,
     keys_deleted: Vec<CellKeyNode>,
@@ -265,97 +400,51 @@ fn write_diff<W: Write>(
     writeln!(writer, "--- base {}", now)?;
     writeln!(writer, "+++ comp {}", now)?;
 
-    let del_prefix = "+ ";
-    let add_prefix = "- ";
-
     let mut lline = 1;
     let mut rline = 1;
 
-    if !keys_deleted.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, keys_deleted.len(),
-            rline, 0
-        )?;
-        lline += keys_deleted.len();
-        for k in keys_deleted {
-            write_key(writer, &k, del_prefix);
-        }
-    }
+    (lline, rline) = write_diff_keys_deleted(
+        writer,
+        lline,
+        keys_deleted,
+        rline
+    )?;
 
-    if !keys_added.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, 0,
-            rline, keys_added.len()
-        )?;
-        rline += keys_added.len();
-        for k in keys_added {
-            write_key(writer, &k, add_prefix);
-        }
-    }
+    (lline, rline) = write_diff_keys_added(
+        writer,
+        lline,
+        keys_added,
+        rline
+    )?;
 
-    if !keys_modified.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, keys_modified.len(),
-            rline, keys_modified.len()
-        )?;
-        lline += keys_modified.len();
-        rline += keys_modified.len();
-        for k in &keys_modified {
-            write_key(writer, &k.0, del_prefix);
-        }
-        for k in &keys_modified {
-            write_key(writer, &k.1, add_prefix);
-        }
-    }
+    (lline, rline) = write_diff_keys_modified(
+        writer,
+        lline,
+        keys_modified,
+        rline
+    )?;
 
-    if !values_deleted.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, values_deleted.len(),
-            rline, 0
-        )?;
-        lline += values_deleted.len();
-        for v in values_deleted {
-            write_value(writer, &v.0, &v.1, del_prefix);
-        }
-    }
+    (lline, rline) = write_diff_values_deleted(
+        writer,
+        lline,
+        values_deleted,
+        rline
+    )?;
 
-    if !values_added.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, 0,
-            rline, values_added.len()
-        )?;
-        rline += values_added.len();
-        for v in values_added {
-            write_value(writer, &v.0, &v.1, add_prefix);
-        }
-    }
+    (lline, rline) = write_diff_values_added(
+        writer,
+        lline,
+        values_added,
+        rline
+    )?;
 
-    if !values_modified.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, values_modified.len(),
-            rline, values_modified.len()
-        )?;
-        lline += values_modified.len();
-        rline += values_modified.len();
-        for v in &values_modified {
-            write_value(writer, &v.0, &v.1, del_prefix);
-        }
-        for v in &values_modified {
-            write_value(writer, &v.0, &v.2, add_prefix);
-        }
-    }
+    (lline, rline) = write_diff_values_modified(
+        writer,
+        lline,
+        values_modified,
+        rline
+    )?;
+
     Ok(())
 }
 
