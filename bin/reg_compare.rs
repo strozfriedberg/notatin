@@ -184,20 +184,12 @@ fn main() -> Result<(), Error> {
         };
     }
 
-    if use_diff_format {
-        write_diff(
-            &mut writer,
-            keys_added, keys_deleted, keys_modified,
-            values_added, values_deleted, values_modified
-        )?;
-    }
-    else {
-        write_report(
-            &mut writer,
-            keys_added, keys_deleted, keys_modified,
-            values_added, values_deleted, values_modified
-        )?;
-    }
+    (if use_diff_format { write_diff } else { write_report })(
+        &mut writer,
+        keys_added, keys_deleted, keys_modified,
+        values_added, values_deleted, values_modified
+    )?;
+
     Ok(())
 }
 
