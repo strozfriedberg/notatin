@@ -384,14 +384,6 @@ fn write_diff<W: Write>(
     Ok(())
 }
 
-fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Error> {
-    let mut parser_builder = ParserBuilder::from_path(primary);
-    for log in logs.unwrap_or_default() {
-        parser_builder.with_transaction_log(log);
-    }
-    parser_builder.build()
-}
-
 fn write_value<W: Write>(writer: &mut W, cell_key_node_path: &str, value: &CellKeyValue) {
     write_value_prefix(writer, cell_key_node_path, value, "")
 }
@@ -424,6 +416,14 @@ fn write_key_prefix<W: Write>(writer: &mut W, cell_key_node: &CellKeyNode, diff_
         cell_key_node.access_flags(&mut logs)
     )
     .unwrap();
+}
+
+fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Error> {
+    let mut parser_builder = ParserBuilder::from_path(primary);
+    for log in logs.unwrap_or_default() {
+        parser_builder.with_transaction_log(log);
+    }
+    parser_builder.build()
 }
 
 fn update_parsed_keys(k_added: usize, k_total: usize) {
