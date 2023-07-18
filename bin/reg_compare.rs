@@ -190,53 +190,13 @@ fn main() -> Result<(), Error> {
             keys_added, keys_deleted, keys_modified,
             values_added, values_deleted, values_modified
         )?;
-    } else {
-        let total_changes = keys_deleted.len()
-            + keys_added.len()
-            + keys_modified.len()
-            + values_deleted.len()
-            + values_added.len()
-            + values_modified.len();
-
-        if !keys_deleted.is_empty() {
-            writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
-            for k in keys_deleted {
-                write_key(&mut writer, &k);
-            }
-        }
-        if !keys_added.is_empty() {
-            writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
-            for k in keys_added {
-                write_key(&mut writer, &k);
-            }
-        }
-        if !keys_modified.is_empty() {
-            writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
-            for k in keys_modified {
-                write_key(&mut writer, &k.0);
-                write_key(&mut writer, &k.1);
-            }
-        }
-        if !values_deleted.is_empty() {
-            writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
-            for v in values_deleted {
-                write_value(&mut writer, &v.0, &v.1);
-            }
-        }
-        if !values_added.is_empty() {
-            writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
-            for v in values_added {
-                write_value(&mut writer, &v.0, &v.1);
-            }
-        }
-        if !values_modified.is_empty() {
-            writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
-            for v in values_modified {
-                write_value(&mut writer, &v.0, &v.1);
-                write_value(&mut writer, &v.0, &v.2);
-            }
-        }
-        writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
+    }
+    else {
+        write_report(
+            &mut writer,
+            keys_added, keys_deleted, keys_modified,
+            values_added, values_deleted, values_modified
+        )?;
     }
     Ok(())
 }
@@ -261,6 +221,64 @@ fn write_diff(writer: &mut BufWriter<File>, Vec<String> left, lline: u64, Vec<St
 }
 */
 
+fn write_report(
+   writer: &mut BufWriter<File>,
+    keys_deleted: Vec<CellKeyNode>,
+    keys_added: Vec<CellKeyNode>,
+    keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
+    values_deleted: Vec<(String, CellKeyValue)>,
+    values_added: Vec<(String, CellKeyValue)>,
+    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
+) -> Result<(), Error> {
+    let total_changes = keys_deleted.len()
+        + keys_added.len()
+        + keys_modified.len()
+        + values_deleted.len()
+        + values_added.len()
+        + values_modified.len();
+
+    if !keys_deleted.is_empty() {
+        writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
+        for k in keys_deleted {
+            write_key(writer, &k);
+        }
+    }
+    if !keys_added.is_empty() {
+        writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
+        for k in keys_added {
+            write_key(writer, &k);
+        }
+    }
+    if !keys_modified.is_empty() {
+        writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
+        for k in keys_modified {
+            write_key(writer, &k.0);
+            write_key(writer, &k.1);
+        }
+    }
+    if !values_deleted.is_empty() {
+        writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
+        for v in values_deleted {
+            write_value(writer, &v.0, &v.1);
+        }
+    }
+    if !values_added.is_empty() {
+        writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
+        for v in values_added {
+            write_value(writer, &v.0, &v.1);
+        }
+    }
+    if !values_modified.is_empty() {
+        writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
+        for v in values_modified {
+            write_value(writer, &v.0, &v.1);
+            write_value(writer, &v.0, &v.2);
+        }
+    }
+    writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
+    Ok(())
+}
+
 fn write_diff(
     writer: &mut BufWriter<File>,
     keys_deleted: Vec<CellKeyNode>,
@@ -273,7 +291,7 @@ fn write_diff(
     let now = DateTime::<Utc>::from(SystemTime::now()).to_rfc3339();
 
     writeln!(writer, "--- base {}", now)?;
-    writeln!(writer, "+++ comp {}", now)?; 
+    writeln!(writer, "+++ comp {}", now)?;
 
     let mut lline = 1;
     let mut rline = 1;
