@@ -193,26 +193,6 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-/*
-fn write_diff(writer: &mut BufWriter<File>, Vec<String> left, lline: u64, Vec<String> right, rline: u64) -> Result<_> {
-    writeln!(
-        writer,
-        "@@ -{},{} +{},{} @@",
-        lline, left.len(),
-        rline, right.len()
-    )?;
-    lline += left.len();
-    rline += right.len();
-
-    for l in left {
-        write_key_prefix(&mut writer, &r, "- ");
-    }
-    for r in right {
-        write_key_prefix(&mut writer, &r, "+ ");
-    }
-}
-*/
-
 fn write_report<W: Write>(
     writer: &mut W,
     keys_deleted: Vec<CellKeyNode>,
