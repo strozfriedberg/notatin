@@ -212,39 +212,39 @@ fn write_report<W: Write>(
     if !keys_deleted.is_empty() {
         writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
         for k in keys_deleted {
-            write_key(writer, &k);
+            write_key(writer, &k, "");
         }
     }
     if !keys_added.is_empty() {
         writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
         for k in keys_added {
-            write_key(writer, &k);
+            write_key(writer, &k, "");
         }
     }
     if !keys_modified.is_empty() {
         writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
         for k in keys_modified {
-            write_key(writer, &k.0);
-            write_key(writer, &k.1);
+            write_key(writer, &k.0, "");
+            write_key(writer, &k.1, "");
         }
     }
     if !values_deleted.is_empty() {
         writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
         for v in values_deleted {
-            write_value(writer, &v.0, &v.1);
+            write_value(writer, &v.0, &v.1, "");
         }
     }
     if !values_added.is_empty() {
         writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
         for v in values_added {
-            write_value(writer, &v.0, &v.1);
+            write_value(writer, &v.0, &v.1, "");
         }
     }
     if !values_modified.is_empty() {
         writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
         for v in values_modified {
-            write_value(writer, &v.0, &v.1);
-            write_value(writer, &v.0, &v.2);
+            write_value(writer, &v.0, &v.1, "");
+            write_value(writer, &v.0, &v.2, "");
         }
     }
     writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
@@ -277,7 +277,7 @@ fn write_diff<W: Write>(
         )?;
         lline += keys_deleted.len();
         for k in keys_deleted {
-            write_key_prefix(writer, &k, "- ");
+            write_key(writer, &k, "- ");
         }
     }
 
@@ -290,7 +290,7 @@ fn write_diff<W: Write>(
         )?;
         rline += keys_added.len();
         for k in keys_added {
-            write_key_prefix(writer, &k, "+ ");
+            write_key(writer, &k, "+ ");
         }
     }
 
@@ -304,10 +304,10 @@ fn write_diff<W: Write>(
         lline += keys_modified.len();
         rline += keys_modified.len();
         for k in &keys_modified {
-            write_key_prefix(writer, &k.0, "- ");
+            write_key(writer, &k.0, "- ");
         }
         for k in &keys_modified {
-            write_key_prefix(writer, &k.1, "+ ");
+            write_key(writer, &k.1, "+ ");
         }
     }
 
@@ -320,7 +320,7 @@ fn write_diff<W: Write>(
         )?;
         lline += values_deleted.len();
         for v in values_deleted {
-            write_value_prefix(writer, &v.0, &v.1, "- ");
+            write_value(writer, &v.0, &v.1, "- ");
         }
     }
 
@@ -333,7 +333,7 @@ fn write_diff<W: Write>(
         )?;
         rline += values_added.len();
         for v in values_added {
-            write_value_prefix(writer, &v.0, &v.1, "+ ");
+            write_value(writer, &v.0, &v.1, "+ ");
         }
     }
 
@@ -347,20 +347,16 @@ fn write_diff<W: Write>(
         lline += values_modified.len();
         rline += values_modified.len();
         for v in &values_modified {
-            write_value_prefix(writer, &v.0, &v.1, "- ");
+            write_value(writer, &v.0, &v.1, "- ");
         }
         for v in &values_modified {
-            write_value_prefix(writer, &v.0, &v.2, "+ ");
+            write_value(writer, &v.0, &v.2, "+ ");
         }
     }
     Ok(())
 }
 
-fn write_value<W: Write>(writer: &mut W, cell_key_node_path: &str, value: &CellKeyValue) {
-    write_value_prefix(writer, cell_key_node_path, value, "")
-}
-
-fn write_value_prefix<W: Write>(writer: &mut W, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
+fn write_value<W: Write>(writer: &mut W, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
     writeln!(
         writer,
         "{}{}\t{}\t{:?}",
@@ -372,11 +368,7 @@ fn write_value_prefix<W: Write>(writer: &mut W, cell_key_node_path: &str, value:
     .unwrap();
 }
 
-fn write_key<W: Write>(writer: &mut W, cell_key_node: &CellKeyNode) {
-    write_key_prefix(writer, cell_key_node, "")
-}
-
-fn write_key_prefix<W: Write>(writer: &mut W, cell_key_node: &CellKeyNode, diff_prefix: &str) {
+fn write_key<W: Write>(writer: &mut W, cell_key_node: &CellKeyNode, diff_prefix: &str) {
     let mut logs = Logs::default();
     writeln!(
         writer,
