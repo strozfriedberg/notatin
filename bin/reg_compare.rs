@@ -221,8 +221,8 @@ fn write_diff(writer: &mut BufWriter<File>, Vec<String> left, lline: u64, Vec<St
 }
 */
 
-fn write_report(
-   writer: &mut BufWriter<File>,
+fn write_report<W: Write>(
+   writer: &mut BufWriter<W>,
     keys_deleted: Vec<CellKeyNode>,
     keys_added: Vec<CellKeyNode>,
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
@@ -279,8 +279,8 @@ fn write_report(
     Ok(())
 }
 
-fn write_diff(
-    writer: &mut BufWriter<File>,
+fn write_diff<W: Write>(
+    writer: &mut BufWriter<W>,
     keys_deleted: Vec<CellKeyNode>,
     keys_added: Vec<CellKeyNode>,
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
@@ -392,11 +392,11 @@ fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Erro
     parser_builder.build()
 }
 
-fn write_value(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue) {
+fn write_value<W: Write>(writer: &mut BufWriter<W>, cell_key_node_path: &str, value: &CellKeyValue) {
     write_value_prefix(writer, cell_key_node_path, value, "")
 }
 
-fn write_value_prefix(writer: &mut BufWriter<File>, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
+fn write_value_prefix<W: Write>(writer: &mut BufWriter<W>, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
     writeln!(
         writer,
         "{}{}\t{}\t{:?}",
@@ -408,11 +408,11 @@ fn write_value_prefix(writer: &mut BufWriter<File>, cell_key_node_path: &str, va
     .unwrap();
 }
 
-fn write_key(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode) {
+fn write_key<W: Write>(writer: &mut BufWriter<W>, cell_key_node: &CellKeyNode) {
     write_key_prefix(writer, cell_key_node, "")
 }
 
-fn write_key_prefix(writer: &mut BufWriter<File>, cell_key_node: &CellKeyNode, diff_prefix: &str) {
+fn write_key_prefix<W: Write>(writer: &mut BufWriter<W>, cell_key_node: &CellKeyNode, diff_prefix: &str) {
     let mut logs = Logs::default();
     writeln!(
         writer,
