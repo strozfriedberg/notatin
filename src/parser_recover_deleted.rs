@@ -22,13 +22,7 @@ use crate::file_info::FileInfo;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::LogCode;
 use crate::state::State;
-use nom::{
-    IResult,
-    branch::alt,
-    bytes::complete::tag,
-    combinator::map,
-    number::complete::le_i32
-};
+use nom::{branch::alt, bytes::complete::tag, combinator::map, number::complete::le_i32, IResult};
 
 pub(crate) struct ParserRecoverDeleted<'a> {
     pub file_info: &'a FileInfo,
@@ -40,10 +34,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         &mut self,
         mut file_offset_absolute: usize,
     ) -> Result<usize, Error> {
-        let slice = self
-            .file_info
-            .buffer
-            .get(file_offset_absolute..)
+        let slice = read_checked(&self.file_info.buffer, file_offset_absolute)
             .ok_or_else(|| Error::buffer("find_free_keys_and_values"))?;
         let (input, hbin_header) = HiveBinHeader::from_bytes(self.file_info, slice)?;
 
@@ -62,10 +53,7 @@ impl<'a> ParserRecoverDeleted<'a> {
         mut file_offset_absolute: usize,
         hbin_max: usize,
     ) -> Result<usize, Error> {
-        let mut input = self
-            .file_info
-            .buffer
-            .get(file_offset_absolute..)
+        let mut input = read_checked(&self.file_info.buffer, file_offset_absolute)
             .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: initial"))?;
         while file_offset_absolute < hbin_max {
             let (input_cell_type, size) = le_i32(input)?;
@@ -75,50 +63,45 @@ impl<'a> ParserRecoverDeleted<'a> {
             } else {
                 match CellType::read_cell_type(input_cell_type) {
                     CellType::CellValue => {
-                        self.read_cell_key_value(
-                            self.file_info
-                                .buffer
-                                .get(file_offset_absolute..)
-                                .ok_or_else(|| {
-                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_value")
-                                })?,
-                            file_offset_absolute,
-                            CellState::DeletedPrimaryFile,
-                            false,
-                        );
+                        if let Some(value_slack) =
+                            read_checked(&self.file_info.buffer, file_offset_absolute)
+                        {
+                            self.read_cell_key_value(
+                                value_slack,
+                                file_offset_absolute,
+                                CellState::DeletedPrimaryFile,
+                                false,
+                            );
+                        }
                     }
                     CellType::CellKey => {
-                        self.read_cell_key_node(
-                            self.file_info
-                                .buffer
-                                .get(file_offset_absolute..)
-                                .ok_or_else(|| {
-                                    Error::buffer("find_unused_cells_in_hbin: read_cell_key_node")
-                                })?,
-                            file_offset_absolute,
-                            CellState::DeletedPrimaryFile,
-                            false,
-                        );
+                        if let Some(key_slack) =
+                            read_checked(&self.file_info.buffer, file_offset_absolute)
+                        {
+                            self.read_cell_key_node(
+                                key_slack,
+                                file_offset_absolute,
+                                CellState::DeletedPrimaryFile,
+                                false,
+                            );
+                        }
                     }
                     _ => {
-                        self.find_cells_in_slack(
-                            self.file_info
-                                .buffer
-                                .get(file_offset_absolute..file_offset_absolute + size_abs)
-                                .ok_or_else(|| {
-                                    Error::buffer("find_unused_cells_in_hbin: find_cells_in_slack")
-                                })?,
+                        if let Some(slack) = read_range_checked(
+                            &self.file_info.buffer,
                             file_offset_absolute,
-                        );
+                            size_abs,
+                        ) {
+                            self.find_cells_in_slack(slack, file_offset_absolute);
+                        }
                     }
                 }
             }
             file_offset_absolute += size_abs;
-            input = self
-                .file_info
-                .buffer
-                .get(file_offset_absolute..file_offset_absolute + size_abs)
-                .ok_or_else(|| Error::buffer("find_unused_cells_in_hbin: after increment"))?;
+            match read_range_checked(&self.file_info.buffer, file_offset_absolute, size_abs) {
+                Some(data) => input = data,
+                None => break,
+            };
         }
 
         Ok(file_offset_absolute)
@@ -222,12 +205,10 @@ impl<'a> ParserRecoverDeleted<'a> {
             let (input, _size) = le_i32(input)?;
 
             fn cell_type(b: &[u8]) -> IResult<&[u8], CellType> {
-                alt(
-                    (
-                        map(tag("nk"), |_| CellType::CellKey),
-                        map(tag("vk"), |_| CellType::CellValue)
-                    )
-                )(b)
+                alt((
+                    map(tag("nk"), |_| CellType::CellKey),
+                    map(tag("vk"), |_| CellType::CellValue),
+                ))(b)
             }
 
             match cell_type(input) {
@@ -254,5 +235,57 @@ impl<'a> ParserRecoverDeleted<'a> {
             }
         }
         Ok(())
+    }
+}
+
+fn read_range_checked(buffer: &[u8], file_offset_absolute: usize, size: usize) -> Option<&[u8]> {
+    if file_offset_absolute < buffer.len() {
+        Some(
+            buffer
+                .get(file_offset_absolute..std::cmp::min(file_offset_absolute + size, buffer.len()))
+                .expect("read_range_checked failure - but, we just checked this..."),
+        )
+    } else {
+        None
+    }
+}
+
+fn read_checked(buffer: &[u8], file_offset_absolute: usize) -> Option<&[u8]> {
+    if file_offset_absolute < buffer.len() {
+        Some(
+            buffer
+                .get(file_offset_absolute..)
+                .expect("read_checked failure - but, we just checked this..."),
+        )
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_checked() {
+        let buffer = vec![0, 1, 2, 3, 4];
+        let ret0: &[u8] = &buffer[0..];
+        let ret4: &[u8] = &buffer[4..];
+        assert_eq!(None, read_checked(&buffer, 5));
+        assert_eq!(Some(ret0), read_checked(&buffer, 0));
+        assert_eq!(Some(ret4), read_checked(&buffer, 4));
+    }
+
+    #[test]
+    fn test_read_range_checked() {
+        let buffer = vec![0, 1, 2, 3, 4];
+        let ret0: &[u8] = &buffer[0..2];
+        let ret1: &[u8] = &buffer[1..4];
+        let ret4: &[u8] = &buffer[4..5];
+        assert_eq!(None, read_range_checked(&buffer, 5, 0));
+        assert_eq!(None, read_range_checked(&buffer, 5, 1));
+        assert_eq!(Some(ret0), read_range_checked(&buffer, 0, 2));
+        assert_eq!(Some(ret1), read_range_checked(&buffer, 1, 3 ));
+        assert_eq!(Some(ret4), read_range_checked(&buffer, 4, 1));
     }
 }

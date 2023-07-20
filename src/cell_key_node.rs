@@ -40,11 +40,11 @@ use bitflags::bitflags;
 use blake3::Hash;
 use chrono::{DateTime, Utc};
 use nom::{
-    IResult,
     branch::alt,
     bytes::complete::{tag, take},
     multi::count,
-    number::complete::{le_i32, le_u16, le_u32, le_u64}
+    number::complete::{le_i32, le_u16, le_u32, le_u64},
+    IResult,
 };
 use serde::Serialize;
 use winstructs::security::SecurityDescriptor;
@@ -1076,8 +1076,7 @@ mod tests {
         };
         let mut state = State::default();
         let (_, key_node) =
-            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, "", None)
-                .unwrap();
+            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, "", None).unwrap();
         let hash_array: [u8; blake3::OUT_LEN] = [
             0xfa, 0x8e, 0x6e, 0xc3, 0xf0, 0xa9, 0xbf, 0xf5, 0xbb, 0x82, 0x82, 0x0a, 0x44, 0xcb,
             0x07, 0x75, 0x01, 0x6f, 0x64, 0x8b, 0x07, 0x00, 0xe4, 0x62, 0xab, 0x3e, 0x0a, 0xcb,
@@ -1138,8 +1137,7 @@ mod tests {
 
         state.get_full_field_info = true;
         let (_, key_node) =
-            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, "", None)
-                .unwrap();
+            CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..], 0, "", None).unwrap();
         let expected_full_output = CellKeyNode {
             detail: CellKeyNodeDetailEnum::Full(Box::new(CellKeyNodeDetailFull {
                 size: FieldFull {
@@ -1286,13 +1284,7 @@ mod tests {
             key_node.access_flags(&mut logs)
         );
 
-        let ret = CellKeyNode::from_bytes(
-            &mut state,
-            &file_info.buffer[0..10],
-            0,
-            "",
-            None,
-        );
+        let ret = CellKeyNode::from_bytes(&mut state, &file_info.buffer[0..10], 0, "", None);
         let remaining = &file_info.buffer[4..10];
         let expected_error = Err(nom::Err::Error(nom::error::Error {
             input: remaining,

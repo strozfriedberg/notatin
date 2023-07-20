@@ -19,8 +19,8 @@ pub mod json_writer;
 pub mod tsv_writer;
 pub mod xlsx_writer;
 
-use clap::{arg, Arg, Command, ValueEnum};
 use clap::builder::{EnumValueParser, PossibleValue};
+use clap::{arg, Arg, Command, ValueEnum};
 use notatin::{
     cli_util::parse_paths, err::Error, filter::FilterBuilder, parser_builder::ParserBuilder,
     progress,
@@ -73,15 +73,14 @@ fn main() -> Result<(), Error> {
         )
         .get_matches();
 
-    let (input, logs) = parse_paths(
-        matches.get_one::<String>("input")
-               .expect("Required value")
-    );
+    let (input, logs) = parse_paths(matches.get_one::<String>("input").expect("Required value"));
     let output = matches.get_one::<String>("output").expect("Required value");
     let recover = matches.get_flag("recover");
     let recovered_only = matches.get_flag("recovered-only");
     let get_full_field_info = matches.get_flag("full-field-info");
-    let output_type = *matches.get_one::<OutputType>("TYPE").expect("Unrecognized value");
+    let output_type = *matches
+        .get_one::<OutputType>("TYPE")
+        .expect("Unrecognized value");
 
     let mut parser_builder = ParserBuilder::from_path(input);
     parser_builder.update_console(true);
@@ -123,7 +122,7 @@ pub enum OutputType {
     Jsonl,
     Common,
     Tsv,
-    Xlsx
+    Xlsx,
 }
 
 impl ValueEnum for OutputType {
@@ -132,7 +131,7 @@ impl ValueEnum for OutputType {
             OutputType::Jsonl,
             OutputType::Common,
             OutputType::Tsv,
-            OutputType::Xlsx
+            OutputType::Xlsx,
         ]
     }
 
@@ -141,7 +140,7 @@ impl ValueEnum for OutputType {
             OutputType::Jsonl => PossibleValue::new("jsonl"),
             OutputType::Common => PossibleValue::new("common"),
             OutputType::Tsv => PossibleValue::new("tsv"),
-            OutputType::Xlsx => PossibleValue::new("xlsx")
+            OutputType::Xlsx => PossibleValue::new("xlsx"),
         })
     }
 }
