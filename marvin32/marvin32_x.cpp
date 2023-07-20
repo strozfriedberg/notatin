@@ -171,6 +171,48 @@ uint64_t marvin32_2(uint64_t seed, const uint8_t* data, size_t dlen) {
   return s0 | (static_cast<uint64_t>(s1) << 32);
 }
 
+uint64_t marvin32_3(uint64_t seed, const uint8_t* data, size_t dlen) {
+  uint32_t s0 = seed & 0xFFFFFFFF;
+  uint32_t s1 = seed >> 32;
+
+  while (dlen > 7) {
+    s0 += *reinterpret_cast<const uint32_t*>(data);
+    BLOCK(s0, s1);
+    s0 += *reinterpret_cast<const uint32_t*>(data + 4);
+    BLOCK(s0, s1);
+    data += 8;
+    dlen -= 8;
+  }
+
+  if (dlen > 3) {
+    s0 += *reinterpret_cast<const uint32_t*>(data);
+    BLOCK(s0, s1);
+    data += 4;
+    dlen -= 4;
+  }
+
+  switch (dlen) {
+  default:
+  case 0:
+    s0 += 0x80;
+    break;
+  case 1:
+    s0 += 0x8000 | data[0];
+    break;
+  case 2:
+    s0 += 0x800000 | *reinterpret_cast<const uint16_t*>(data);
+    break;
+  case 3:
+    s0 += 0x80000000 | (data[2] << 16) | *reinterpret_cast<const uint16_t*>(data);
+    break;
+  }
+
+  BLOCK(s0, s1);
+  BLOCK(s0, s1);
+
+  return s0 | (static_cast<uint64_t>(s1) << 32);
+}
+
 TEST_CASE("tests") {
   const uint64_t seed_1 = 0x4FB61A001BDBCC;
   const uint64_t seed_2 = 0x804FB61A001BDBCC;
@@ -220,7 +262,7 @@ TEST_CASE("tests") {
     { seed_3, data_k, 0x40D0D89D379BD1EE }
   };
 
-  const auto funcs = { marvin32_0, marvin32_1, marvin32_2 };
+  const auto funcs = { marvin32_0, marvin32_1, marvin32_2, marvin32_3 };
 
   for (const auto& [seed, data, exp]: tests) {
     for (const auto f: funcs) {
