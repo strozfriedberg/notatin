@@ -11,7 +11,7 @@
 
 // To build:
 //
-// $ g++ -Wall -std=c++20 -I/home/juckelman/projects/make_world/install/include -L/home/juckelman/projects/make_world/install/lib -lCatch2Main -lCatch2 -o marvin32 marvin32_x.cpp
+// $ g++ -Wall -std=c++20 -I/home/juckelman/projects/make_world/install/include -L/home/juckelman/projects/make_world/install/lib -lCatch2Main -lCatch2 -o marvin32 marvin32.cpp
 // $ LD_LIBRARY_PATH=/home/juckelman/projects/make_world/install/lib ./marvin32
 //
 
