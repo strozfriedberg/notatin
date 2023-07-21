@@ -32,6 +32,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
+    iter,
     time::SystemTime
 };
 
@@ -251,139 +252,139 @@ fn write_report<W: Write>(
     Ok(())
 }
 
-fn write_diff_k_del<W: Write>(
+fn write_diff_section<W: Write>(
     writer: &mut W,
     mut lline: usize,
-    keys_deleted: Vec<CellKeyNode>,
-    rline: usize
-) -> Result<(usize, usize), Error> {
-    if !keys_deleted.is_empty() {
+    left: impl Iterator<Item = String>,
+    llen: usize,
+    mut rline: usize,
+    right: impl Iterator<Item = String>,
+    rlen: usize
+) -> Result<(usize, usize), Error>
+{
+    if llen > 0 || rlen > 0 {
         writeln!(
             writer,
             "@@ -{},{} +{},{} @@",
-            lline, keys_deleted.len(),
-            rline, 0
+            lline, llen,
+            rline, rlen
         )?;
-        lline += keys_deleted.len();
-        for k in keys_deleted {
-            write_key(writer, &k, "- ");
+
+        lline += llen;
+        rline += rlen;
+
+        for l in left {
+            writeln!(writer, "- {}", l)?;
+        }
+
+        for r in right {
+            writeln!(writer, "+ {}", r)?;
         }
     }
+
     Ok((lline, rline))
+}
+
+fn write_diff_k_del<W: Write>(
+    writer: &mut W,
+    lline: usize,
+    rline: usize,
+    keys_deleted: Vec<CellKeyNode>
+) -> Result<(usize, usize), Error> {
+    write_diff_section(
+        writer,
+        lline,
+        keys_deleted.iter().map(|k| format_key(&k)),
+        keys_deleted.len(),
+        rline,
+        iter::empty::<String>(),
+        0
+    )
 }
 
 fn write_diff_k_add<W: Write>(
     writer: &mut W,
     lline: usize,
-    keys_added: Vec<CellKeyNode>,
-    mut rline: usize
+    rline: usize,
+    keys_added: Vec<CellKeyNode>
 ) -> Result<(usize, usize), Error> {
-    if !keys_added.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, 0,
-            rline, keys_added.len()
-        )?;
-        rline += keys_added.len();
-        for k in keys_added {
-            write_key(writer, &k, "+ ");
-        }
-    }
-    Ok((lline, rline))
+    write_diff_section(
+        writer,
+        lline,
+        iter::empty::<String>(),
+        0,
+        rline,
+        keys_added.iter().map(|k| format_key(&k)),
+        keys_added.len()
+    )
 }
 
 fn write_diff_k_mod<W: Write>(
     writer: &mut W,
-    mut lline: usize,
-    keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
-    mut rline: usize
+    lline: usize,
+    rline: usize,
+    keys_modified: Vec<(CellKeyNode, CellKeyNode)>
 ) -> Result<(usize, usize), Error> {
-
-    if !keys_modified.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, keys_modified.len(),
-            rline, keys_modified.len()
-        )?;
-        lline += keys_modified.len();
-        rline += keys_modified.len();
-        for k in &keys_modified {
-            write_key(writer, &k.0, "- ");
-        }
-        for k in &keys_modified {
-            write_key(writer, &k.1, "+ ");
-        }
-    }
-    Ok((lline, rline))
+    write_diff_section(
+        writer,
+        lline,
+        keys_modified.iter().map(|k| format_key(&k.0)),
+        keys_modified.len(),
+        rline,
+        keys_modified.iter().map(|k| format_key(&k.1)),
+        keys_modified.len()
+    )
 }
 
 fn write_diff_v_del<W: Write>(
     writer: &mut W,
-    mut lline: usize,
-    values_deleted: Vec<(String, CellKeyValue)>,
-    rline: usize
+    lline: usize,
+    rline: usize,
+    values_deleted: Vec<(String, CellKeyValue)>
 ) -> Result<(usize, usize), Error> {
-    if !values_deleted.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, values_deleted.len(),
-            rline, 0
-        )?;
-        lline += values_deleted.len();
-        for v in values_deleted {
-            write_value(writer, &v.0, &v.1, "- ");
-        }
-    }
-    Ok((lline, rline))
+    write_diff_section(
+        writer,
+        lline,
+        values_deleted.iter().map(|v| format_value(&v.0, &v.1)),
+        values_deleted.len(),
+        rline,
+        iter::empty::<String>(),
+        0
+    )
 }
 
 fn write_diff_v_add<W: Write>(
     writer: &mut W,
     lline: usize,
-    values_added: Vec<(String, CellKeyValue)>,
-    mut rline: usize
+    rline: usize,
+    values_added: Vec<(String, CellKeyValue)>
 ) -> Result<(usize, usize), Error> {
-    if !values_added.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, 0,
-            rline, values_added.len()
-        )?;
-        rline += values_added.len();
-        for v in values_added {
-            write_value(writer, &v.0, &v.1, "+ ");
-        }
-    }
-    Ok((lline, rline))
+    write_diff_section(
+        writer,
+        lline,
+        iter::empty::<String>(),
+        0,
+        rline,
+        values_added.iter().map(|v| format_value(&v.0, &v.1)),
+        values_added.len()
+    )
 }
 
 fn write_diff_v_mod<W: Write>(
     writer: &mut W,
-    mut lline: usize,
-    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>,
-    mut rline: usize
+    lline: usize,
+    rline: usize,
+    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
 ) -> Result<(usize, usize), Error> {
-    if !values_modified.is_empty() {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, values_modified.len(),
-            rline, values_modified.len()
-        )?;
-        lline += values_modified.len();
-        rline += values_modified.len();
-        for v in &values_modified {
-            write_value(writer, &v.0, &v.1, "- ");
-        }
-        for v in &values_modified {
-            write_value(writer, &v.0, &v.2, "+ ");
-        }
-    }
-    Ok((lline, rline))
+    write_diff_section(
+        writer,
+        lline,
+        values_modified.iter().map(|v| format_value(&v.0, &v.1)),
+        values_modified.len(),
+        rline,
+        values_modified.iter().map(|v| format_value(&v.0, &v.2)),
+        values_modified.len()
+    )
 }
 
 fn write_diff<W: Write>(
@@ -403,14 +404,34 @@ fn write_diff<W: Write>(
     let mut lline = 1;
     let mut rline = 1;
 
-    (lline, rline) = write_diff_k_del(w, lline, keys_deleted, rline)?;
-    (lline, rline) = write_diff_k_add(w, lline, keys_added, rline)?;
-    (lline, rline) = write_diff_k_mod(w, lline, keys_modified, rline)?;
-    (lline, rline) = write_diff_v_del(w, lline, values_deleted, rline)?;
-    (lline, rline) = write_diff_v_add(w, lline, values_added, rline)?;
-    (lline, rline) = write_diff_v_mod(w, lline, values_modified, rline)?;
+    (lline, rline) = write_diff_k_del(w, lline, rline, keys_deleted)?;
+    (lline, rline) = write_diff_k_add(w, lline, rline, keys_added)?;
+    (lline, rline) = write_diff_k_mod(w, lline, rline, keys_modified)?;
+    (lline, rline) = write_diff_v_del(w, lline, rline, values_deleted)?;
+    (lline, rline) = write_diff_v_add(w, lline, rline, values_added)?;
+    (lline, rline) = write_diff_v_mod(w, lline, rline, values_modified)?;
 
     Ok(())
+}
+
+fn format_value(cell_key_node_path: &str, value: &CellKeyValue) -> String {
+    format!(
+        "{}\t{}\t{:?}",
+        cell_key_node_path,
+        value.get_pretty_name(),
+        value.get_content().0
+    )
+}
+
+fn format_key(cell_key_node: &CellKeyNode) -> String {
+    let mut logs = Logs::default();
+    format!(
+        "{}\t{}\t{:?}\t{:?}",
+        cell_key_node.path,
+        format_date_time(cell_key_node.last_key_written_date_and_time()),
+        cell_key_node.key_node_flags(&mut logs),
+        cell_key_node.access_flags(&mut logs)
+    )
 }
 
 fn write_value<W: Write>(writer: &mut W, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
@@ -457,5 +478,41 @@ fn update_keys_compared(k_added: usize, k_total: usize) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_add_at_start() {
+
+/*
+--- a	2023-07-18 18:12:45.408796868 +0100
++++ b	2023-07-18 12:28:50.035910283 +0100
+@@ -1 +1,2 @@
++xyz
+ abc
+*/
+
+/*
+--- a	2023-07-18 18:12:45.408796868 +0100
++++ b	2023-07-21 17:04:44.257209801 +0100
+@@ -1 +1,2 @@
+ abc
++xyz
+*/
+
+/*
+--- a	2023-07-21 17:11:26.322402900 +0100
++++ b	2023-07-21 17:11:30.367314296 +0100
+@@ -1,2 +1 @@
+ abc
+-xyz
+*/
+
+/*
+--- a	2023-07-21 17:11:26.322402900 +0100
++++ b	2023-07-21 17:12:24.248134050 +0100
+@@ -1,2 +1 @@
+-abc
+ xyz
+*/
+    }
 
 }
