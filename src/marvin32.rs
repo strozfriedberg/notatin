@@ -42,6 +42,7 @@ macro_rules! BLOCK {
     };
 }
 
+/// Computes a 64-bit Marvin32 hash
 pub(crate) fn marvin32(seed: u64, data: &[u8], mut dlen: usize) -> u64 {
     let mut s0: u32 = (seed & 0xFFFFFFFF) as u32;
     let mut s1: u32 = (seed >> 32) as u32;
