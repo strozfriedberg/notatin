@@ -21,6 +21,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <numeric>
 #include <tuple>
 #include <vector>
 
@@ -226,6 +227,9 @@ TEST_CASE("tests") {
   const std::vector<uint8_t> data_6 = { 0x09, 0x32, 0xE6, 0x24, 0x6C, 0x47 };
   const std::vector<uint8_t> data_7 = { 0xAB, 0x42, 0x7E, 0xA8, 0xD1, 0x0F, 0xC7 };
 
+  std::vector<uint8_t> data_256(256);
+  std::iota(data_256.begin(), data_256.end(), 0);
+
   const std::vector<uint8_t> data_k(1024);
 
   const std::vector<std::tuple<uint64_t, std::vector<uint8_t>, uint64_t>> tests = {
@@ -236,7 +240,8 @@ TEST_CASE("tests") {
     { seed_1, data_4, 0x7008F2E87E9CF556 },
     { seed_1, data_5, 0xE6C08C6DA2AFA997 },
     { seed_1, data_6, 0x6F04BF1A5EA24060 },
-    { seed_1, data_7, 0xE11847E4F0678C41  },
+    { seed_1, data_7, 0xE11847E4F0678C41 },
+    { seed_1, data_256, 0x7DFCAB33FCEAD72C },
     { seed_2, data_0, 0x10A9D5D3996FD65D },
     { seed_2, data_1, 0x68201F91960EBF91 },
     { seed_2, data_2, 0x64B581631F6AB378 },
@@ -245,6 +250,7 @@ TEST_CASE("tests") {
     { seed_2, data_5, 0x0A06114B13464DBD },
     { seed_2, data_6, 0xD6DD5E40AD1BC2ED },
     { seed_2, data_7, 0xE203987DBA252FB3 },
+    { seed_2, data_256, 0x73B4AE569E0DB919 },
     { seed_3, { 0x00 }, 0xA37FB0DA2ECAE06C },
     { seed_3, { 0xFF }, 0xFECEF370701AE054 },
     { seed_3, { 0x00, 0xFF }, 0xA638E75700048880 },
@@ -259,7 +265,8 @@ TEST_CASE("tests") {
     { seed_3, { 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00 }, 0x6911A53CA8C12254 },
     { seed_3, { 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF }, 0xFDFD187B1D3CE784 },
     { seed_3, { 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00 }, 0x71876F2EFB1B0EE8 },
-    { seed_3, data_k, 0x40D0D89D379BD1EE }
+    { seed_3, data_k, 0x40D0D89D379BD1EE },
+    { seed_3, data_256, 0xFFA003EEBD81AEB },
   };
 
   const auto funcs = { marvin32_0, marvin32_1, marvin32_2, marvin32_3 };
