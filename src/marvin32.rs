@@ -29,6 +29,8 @@
 
 use std::convert::TryInto;
 
+pub const DEFAULT_SEED: u64 = 0x82EF4D887A4E55C5;
+
 macro_rules! BLOCK {
     ($a:ident, $b:ident) => {
         $b ^= $a;
