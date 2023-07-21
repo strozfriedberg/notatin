@@ -90,6 +90,8 @@ mod tests {
         let data_6 = [ 0x09, 0x32, 0xE6, 0x24, 0x6C, 0x47 ];
         let data_7 = [ 0xAB, 0x42, 0x7E, 0xA8, 0xD1, 0x0F, 0xC7 ];
 
+        let data_256: [u8; 256] = (0..=255).collect::<Vec<_>>().try_into().unwrap();
+
         assert_eq!(0x30ED35C100CD3C7D, marvin32(seed_1, &data_0, 0));
         assert_eq!(0x48E73FC77D75DDC1, marvin32(seed_1, &data_1, 1));
         assert_eq!(0xB5F6E1FC485DBFF8, marvin32(seed_1, &data_2, 2));
@@ -98,6 +100,7 @@ mod tests {
         assert_eq!(0xE6C08C6DA2AFA997, marvin32(seed_1, &data_5, 5));
         assert_eq!(0x6F04BF1A5EA24060, marvin32(seed_1, &data_6, 6));
         assert_eq!(0xE11847E4F0678C41, marvin32(seed_1, &data_7, 7));
+        assert_eq!(0x7DFCAB33FCEAD72C, marvin32(seed_1, &data_256, 256));
         assert_eq!(0x10A9D5D3996FD65D, marvin32(seed_2, &data_0, 0));
         assert_eq!(0x68201F91960EBF91, marvin32(seed_2, &data_1, 1));
         assert_eq!(0x64B581631F6AB378, marvin32(seed_2, &data_2, 2));
@@ -106,6 +109,7 @@ mod tests {
         assert_eq!(0x0A06114B13464DBD, marvin32(seed_2, &data_5, 5));
         assert_eq!(0xD6DD5E40AD1BC2ED, marvin32(seed_2, &data_6, 6));
         assert_eq!(0xE203987DBA252FB3, marvin32(seed_2, &data_7, 7));
+        assert_eq!(0x73B4AE569E0DB919, marvin32(seed_2, &data_256, 256));
         assert_eq!(0xA37FB0DA2ECAE06C, marvin32(seed_3, &[ 0x00 ], 1));
         assert_eq!(0xFECEF370701AE054, marvin32(seed_3, &[ 0xFF ], 1));
         assert_eq!(0xA638E75700048880, marvin32(seed_3, &[ 0x00, 0xFF ], 2));
