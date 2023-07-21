@@ -21,7 +21,7 @@ use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::log::{LogCode, Logs};
-use crate::marvin_hash;
+use crate::marvin32::{DEFAULT_SEED, marvin32};
 use crate::parser::{Parser, ParserIterator};
 use crate::progress;
 use crate::reg_item_map::{RegItemMap, RegItemMapKey, RegItemMapValue};
@@ -148,7 +148,7 @@ impl LogEntry {
         let dst = &mut b[0..len - OFFSET];
         let src = &raw_bytes[OFFSET..len];
         dst.copy_from_slice(src);
-        marvin_hash::compute_hash(dst, (len - OFFSET) as u32, marvin_hash::DEFAULT_SEED)
+        marvin32(DEFAULT_SEED, dst, len - OFFSET)
     }
 
     fn calc_hash2(raw_bytes: &[u8]) -> u64 {
@@ -157,7 +157,7 @@ impl LogEntry {
         let dst = &mut b[0..LENGTH];
         let src = &raw_bytes[0..LENGTH];
         dst.copy_from_slice(src);
-        marvin_hash::compute_hash(dst, LENGTH as u32, marvin_hash::DEFAULT_SEED)
+        marvin32(DEFAULT_SEED, dst, LENGTH)
     }
 }
 
