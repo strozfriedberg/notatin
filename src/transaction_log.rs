@@ -21,7 +21,7 @@ use crate::cell_key_value::CellKeyValue;
 use crate::err::Error;
 use crate::file_info::{FileInfo, ReadSeek};
 use crate::log::{LogCode, Logs};
-use crate::marvin32::{DEFAULT_SEED, marvin32};
+use crate::marvin32::marvin32;
 use crate::parser::{Parser, ParserIterator};
 use crate::progress;
 use crate::reg_item_map::{RegItemMap, RegItemMapKey, RegItemMapValue};
@@ -85,6 +85,8 @@ struct LogEntry {
     pub dirty_pages: Vec<DirtyPage>,
     pub has_valid_hashes: bool,
 }
+
+const DEFAULT_SEED: u64 = 0x82EF4D887A4E55C5;
 
 impl LogEntry {
     fn from_bytes(start_pos: usize) -> impl Fn(&[u8]) -> IResult<&[u8], Self> {
