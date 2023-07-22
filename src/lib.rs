@@ -31,7 +31,7 @@ pub mod filter;
 pub mod hive_bin_cell;
 pub mod hive_bin_header;
 pub mod log;
-pub mod marvin_hash;
+pub mod marvin32;
 pub mod parser;
 pub mod parser_builder;
 pub mod parser_recover_deleted;
