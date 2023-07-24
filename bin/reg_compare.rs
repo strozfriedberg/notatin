@@ -63,7 +63,7 @@ fn main() -> Result<(), Error> {
         .required(true)
         .number_of_values(1))
     .arg(arg!(
-            -d --diff "Export normal diff format output"
+            -d --diff "Export unified diff format output"
     ))
     .get_matches();
 
