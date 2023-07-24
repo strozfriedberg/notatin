@@ -33,6 +33,7 @@ use std::{
     fs::File,
     io::{BufWriter, Write},
     iter,
+    str,
     time::SystemTime
 };
 
@@ -274,11 +275,11 @@ fn write_diff_section<W: Write>(
         rline += rlen;
 
         for l in left {
-            writeln!(writer, "- {}", l)?;
+            writeln!(writer, "-{}", l)?;
         }
 
         for r in right {
-            writeln!(writer, "+ {}", r)?;
+            writeln!(writer, "+{}", r)?;
         }
     }
 
@@ -478,41 +479,152 @@ fn update_keys_compared(k_added: usize, k_total: usize) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
-    fn test_add_at_start() {
+    fn test_add_one() {
+        let mut buf = Vec::<u8>::new();
+        let right = ["abc"];
 
-/*
---- a	2023-07-18 18:12:45.408796868 +0100
-+++ b	2023-07-18 12:28:50.035910283 +0100
-@@ -1 +1,2 @@
-+xyz
- abc
-*/
+        assert_eq!(
+            write_diff_section(
+                &mut buf,
+                0,
+                iter::empty::<String>(),
+                0,
+                0,
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok((0, 1))
+        );
 
-/*
---- a	2023-07-18 18:12:45.408796868 +0100
-+++ b	2023-07-21 17:04:44.257209801 +0100
-@@ -1 +1,2 @@
- abc
-+xyz
-*/
+        assert_eq!(
+            str::from_utf8(&buf).unwrap(),
+            "@@ -0,0 +0,1 @@\n+abc\n"
+        );
+    }
+    
+    #[test]
+    fn test_add_two() {
+        let mut buf = Vec::<u8>::new();
+        let right = ["abc", "xyz"];
 
-/*
---- a	2023-07-21 17:11:26.322402900 +0100
-+++ b	2023-07-21 17:11:30.367314296 +0100
-@@ -1,2 +1 @@
- abc
--xyz
-*/
+        assert_eq!(
+            write_diff_section(
+                &mut buf,
+                5,
+                iter::empty::<String>(),
+                0,
+                18,
+                right.iter().map(|s| s.to_string()),
+                right.len() 
+            ),
+            Ok((5, 20))
+        );
 
-/*
---- a	2023-07-21 17:11:26.322402900 +0100
-+++ b	2023-07-21 17:12:24.248134050 +0100
-@@ -1,2 +1 @@
--abc
- xyz
-*/
+        assert_eq!(
+            str::from_utf8(&buf),
+            Ok("@@ -5,0 +18,2 @@\n+abc\n+xyz\n")
+        );
+    }
+
+    #[test]
+    fn test_del_one() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc"];
+
+        assert_eq!(
+            write_diff_section(
+                &mut buf,
+                0,
+                left.iter().map(|s| s.to_string()),
+                left.len(),
+                0,
+                iter::empty::<String>(),
+                0
+            ),
+            Ok((1, 0))
+        );
+
+        assert_eq!(
+            str::from_utf8(&buf),
+            Ok("@@ -0,1 +0,0 @@\n-abc\n")
+        );
+    }
+
+    #[test]
+    fn test_del_two() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc", "xyz"];
+
+        assert_eq!(
+            write_diff_section(
+                &mut buf,
+                11,
+                left.iter().map(|s| s.to_string()),
+                left.len(),
+                3,
+                iter::empty::<String>(),
+                0
+            ),
+            Ok((13, 3))
+        );
+
+        assert_eq!(
+            str::from_utf8(&buf),
+            Ok("@@ -11,2 +3,0 @@\n-abc\n-xyz\n")
+        );
+    }
+
+    #[test]
+    fn test_mod_one() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc"];
+        let right = ["xyz"];
+
+        assert_eq!(
+            write_diff_section(
+                &mut buf,
+                6,
+                left.iter().map(|s| s.to_string()),
+                left.len(),
+                85,
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok((7, 86))
+        );
+
+        assert_eq!(
+            str::from_utf8(&buf),
+            Ok("@@ -6,1 +85,1 @@\n-abc\n+xyz\n")
+        );
+    }
+
+    #[test]
+    fn test_mod_two() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc", "def"];
+        let right = ["uvw", "xyz"];
+
+        assert_eq!(
+            write_diff_section(
+                &mut buf,
+                6,
+                left.iter().map(|s| s.to_string()),
+                left.len(),
+                85,
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok((8, 87))
+        );
+
+        assert_eq!(
+            str::from_utf8(&buf),
+            Ok("@@ -6,2 +85,2 @@\n-abc\n-def\n+uvw\n+xyz\n")
+        );
     }
 
 }
