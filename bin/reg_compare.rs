@@ -410,7 +410,7 @@ fn write_diff<W: Write>(
     (lline, rline) = write_diff_k_mod(w, lline, rline, keys_modified)?;
     (lline, rline) = write_diff_v_del(w, lline, rline, values_deleted)?;
     (lline, rline) = write_diff_v_add(w, lline, rline, values_added)?;
-    (lline, rline) = write_diff_v_mod(w, lline, rline, values_modified)?;
+    write_diff_v_mod(w, lline, rline, values_modified)?;
 
     Ok(())
 }
