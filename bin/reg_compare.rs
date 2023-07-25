@@ -295,7 +295,7 @@ fn write_diff_k_del<W: Write>(
     write_diff_section(
         writer,
         lline,
-        keys_deleted.iter().map(|k| format_key(&k)),
+        keys_deleted.iter().map(format_key),
         keys_deleted.len(),
         rline,
         iter::empty::<String>(),
@@ -315,7 +315,7 @@ fn write_diff_k_add<W: Write>(
         iter::empty::<String>(),
         0,
         rline,
-        keys_added.iter().map(|k| format_key(&k)),
+        keys_added.iter().map(format_key),
         keys_added.len()
     )
 }
