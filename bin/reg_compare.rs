@@ -16,7 +16,7 @@
 
 use blake3::Hash;
 use chrono::{DateTime, Utc};
-use clap::{Arg, Command, arg};
+use clap::{Command, arg};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
@@ -41,27 +41,16 @@ fn main() -> Result<(), Error> {
     let matches = Command::new("Notatin Registry Compare")
     .version("0.1")
     .arg(arg!(-f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"))
-    .arg(Arg::new("base")
-        .short('b')
-        .long("base")
-        .value_name("FILES")
-        .help("Base registry file with optional transaction file(s) (Comma separated list)")
-        .required(true)
-        .number_of_values(1))
-    .arg(Arg::new("comparison")
-        .short('c')
-        .long("comparison")
-        .value_name("FILES")
-        .help("Comparison registry file with optional transaction file(s) (Comma separated list)")
-        .required(true)
-        .number_of_values(1))
-    .arg(Arg::new("output")
-        .short('o')
-        .long("output")
-        .value_name("FILE")
-        .help("Output file")
-        .required(true)
-        .number_of_values(1))
+    .arg(arg!(
+        -r --recurse "Recurse through base and comparison folders looking for registry files; file trees must match"
+    ))
+    .arg(arg!(
+            -d --diff "Export unified diff format output"
+    ))
+    .arg(arg!(-f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"))
+    .arg(arg!(
+            -s --"skip-logs" "Skip transaction log files"
+    ))
     .arg(arg!(
             -d --diff "Export unified diff format output"
     ))
@@ -504,7 +493,7 @@ mod tests {
             "@@ -0,0 +0,1 @@\n+abc\n"
         );
     }
-    
+
     #[test]
     fn test_add_two() {
         let mut buf = Vec::<u8>::new();
@@ -518,7 +507,7 @@ mod tests {
                 0,
                 18,
                 right.iter().map(|s| s.to_string()),
-                right.len() 
+                right.len()
             ),
             Ok((5, 20))
         );
