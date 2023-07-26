@@ -44,7 +44,7 @@ fn main() -> Result<(), Error> {
             Arg::new("input")
                 .short('i')
                 .long("input")
-                .help("Base registry file or root folder to search")
+                .help("Base registry file, or root folder if recursing")
                 .required(true)
                 .number_of_values(1),
         )
@@ -52,8 +52,7 @@ fn main() -> Result<(), Error> {
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .value_name("FILE")
-                .help("Output file")
+                .help("Output file. or folder if recursing")
                 .required(true)
                 .number_of_values(1),
         )
@@ -65,7 +64,7 @@ fn main() -> Result<(), Error> {
                 .default_value("jsonl"),
         )
         .arg(arg!(
-            -r --recurse "Recurse through base looking for registry files"
+            -r --recurse "Recurse through input looking for registry files"
         ))
         .arg(arg!(
             -v --recoVer "Recover deleted and versioned keys and values"
