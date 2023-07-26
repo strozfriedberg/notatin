@@ -44,8 +44,7 @@ fn main() -> Result<(), Error> {
             Arg::new("input")
                 .short('i')
                 .long("input")
-                .value_name("FILE(S)")
-                .help("Base registry file with optional transaction log(s) (Comma separated list)")
+                .help("Base registry file or root folder to search")
                 .required(true)
                 .number_of_values(1),
         )
