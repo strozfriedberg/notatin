@@ -15,7 +15,6 @@
  */
 
 use blake3::Hash;
-use chrono::{DateTime, Utc};
 use clap::{Arg, Command, arg};
 use notatin::{
     cell_key_node::CellKeyNode,
@@ -35,8 +34,7 @@ use std::{
     io::{BufWriter, Write},
     iter,
     path::*,
-    str,
-    time::SystemTime
+    str
 };
 
 fn main() -> Result<(), Error> {
@@ -162,6 +160,15 @@ fn reg_compare<T>(output: T, base_primary: PathBuf, base_logs: Option<Vec<PathBu
     let write_file = File::create(output)?;
     let mut writer = BufWriter::new(write_file);
 
+    let mut base_filenames = base_primary.to_string_lossy().into_owned();
+    if let Some(logs) = &base_logs {
+        base_filenames = format!("{:?} {:?}", base_filenames, logs)
+    }
+    let mut comparison_filenames = comparison_primary.to_string_lossy().into_owned();
+    if let Some(logs) = &comparison_logs {
+        comparison_filenames = format!("{:?} {:?}", comparison_filenames, logs)
+    }
+
     println!("Comparing {:?} and {:?}", base_primary, comparison_primary);
 
     let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
@@ -257,6 +264,7 @@ fn reg_compare<T>(output: T, base_primary: PathBuf, base_logs: Option<Vec<PathBu
 
     (if use_diff_format { write_diff } else { write_report })(
         &mut writer,
+        &base_filenames, &comparison_filenames,
         keys_added, keys_deleted, keys_modified,
         values_added, values_deleted, values_modified
     )?;
@@ -266,6 +274,8 @@ fn reg_compare<T>(output: T, base_primary: PathBuf, base_logs: Option<Vec<PathBu
 
 fn write_report<W: Write>(
     writer: &mut W,
+    base_filenames: &String,
+    comparison_filenames: &String,
     keys_deleted: Vec<CellKeyNode>,
     keys_added: Vec<CellKeyNode>,
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
@@ -273,6 +283,9 @@ fn write_report<W: Write>(
     values_added: Vec<(String, CellKeyValue)>,
     values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
 ) -> Result<(), Error> {
+    writeln!(writer, "Base: {} ", base_filenames)?;
+    writeln!(writer, "Comparison: {}", comparison_filenames)?;
+
     let total_changes = keys_deleted.len()
         + keys_added.len()
         + keys_modified.len()
@@ -459,6 +472,8 @@ fn write_diff_v_mod<W: Write>(
 
 fn write_diff<W: Write>(
     w: &mut W,
+    base_filenames: &String,
+    comparison_filenames: &String,
     keys_deleted: Vec<CellKeyNode>,
     keys_added: Vec<CellKeyNode>,
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
@@ -466,10 +481,8 @@ fn write_diff<W: Write>(
     values_added: Vec<(String, CellKeyValue)>,
     values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
 ) -> Result<(), Error> {
-    let now = DateTime::<Utc>::from(SystemTime::now()).to_rfc3339();
-
-    writeln!(w, "--- base {}", now)?;
-    writeln!(w, "+++ comp {}", now)?;
+    writeln!(w, "--- {}", base_filenames)?;
+    writeln!(w, "+++ {}", comparison_filenames)?;
 
     let mut lline = 1;
     let mut rline = 1;
