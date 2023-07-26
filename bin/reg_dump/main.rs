@@ -134,7 +134,7 @@ fn process_folder(outfolder: &PathBuf, base: &PathBuf, filter: Option<Filter>, r
                     Err(e) => println!("{:?}", e),
                     Ok(primary_path_from_base) => {
                         let logs = get_log_files(skip_logs, f, entry.path());
-                        let outpath = get_outpath(primary_path_from_base, &outfolder, &output_type);
+                        let outpath = get_outpath(primary_path_from_base, outfolder, &output_type);
                         let _ = reg_dump(PathBuf::from(entry.path()), &outpath, logs, filter.clone(), recover, recovered_only, get_full_field_info, output_type);
                     }
                 }

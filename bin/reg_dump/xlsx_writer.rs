@@ -46,7 +46,7 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    pub(crate) fn new(output: &PathBuf, recovered_only: bool) -> Result<Self, XlsxError> {
+    pub(crate) fn new(output: &Path, recovered_only: bool) -> Result<Self, XlsxError> {
         Ok(WriteXlsx {
             workbook: Workbook::new(&output.to_string_lossy())?,
             recovered_only,
