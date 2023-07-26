@@ -107,26 +107,84 @@ fn main() -> Result<(), Error> {
     };
 
     if recurse {
-        process_folder(&PathBuf::from(output), &PathBuf::from(input), filter, recover, recovered_only, get_full_field_info, skip_logs, output_type)
-    }
-    else {
-        process_file(&PathBuf::from(output), PathBuf::from(input), filter, recover, recovered_only, get_full_field_info, skip_logs, output_type)
+        process_folder(
+            &PathBuf::from(output),
+            &PathBuf::from(input),
+            filter,
+            recover,
+            recovered_only,
+            get_full_field_info,
+            skip_logs,
+            output_type,
+        )
+    } else {
+        process_file(
+            &PathBuf::from(output),
+            PathBuf::from(input),
+            filter,
+            recover,
+            recovered_only,
+            get_full_field_info,
+            skip_logs,
+            output_type,
+        )
     }
 }
 
-fn process_file(outpath: &PathBuf, input: PathBuf, filter: Option<Filter>, recover: bool, recovered_only: bool, get_full_field_info: bool, skip_logs:bool, output_type:OutputType) -> Result<(), Error> {
-    let logs = get_log_files(skip_logs, &input.file_name().unwrap().to_string_lossy(), &input);
+fn process_file(
+    outpath: &PathBuf,
+    input: PathBuf,
+    filter: Option<Filter>,
+    recover: bool,
+    recovered_only: bool,
+    get_full_field_info: bool,
+    skip_logs: bool,
+    output_type: OutputType,
+) -> Result<(), Error> {
+    let logs = get_log_files(
+        skip_logs,
+        &input.file_name().unwrap().to_string_lossy(),
+        &input,
+    );
 
-    reg_dump(input, &PathBuf::from(outpath), logs, filter, recover, recovered_only, get_full_field_info, output_type)
+    reg_dump(
+        input,
+        &PathBuf::from(outpath),
+        logs,
+        filter,
+        recover,
+        recovered_only,
+        get_full_field_info,
+        output_type,
+    )
 }
 
-fn process_folder(outfolder: &PathBuf, base: &PathBuf, filter: Option<Filter>, recover: bool, recovered_only: bool, get_full_field_info: bool, skip_logs:bool, output_type:OutputType) -> Result<(), Error> {
-    let reg_files = vec!["sam", "security", "software", "system", "default", "amcache", "ntuser.dat", "usrclass.dat"];
+fn process_folder(
+    outfolder: &PathBuf,
+    base: &PathBuf,
+    filter: Option<Filter>,
+    recover: bool,
+    recovered_only: bool,
+    get_full_field_info: bool,
+    skip_logs: bool,
+    output_type: OutputType,
+) -> Result<(), Error> {
+    let reg_files = vec![
+        "sam",
+        "security",
+        "software",
+        "system",
+        "default",
+        "amcache",
+        "ntuser.dat",
+        "usrclass.dat",
+    ];
 
     for entry in WalkDir::new(base)
-                    .into_iter()
-                    .filter_map(Result::ok)
-                    .filter(|e| !e.file_type().is_dir()) {
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| !e.file_type().is_dir())
+    {
         if let Some(f) = entry.file_name().to_str() {
             let f_lower = f.to_lowercase();
             if reg_files.contains(&f_lower.as_str()) && file_has_size(entry.path()) {
@@ -135,7 +193,16 @@ fn process_folder(outfolder: &PathBuf, base: &PathBuf, filter: Option<Filter>, r
                     Ok(primary_path_from_base) => {
                         let logs = get_log_files(skip_logs, f, entry.path());
                         let outpath = get_outpath(primary_path_from_base, outfolder, &output_type);
-                        let _ = reg_dump(PathBuf::from(entry.path()), &outpath, logs, filter.clone(), recover, recovered_only, get_full_field_info, output_type);
+                        let _ = reg_dump(
+                            PathBuf::from(entry.path()),
+                            &outpath,
+                            logs,
+                            filter.clone(),
+                            recover,
+                            recovered_only,
+                            get_full_field_info,
+                            output_type,
+                        );
                     }
                 }
             }
@@ -145,8 +212,8 @@ fn process_folder(outfolder: &PathBuf, base: &PathBuf, filter: Option<Filter>, r
 }
 
 fn get_outpath<T>(primary_path_from_base: &Path, outfolder: T, output_type: &OutputType) -> PathBuf
-    where
-    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>,
 {
     let path = primary_path_from_base.to_string_lossy();
     let output_filename = str::replace(&path, std::path::MAIN_SEPARATOR, "_");
@@ -160,7 +227,16 @@ fn get_outpath<T>(primary_path_from_base: &Path, outfolder: T, output_type: &Out
     output_path
 }
 
-fn reg_dump(input: PathBuf, output: &PathBuf, logs: Option<Vec<PathBuf>>, filter: Option<Filter>, recover: bool, recovered_only: bool, get_full_field_info: bool, output_type:OutputType) -> Result<(), Error> {
+fn reg_dump(
+    input: PathBuf,
+    output: &PathBuf,
+    logs: Option<Vec<PathBuf>>,
+    filter: Option<Filter>,
+    recover: bool,
+    recovered_only: bool,
+    get_full_field_info: bool,
+    output_type: OutputType,
+) -> Result<(), Error> {
     let mut parser_builder = ParserBuilder::from_path(input);
     parser_builder.update_console(true);
     parser_builder.recover_deleted(recover);

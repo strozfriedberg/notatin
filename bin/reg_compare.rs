@@ -15,7 +15,7 @@
  */
 
 use blake3::Hash;
-use clap::{Arg, Command, arg};
+use clap::{arg, Arg, Command};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
@@ -27,15 +27,15 @@ use notatin::{
     parser_builder::ParserBuilder,
     util::format_date_time,
 };
-use walkdir::WalkDir;
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
     iter,
     path::*,
-    str
+    str,
 };
+use walkdir::WalkDir;
 
 fn main() -> Result<(), Error> {
     let matches = Command::new("Notatin Registry Compare")
@@ -68,10 +68,11 @@ fn main() -> Result<(), Error> {
     .get_matches();
 
     let base = matches.get_one::<String>("base").expect("Required value");
-    let compare = matches.get_one::<String>("compare").expect("Required value");
+    let compare = matches
+        .get_one::<String>("compare")
+        .expect("Required value");
 
-    let output: &str = matches.get_one::<String>("output")
-                              .expect("Required value");
+    let output: &str = matches.get_one::<String>("output").expect("Required value");
 
     let use_diff_format = matches.get_flag("diff");
     let recurse = matches.get_flag("recurse");
@@ -88,34 +89,87 @@ fn main() -> Result<(), Error> {
     };
 
     if recurse {
-        process_folders(output, &PathBuf::from(base), &PathBuf::from(compare), filter, use_diff_format, skip_logs)
-    }
-    else {
-        process_files(output, PathBuf::from(base), PathBuf::from(compare), filter, use_diff_format, skip_logs)
+        process_folders(
+            output,
+            &PathBuf::from(base),
+            &PathBuf::from(compare),
+            filter,
+            use_diff_format,
+            skip_logs,
+        )
+    } else {
+        process_files(
+            output,
+            PathBuf::from(base),
+            PathBuf::from(compare),
+            filter,
+            use_diff_format,
+            skip_logs,
+        )
     }
 }
 
-fn process_files<T>(outpath: T, base: PathBuf, comparison: PathBuf, filter: Option<Filter>, use_diff_format: bool, skip_logs:bool) -> Result<(), Error>
-    where
-    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+fn process_files<T>(
+    outpath: T,
+    base: PathBuf,
+    comparison: PathBuf,
+    filter: Option<Filter>,
+    use_diff_format: bool,
+    skip_logs: bool,
+) -> Result<(), Error>
+where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>,
 {
-    let base_logs = get_log_files(skip_logs, &base.file_name().unwrap().to_string_lossy(), base.parent().unwrap());
-    let comp_logs = get_log_files(skip_logs, &comparison.file_name().unwrap().to_string_lossy(), comparison.parent().unwrap());
+    let base_logs = get_log_files(
+        skip_logs,
+        &base.file_name().unwrap().to_string_lossy(),
+        base.parent().unwrap(),
+    );
+    let comp_logs = get_log_files(
+        skip_logs,
+        &comparison.file_name().unwrap().to_string_lossy(),
+        comparison.parent().unwrap(),
+    );
 
-    reg_compare(&outpath, base, base_logs, comparison, comp_logs, filter, use_diff_format)
+    reg_compare(
+        &outpath,
+        base,
+        base_logs,
+        comparison,
+        comp_logs,
+        filter,
+        use_diff_format,
+    )
 }
 
-fn process_folders<T>(outfolder: T, base: &PathBuf, comparison: &PathBuf, filter: Option<Filter>, use_diff_format: bool, skip_logs:bool) -> Result<(), Error>
-    where
-    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+fn process_folders<T>(
+    outfolder: T,
+    base: &PathBuf,
+    comparison: &PathBuf,
+    filter: Option<Filter>,
+    use_diff_format: bool,
+    skip_logs: bool,
+) -> Result<(), Error>
+where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>,
 {
-    let reg_files = vec!["sam", "security", "software", "system", "default", "amcache", "ntuser.dat", "usrclass.dat"];
+    let reg_files = vec![
+        "sam",
+        "security",
+        "software",
+        "system",
+        "default",
+        "amcache",
+        "ntuser.dat",
+        "usrclass.dat",
+    ];
     let comparison_path = Path::new(&comparison);
 
     for entry in WalkDir::new(base)
-                    .into_iter()
-                    .filter_map(Result::ok)
-                    .filter(|e| !e.file_type().is_dir()) {
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| !e.file_type().is_dir())
+    {
         if let Some(f) = entry.file_name().to_str() {
             let f_lower = f.to_lowercase();
             if reg_files.contains(&f_lower.as_str()) && file_has_size(entry.path()) {
@@ -123,11 +177,22 @@ fn process_folders<T>(outfolder: T, base: &PathBuf, comparison: &PathBuf, filter
                     Err(e) => println!("{:?}", e),
                     Ok(primary_path_from_base) => {
                         let comparison_path_to_find = comparison_path.join(primary_path_from_base);
-                        if comparison_path_to_find.is_file() && file_has_size(&comparison_path_to_find) {
+                        if comparison_path_to_find.is_file()
+                            && file_has_size(&comparison_path_to_find)
+                        {
                             let base_logs = get_log_files(skip_logs, f, entry.path());
                             let comp_logs = get_log_files(skip_logs, f, &comparison_path_to_find);
-                            let outpath = get_outpath(primary_path_from_base, &outfolder, use_diff_format);
-                            let _ = reg_compare(&outpath, PathBuf::from(entry.path()), base_logs, comparison_path_to_find, comp_logs, filter.clone(), use_diff_format);
+                            let outpath =
+                                get_outpath(primary_path_from_base, &outfolder, use_diff_format);
+                            let _ = reg_compare(
+                                &outpath,
+                                PathBuf::from(entry.path()),
+                                base_logs,
+                                comparison_path_to_find,
+                                comp_logs,
+                                filter.clone(),
+                                use_diff_format,
+                            );
                         }
                     }
                 }
@@ -138,24 +203,31 @@ fn process_folders<T>(outfolder: T, base: &PathBuf, comparison: &PathBuf, filter
 }
 
 fn get_outpath<T>(primary_path_from_base: &Path, outfolder: T, use_diff_folder: bool) -> PathBuf
-    where
-    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>,
 {
     let path = primary_path_from_base.to_string_lossy();
     let output_filename = str::replace(&path, std::path::MAIN_SEPARATOR, "_");
     let mut output_path = Path::new(&outfolder).join(output_filename);
     if use_diff_folder {
         output_path.set_extension("diff");
-    }
-    else {
+    } else {
         output_path.set_extension("txt");
     }
     output_path
 }
 
-fn reg_compare<T>(output: T, base_primary: PathBuf, base_logs: Option<Vec<PathBuf>>, comparison_primary: PathBuf, comparison_logs: Option<Vec<PathBuf>>, filter: Option<Filter>, use_diff_format: bool) -> Result<(), Error>
-    where
-    T: AsRef<Path>
+fn reg_compare<T>(
+    output: T,
+    base_primary: PathBuf,
+    base_logs: Option<Vec<PathBuf>>,
+    comparison_primary: PathBuf,
+    comparison_logs: Option<Vec<PathBuf>>,
+    filter: Option<Filter>,
+    use_diff_format: bool,
+) -> Result<(), Error>
+where
+    T: AsRef<Path>,
 {
     let write_file = File::create(output)?;
     let mut writer = BufWriter::new(write_file);
@@ -262,11 +334,20 @@ fn reg_compare<T>(output: T, base_primary: PathBuf, base_logs: Option<Vec<PathBu
         };
     }
 
-    (if use_diff_format { write_diff } else { write_report })(
+    (if use_diff_format {
+        write_diff
+    } else {
+        write_report
+    })(
         &mut writer,
-        &base_filenames, &comparison_filenames,
-        keys_added, keys_deleted, keys_modified,
-        values_added, values_deleted, values_modified
+        &base_filenames,
+        &comparison_filenames,
+        keys_added,
+        keys_deleted,
+        keys_modified,
+        values_added,
+        values_deleted,
+        values_modified,
     )?;
 
     Ok(())
@@ -281,7 +362,7 @@ fn write_report<W: Write>(
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
     values_deleted: Vec<(String, CellKeyValue)>,
     values_added: Vec<(String, CellKeyValue)>,
-    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
+    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>,
 ) -> Result<(), Error> {
     writeln!(writer, "Base: {} ", base_filenames)?;
     writeln!(writer, "Comparison: {}", comparison_filenames)?;
@@ -342,16 +423,10 @@ fn write_diff_section<W: Write>(
     llen: usize,
     mut rline: usize,
     right: impl Iterator<Item = String>,
-    rlen: usize
-) -> Result<(usize, usize), Error>
-{
+    rlen: usize,
+) -> Result<(usize, usize), Error> {
     if llen > 0 || rlen > 0 {
-        writeln!(
-            writer,
-            "@@ -{},{} +{},{} @@",
-            lline, llen,
-            rline, rlen
-        )?;
+        writeln!(writer, "@@ -{},{} +{},{} @@", lline, llen, rline, rlen)?;
 
         lline += llen;
         rline += rlen;
@@ -372,7 +447,7 @@ fn write_diff_k_del<W: Write>(
     writer: &mut W,
     lline: usize,
     rline: usize,
-    keys_deleted: Vec<CellKeyNode>
+    keys_deleted: Vec<CellKeyNode>,
 ) -> Result<(usize, usize), Error> {
     write_diff_section(
         writer,
@@ -381,7 +456,7 @@ fn write_diff_k_del<W: Write>(
         keys_deleted.len(),
         rline,
         iter::empty::<String>(),
-        0
+        0,
     )
 }
 
@@ -389,7 +464,7 @@ fn write_diff_k_add<W: Write>(
     writer: &mut W,
     lline: usize,
     rline: usize,
-    keys_added: Vec<CellKeyNode>
+    keys_added: Vec<CellKeyNode>,
 ) -> Result<(usize, usize), Error> {
     write_diff_section(
         writer,
@@ -398,7 +473,7 @@ fn write_diff_k_add<W: Write>(
         0,
         rline,
         keys_added.iter().map(format_key),
-        keys_added.len()
+        keys_added.len(),
     )
 }
 
@@ -406,7 +481,7 @@ fn write_diff_k_mod<W: Write>(
     writer: &mut W,
     lline: usize,
     rline: usize,
-    keys_modified: Vec<(CellKeyNode, CellKeyNode)>
+    keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
 ) -> Result<(usize, usize), Error> {
     write_diff_section(
         writer,
@@ -415,7 +490,7 @@ fn write_diff_k_mod<W: Write>(
         keys_modified.len(),
         rline,
         keys_modified.iter().map(|k| format_key(&k.1)),
-        keys_modified.len()
+        keys_modified.len(),
     )
 }
 
@@ -423,7 +498,7 @@ fn write_diff_v_del<W: Write>(
     writer: &mut W,
     lline: usize,
     rline: usize,
-    values_deleted: Vec<(String, CellKeyValue)>
+    values_deleted: Vec<(String, CellKeyValue)>,
 ) -> Result<(usize, usize), Error> {
     write_diff_section(
         writer,
@@ -432,7 +507,7 @@ fn write_diff_v_del<W: Write>(
         values_deleted.len(),
         rline,
         iter::empty::<String>(),
-        0
+        0,
     )
 }
 
@@ -440,7 +515,7 @@ fn write_diff_v_add<W: Write>(
     writer: &mut W,
     lline: usize,
     rline: usize,
-    values_added: Vec<(String, CellKeyValue)>
+    values_added: Vec<(String, CellKeyValue)>,
 ) -> Result<(usize, usize), Error> {
     write_diff_section(
         writer,
@@ -449,7 +524,7 @@ fn write_diff_v_add<W: Write>(
         0,
         rline,
         values_added.iter().map(|v| format_value(&v.0, &v.1)),
-        values_added.len()
+        values_added.len(),
     )
 }
 
@@ -457,7 +532,7 @@ fn write_diff_v_mod<W: Write>(
     writer: &mut W,
     lline: usize,
     rline: usize,
-    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
+    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>,
 ) -> Result<(usize, usize), Error> {
     write_diff_section(
         writer,
@@ -466,7 +541,7 @@ fn write_diff_v_mod<W: Write>(
         values_modified.len(),
         rline,
         values_modified.iter().map(|v| format_value(&v.0, &v.2)),
-        values_modified.len()
+        values_modified.len(),
     )
 }
 
@@ -479,7 +554,7 @@ fn write_diff<W: Write>(
     keys_modified: Vec<(CellKeyNode, CellKeyNode)>,
     values_deleted: Vec<(String, CellKeyValue)>,
     values_added: Vec<(String, CellKeyValue)>,
-    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>
+    values_modified: Vec<(String, CellKeyValue, CellKeyValue)>,
 ) -> Result<(), Error> {
     writeln!(w, "--- {}", base_filenames)?;
     writeln!(w, "+++ {}", comparison_filenames)?;
@@ -517,7 +592,12 @@ fn format_key(cell_key_node: &CellKeyNode) -> String {
     )
 }
 
-fn write_value<W: Write>(writer: &mut W, cell_key_node_path: &str, value: &CellKeyValue, diff_prefix: &str) {
+fn write_value<W: Write>(
+    writer: &mut W,
+    cell_key_node_path: &str,
+    value: &CellKeyValue,
+    diff_prefix: &str,
+) {
     writeln!(
         writer,
         "{}{}\t{}\t{:?}",
@@ -581,10 +661,7 @@ mod tests {
             Ok((0, 1))
         );
 
-        assert_eq!(
-            str::from_utf8(&buf).unwrap(),
-            "@@ -0,0 +0,1 @@\n+abc\n"
-        );
+        assert_eq!(str::from_utf8(&buf).unwrap(), "@@ -0,0 +0,1 @@\n+abc\n");
     }
 
     #[test]
@@ -605,10 +682,7 @@ mod tests {
             Ok((5, 20))
         );
 
-        assert_eq!(
-            str::from_utf8(&buf),
-            Ok("@@ -5,0 +18,2 @@\n+abc\n+xyz\n")
-        );
+        assert_eq!(str::from_utf8(&buf), Ok("@@ -5,0 +18,2 @@\n+abc\n+xyz\n"));
     }
 
     #[test]
@@ -629,10 +703,7 @@ mod tests {
             Ok((1, 0))
         );
 
-        assert_eq!(
-            str::from_utf8(&buf),
-            Ok("@@ -0,1 +0,0 @@\n-abc\n")
-        );
+        assert_eq!(str::from_utf8(&buf), Ok("@@ -0,1 +0,0 @@\n-abc\n"));
     }
 
     #[test]
@@ -653,10 +724,7 @@ mod tests {
             Ok((13, 3))
         );
 
-        assert_eq!(
-            str::from_utf8(&buf),
-            Ok("@@ -11,2 +3,0 @@\n-abc\n-xyz\n")
-        );
+        assert_eq!(str::from_utf8(&buf), Ok("@@ -11,2 +3,0 @@\n-abc\n-xyz\n"));
     }
 
     #[test]
@@ -678,10 +746,7 @@ mod tests {
             Ok((7, 86))
         );
 
-        assert_eq!(
-            str::from_utf8(&buf),
-            Ok("@@ -6,1 +85,1 @@\n-abc\n+xyz\n")
-        );
+        assert_eq!(str::from_utf8(&buf), Ok("@@ -6,1 +85,1 @@\n-abc\n+xyz\n"));
     }
 
     #[test]
@@ -708,5 +773,4 @@ mod tests {
             Ok("@@ -6,2 +85,2 @@\n-abc\n-def\n+uvw\n+xyz\n")
         );
     }
-
 }

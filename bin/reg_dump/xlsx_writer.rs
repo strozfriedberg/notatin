@@ -163,7 +163,10 @@ impl WriteXlsx {
                 &sanitize_for_xml_1_0(&cell_key_node.path),
                 &link_format,
             )?;
-            reg_items_sheet.write_number(Self::COL_SUBKEY_COUNT, cell_key_node.cell_sub_key_offsets_absolute.len() as f64)?;
+            reg_items_sheet.write_number(
+                Self::COL_SUBKEY_COUNT,
+                cell_key_node.cell_sub_key_offsets_absolute.len() as f64,
+            )?;
             reg_items_sheet.write_string(
                 Self::COL_TIMESTAMP,
                 &util::format_date_time(cell_key_node.last_key_written_date_and_time()),

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
- use std::path::*;
+use std::path::*;
 
 pub fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {
     let mut logs = vec![];
@@ -34,7 +34,12 @@ pub fn parse_paths(paths: &str) -> (String, Option<Vec<String>>) {
     }
 }
 
-pub fn check_add_log(base_folder: &Path, primary_name: &str, extension: &str, logs: &mut Vec<PathBuf>) {
+pub fn check_add_log(
+    base_folder: &Path,
+    primary_name: &str,
+    extension: &str,
+    logs: &mut Vec<PathBuf>,
+) {
     let log = get_log_name(base_folder, primary_name, extension);
     if log.is_file() {
         logs.push(log);
@@ -53,11 +58,10 @@ fn get_log_name(base_folder: &Path, primary_name: &str, extension: &str) -> Path
     PathBuf::from(log)
 }
 
-pub fn get_log_files(skip_logs:bool, f: &str, path: &Path) -> Option<Vec<PathBuf>> {
+pub fn get_log_files(skip_logs: bool, f: &str, path: &Path) -> Option<Vec<PathBuf>> {
     if skip_logs {
         None
-    }
-    else {
+    } else {
         let mut logs: Vec<PathBuf> = vec![];
         if let Some(folder) = path.parent() {
             check_add_log(folder, f, "LOG1", &mut logs);
@@ -73,8 +77,7 @@ pub fn file_has_size(path: &Path) -> bool {
             if md.len() == 0 {
                 println!("{:?} size is 0; skipping", path);
                 false
-            }
-            else {
+            } else {
                 true
             }
         }
@@ -91,8 +94,17 @@ mod tests {
 
     #[test]
     fn test_get_log_name() {
-        assert_eq!(PathBuf::from("/mnt/d/tmp/ntuser.dat.LOG1"), get_log_name(&Path::new("/mnt/d/tmp"), "NTUSER.DAT", "LOG1"));
-        assert_eq!(PathBuf::from("/mnt/d/tmp/UsrClass.dat.LOG2"), get_log_name(&Path::new("/mnt/d/tmp"), "UsrClass.DAT", "LOG2"));
-        assert_eq!(PathBuf::from("/mnt/d/tmp/SYSTEM.LOG2"), get_log_name(&Path::new("/mnt/d/tmp"), "SYSTEM", "LOG2"));
+        assert_eq!(
+            PathBuf::from("/mnt/d/tmp/ntuser.dat.LOG1"),
+            get_log_name(&Path::new("/mnt/d/tmp"), "NTUSER.DAT", "LOG1")
+        );
+        assert_eq!(
+            PathBuf::from("/mnt/d/tmp/UsrClass.dat.LOG2"),
+            get_log_name(&Path::new("/mnt/d/tmp"), "UsrClass.DAT", "LOG2")
+        );
+        assert_eq!(
+            PathBuf::from("/mnt/d/tmp/SYSTEM.LOG2"),
+            get_log_name(&Path::new("/mnt/d/tmp"), "SYSTEM", "LOG2")
+        );
     }
 }
