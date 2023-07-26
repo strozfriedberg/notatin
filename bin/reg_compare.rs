@@ -118,7 +118,7 @@ fn process_files<T>(
     skip_logs: bool,
 ) -> Result<(), Error>
 where
-    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>,
+    T: AsRef<Path>
 {
     let base_logs = get_log_files(
         skip_logs,
