@@ -744,6 +744,7 @@ dependencies = [
  "serde_json",
  "strum_macros",
  "thiserror",
+ "walkdir",
  "winstructs",
  "xlsxwriter",
 ]
