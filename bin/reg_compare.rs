@@ -16,65 +16,68 @@
 
 use blake3::Hash;
 use chrono::{DateTime, Utc};
-use clap::{Command, arg};
+use clap::{Arg, Command, arg};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
-    cli_util::parse_paths,
+    cli_util::*,
     err::Error,
-    filter::FilterBuilder,
+    filter::{Filter, FilterBuilder},
     log::Logs,
     parser::{Parser, ParserIterator},
     parser_builder::ParserBuilder,
     util::format_date_time,
 };
+use walkdir::WalkDir;
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufWriter, Write},
     iter,
+    path::*,
     str,
     time::SystemTime
 };
 
 fn main() -> Result<(), Error> {
     let matches = Command::new("Notatin Registry Compare")
-    .version("0.1")
-    .arg(arg!(-f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"))
+    .version("0.2")
+    .arg(Arg::new("base")
+        .short('b')
+        .long("base")
+        .help("Base registry file or root folder to search")
+        .required(true)
+        .number_of_values(1))
+    .arg(Arg::new("compare")
+        .short('c')
+        .long("compare")
+        .help("Comparison registry file or root folder to search")
+        .required(true)
+        .number_of_values(1))
+    .arg(Arg::new("output")
+        .short('o')
+        .long("output")
+        .help("Output file or folder")
+        .required(true)
+        .number_of_values(1))
     .arg(arg!(
         -r --recurse "Recurse through base and comparison folders looking for registry files; file trees must match"
     ))
-    .arg(arg!(
-            -d --diff "Export unified diff format output"
-    ))
     .arg(arg!(-f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"))
-    .arg(arg!(
-            -s --"skip-logs" "Skip transaction log files"
-    ))
     .arg(arg!(
             -d --diff "Export unified diff format output"
     ))
     .get_matches();
 
-    let (base_primary, base_logs) = parse_paths(
-        matches.get_one::<String>("base")
-               .expect("Required value")
-    );
-
-    let (comparison_primary, comparison_logs) = parse_paths(
-        matches.get_one::<String>("comparison")
-               .expect("Required value")
-    );
+    let base = matches.get_one::<String>("base").expect("Required value");
+    let compare = matches.get_one::<String>("compare").expect("Required value");
 
     let output: &str = matches.get_one::<String>("output")
                               .expect("Required value");
 
     let use_diff_format = matches.get_flag("diff");
-
-    let write_file = File::create(output)?;
-    let mut writer = BufWriter::new(write_file);
-
-    let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
+    let recurse = matches.get_flag("recurse");
+    let skip_logs = matches.get_flag("skip-logs");
 
     let filter = match matches.get_one::<String>("filter") {
         Some(f) => Some(
@@ -85,6 +88,83 @@ fn main() -> Result<(), Error> {
         ),
         None => None,
     };
+
+    if recurse {
+        process_folders(output, &PathBuf::from(base), &PathBuf::from(compare), filter, use_diff_format, skip_logs)
+    }
+    else {
+        process_files(output, PathBuf::from(base), PathBuf::from(compare), filter, use_diff_format, skip_logs)
+    }
+}
+
+fn process_files<T>(outpath: T, base: PathBuf, comparison: PathBuf, filter: Option<Filter>, use_diff_format: bool, skip_logs:bool) -> Result<(), Error>
+    where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+{
+    let base_logs = get_log_files(skip_logs, &base.file_name().unwrap().to_string_lossy(), base.parent().unwrap());
+    let comp_logs = get_log_files(skip_logs, &comparison.file_name().unwrap().to_string_lossy(), comparison.parent().unwrap());
+
+    reg_compare(&outpath, base, base_logs, comparison, comp_logs, filter, use_diff_format)
+}
+
+fn process_folders<T>(outfolder: T, base: &PathBuf, comparison: &PathBuf, filter: Option<Filter>, use_diff_format: bool, skip_logs:bool) -> Result<(), Error>
+    where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+{
+    let reg_files = vec!["sam", "security", "software", "system", "default", "amcache", "ntuser.dat", "usrclass.dat"];
+    let comparison_path = Path::new(&comparison);
+
+    for entry in WalkDir::new(base)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| !e.file_type().is_dir()) {
+        if let Some(f) = entry.file_name().to_str() {
+            let f_lower = f.to_lowercase();
+            if reg_files.contains(&f_lower.as_str()) && file_has_size(entry.path()) {
+                match entry.path().strip_prefix(base) {
+                    Err(e) => println!("{:?}", e),
+                    Ok(primary_path_from_base) => {
+                        let comparison_path_to_find = comparison_path.join(primary_path_from_base);
+                        if comparison_path_to_find.is_file() && file_has_size(&comparison_path_to_find) {
+                            let base_logs = get_log_files(skip_logs, f, entry.path());
+                            let comp_logs = get_log_files(skip_logs, f, &comparison_path_to_find);
+                            let outpath = get_outpath(primary_path_from_base, &outfolder, use_diff_format);
+                            let _ = reg_compare(&outpath, PathBuf::from(entry.path()), base_logs, comparison_path_to_find, comp_logs, filter.clone(), use_diff_format);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn get_outpath<T>(primary_path_from_base: &Path, outfolder: T, use_diff_folder: bool) -> PathBuf
+    where
+    T: AsRef<Path> + std::convert::AsRef<std::ffi::OsStr>
+{
+    let path = primary_path_from_base.to_string_lossy();
+    let output_filename = str::replace(&path, std::path::MAIN_SEPARATOR, "_");
+    let mut output_path = Path::new(&outfolder).join(output_filename);
+    if use_diff_folder {
+        output_path.set_extension("diff");
+    }
+    else {
+        output_path.set_extension("txt");
+    }
+    output_path
+}
+
+fn reg_compare<T>(output: T, base_primary: PathBuf, base_logs: Option<Vec<PathBuf>>, comparison_primary: PathBuf, comparison_logs: Option<Vec<PathBuf>>, filter: Option<Filter>, use_diff_format: bool) -> Result<(), Error>
+    where
+    T: AsRef<Path>
+{
+    let write_file = File::create(output)?;
+    let mut writer = BufWriter::new(write_file);
+
+    println!("Comparing {:?} and {:?}", base_primary, comparison_primary);
+
+    let mut original_map: HashMap<(String, Option<String>), Option<Hash>> = HashMap::new();
 
     let mut parser1 = get_parser(base_primary, base_logs)?;
     let (k_total, _) = parser1.count_all_keys_and_values(filter.as_ref());
@@ -450,7 +530,7 @@ fn write_key<W: Write>(writer: &mut W, cell_key_node: &CellKeyNode, diff_prefix:
     .unwrap();
 }
 
-fn get_parser(primary: String, logs: Option<Vec<String>>) -> Result<Parser, Error> {
+fn get_parser(primary: PathBuf, logs: Option<Vec<PathBuf>>) -> Result<Parser, Error> {
     let mut parser_builder = ParserBuilder::from_path(primary);
     for log in logs.unwrap_or_default() {
         parser_builder.with_transaction_log(log);
