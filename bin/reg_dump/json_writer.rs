@@ -6,12 +6,13 @@ use notatin::{
 };
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::*;
 
 pub(crate) struct WriteJson {}
 
 impl WriteJson {
     pub(crate) fn write(
-        out_path: &str,
+        out_path: &PathBuf,
         parser: &Parser,
         filter: Option<Filter>,
         console: &mut Box<dyn progress::UpdateProgressTrait>,

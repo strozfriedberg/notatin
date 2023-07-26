@@ -9,6 +9,7 @@ use notatin::{
 };
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::*;
 
 pub(crate) struct WriteTsv {
     index: usize,
@@ -18,7 +19,7 @@ pub(crate) struct WriteTsv {
 }
 
 impl WriteTsv {
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
+    pub(crate) fn new(output: &PathBuf, recovered_only: bool) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
         Ok(WriteTsv {

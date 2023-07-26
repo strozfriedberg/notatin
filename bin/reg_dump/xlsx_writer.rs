@@ -8,7 +8,7 @@ use notatin::{
     parser::{Parser, ParserIterator},
     progress, util,
 };
-use std::{borrow::Cow, convert::TryFrom};
+use std::{borrow::Cow, convert::TryFrom, path::*};
 use xlsxwriter::format::{FormatBorder, FormatColor, FormatUnderline};
 use xlsxwriter::{Format, Workbook, Worksheet, XlsxError};
 
@@ -43,9 +43,9 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, XlsxError> {
+    pub(crate) fn new(output: &PathBuf, recovered_only: bool) -> Result<Self, XlsxError> {
         Ok(WriteXlsx {
-            workbook: Workbook::new(output)?,
+            workbook: Workbook::new(&output.to_string_lossy())?,
             recovered_only,
             console: progress::new(true),
         })

@@ -9,13 +9,14 @@ use notatin::{
 };
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::*;
 
 pub(crate) struct WriteCommon {
     writer: BufWriter<File>,
 }
 
 impl WriteCommon {
-    pub(crate) fn new(output: &str) -> Result<Self, Error> {
+    pub(crate) fn new(output: &PathBuf) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
         Ok(WriteCommon { writer })
