@@ -36,7 +36,7 @@ impl WriteTsv {
             iter.with_filter(filter);
         }
 
-        writeln!(self.writer,"Index\tKey Path\tValue Name\tValue Data\tTimestamp\tStatus\tPrevious Seq Num\tModifying Seq Num\tFlags\tAccess Flags\tValue Type\tLogs")?;
+        writeln!(self.writer,"Index\tKey Path\tSubkey Count\tValue Name\tValue Data\tTimestamp\tStatus\tPrevious Seq Num\tModifying Seq Num\tFlags\tAccess Flags\tValue Type\tLogs")?;
         for (index, key) in iter.iter().enumerate() {
             self.console.update_progress(index)?;
             self.write_key_tsv(&key, false)?;
@@ -55,7 +55,7 @@ impl WriteTsv {
             self.index += 1;
             writeln!(
                 self.writer,
-                "{index}\t{key_path}\t{value_name}\t{value_data}\t\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t\t\t{value_type}\t{logs}",
+                "{index}\t{key_path}\t\t{value_name}\t{value_data}\t\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t\t\t{value_type}\t{logs}",
                 index = self.index,
                 key_path = util::escape_string(&cell_key_node.path),
                 value_name = util::escape_string(&value.get_pretty_name()),
@@ -80,9 +80,10 @@ impl WriteTsv {
             self.index += 1;
             writeln!(
                 self.writer,
-                "{index}\t{key_path}\t\t\t{timestamp}\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t{flags:?}\t{access_flags:?}\t\t{logs}",
+                "{index}\t{key_path}\t{subkey_count}\t\t\t{timestamp}\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t{flags:?}\t{access_flags:?}\t\t{logs}",
                 index = self.index,
                 key_path = util::escape_string(&cell_key_node.path),
+                subkey_count = &cell_key_node.cell_sub_key_offsets_absolute.len(),
                 timestamp = util::format_date_time(cell_key_node.last_key_written_date_and_time()),
                 status = cell_key_node.cell_state,
                 prev_seq_num = Self::get_sequence_num_string(cell_key_node.sequence_num),

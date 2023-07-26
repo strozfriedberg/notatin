@@ -23,18 +23,21 @@ impl WriteXlsx {
     const COL_WIDTH_WIDE: f64 = 50.0;
     const COL_WIDTH_NARROW: f64 = 23.0;
     const COL_WIDTH_TINY: f64 = 6.0;
+
     const COL_INDEX: u16 = 0;
     const COL_KEY_PATH: u16 = 1;
-    const COL_VALUE_NAME: u16 = 2;
-    const COL_VALUE_DATA: u16 = 3;
-    const COL_TIMESTAMP: u16 = 4;
-    const COL_STATUS: u16 = 5;
-    const COL_PREV_SEQ_NUM: u16 = 6;
-    const COL_MOD_SEQ_NUM: u16 = 7;
-    const COL_FLAGS: u16 = 8;
-    const COL_ACCESS_FLAGS: u16 = 9;
-    const COL_VALUE_TYPE: u16 = 10;
-    const COL_LOGS: u16 = 11;
+    const COL_SUBKEY_COUNT: u16 = 2;
+    const COL_VALUE_NAME: u16 = 3;
+    const COL_VALUE_DATA: u16 = 4;
+    const COL_TIMESTAMP: u16 = 5;
+    const COL_STATUS: u16 = 6;
+    const COL_PREV_SEQ_NUM: u16 = 7;
+    const COL_MOD_SEQ_NUM: u16 = 8;
+    const COL_FLAGS: u16 = 9;
+    const COL_ACCESS_FLAGS: u16 = 10;
+    const COL_VALUE_TYPE: u16 = 11;
+    const COL_LOGS: u16 = 12;
+
     const MAX_EXCEL_CELL_LEN: usize = 32767;
     const MAX_TRUNCATED_CHARS: usize = 250;
     const TRUNCATED: &'static str = "truncated";
@@ -93,6 +96,7 @@ impl WriteXlsx {
 
         reg_items_sheet.write_string(Self::COL_INDEX, "Index")?;
         reg_items_sheet.write_string(Self::COL_KEY_PATH, "Key Path")?;
+        reg_items_sheet.write_string(Self::COL_SUBKEY_COUNT, "Subkey Count")?;
         reg_items_sheet.write_string(Self::COL_VALUE_NAME, "Value Name")?;
         reg_items_sheet.write_string(Self::COL_VALUE_DATA, "Value Data")?;
         reg_items_sheet.write_string(Self::COL_TIMESTAMP, "Timestamp")?;
@@ -159,6 +163,7 @@ impl WriteXlsx {
                 &sanitize_for_xml_1_0(&cell_key_node.path),
                 &link_format,
             )?;
+            reg_items_sheet.write_number(Self::COL_SUBKEY_COUNT, cell_key_node.cell_sub_key_offsets_absolute.len() as f64)?;
             reg_items_sheet.write_string(
                 Self::COL_TIMESTAMP,
                 &util::format_date_time(cell_key_node.last_key_written_date_and_time()),
