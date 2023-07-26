@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
     .arg(Arg::new("compare")
         .short('c')
         .long("compare")
-        .help("Comparison registry file or root folder to search")
+        .help("Registry file or root folder to search for comparison")
         .required(true)
         .number_of_values(1))
     .arg(Arg::new("output")
