@@ -86,7 +86,7 @@ fn main() -> Result<(), Error> {
     let input = matches.get_one::<String>("input").expect("Required value");
     let output = matches.get_one::<String>("output").expect("Required value");
     let recurse = matches.get_flag("recurse");
-    let recover = matches.get_flag("recoVer");
+    let recover = matches.get_flag("recover");
     let skip_logs = matches.get_flag("skip-logs");
     let recovered_only = matches.get_flag("recovered-only");
     let get_full_field_info = matches.get_flag("full-field-info");
