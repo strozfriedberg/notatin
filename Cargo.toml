@@ -23,6 +23,7 @@ strum_macros = ">= 0.22.0"
 xlsxwriter = { version = ">= 0.6.0", optional = true }
 clap = { version = ">= 4.3.2", optional = true }
 walkdir = { version = ">= 2.3.3", optional = true }
+itertools = { version = ">= 0.11.0", optional = true }
 
 [dependencies.chrono]
 version = ">=0.4.20"
@@ -32,7 +33,7 @@ features = ["serde"]
 criterion = ">= 0.3"
 
 [features]
-build-binary = ["xlsxwriter", "clap", "walkdir"]
+build-binary = ["xlsxwriter", "clap", "walkdir", "itertools"]
 
 [[bin]]
 name = "reg_compare"

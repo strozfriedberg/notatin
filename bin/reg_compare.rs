@@ -16,6 +16,7 @@
 
 use blake3::Hash;
 use clap::{arg, Arg, Command};
+use itertools::{EitherOrBoth, Itertools};
 use notatin::{
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
@@ -340,7 +341,7 @@ where
     (if use_diff_format {
         write_diff
     } else {
-        write_report
+        write_text
     })(
         &mut writer,
         &base_filenames,
@@ -356,7 +357,29 @@ where
     Ok(())
 }
 
-fn write_report<W: Write>(
+fn write_text_section<W: Write>(
+    writer: &mut W,
+    header: &str,
+    removed: impl Iterator<Item = String>,
+    added: impl Iterator<Item = String>,
+    len: usize
+) -> Result<(), Error> {
+    writeln!(writer, "\n----------------------------------\n{}: {}\n----------------------------------", header, len)?;
+
+    for item in removed.zip_longest(added) {
+        match item {
+            EitherOrBoth::Both(removed, added) => {
+                writeln!(writer, "{}", removed)?;
+                writeln!(writer, "{}", added)?;
+            }
+            EitherOrBoth::Left(removed) => writeln!(writer, "{}", removed)?,
+            EitherOrBoth::Right(added) => writeln!(writer, "{}", added)?,
+        }
+    }
+    Ok(())
+}
+
+fn write_text<W: Write>(
     writer: &mut W,
     base_filenames: &String,
     comparison_filenames: &String,
@@ -377,44 +400,54 @@ fn write_report<W: Write>(
         + values_added.len()
         + values_modified.len();
 
-    if !keys_deleted.is_empty() {
-        writeln!(writer, "----------------------------------\nKeys deleted: {}\n----------------------------------", keys_deleted.len())?;
-        for k in keys_deleted {
-            write_key(writer, &k, "");
-        }
-    }
-    if !keys_added.is_empty() {
-        writeln!(writer, "\n----------------------------------\nKeys added: {}\n----------------------------------", keys_added.len())?;
-        for k in keys_added {
-            write_key(writer, &k, "");
-        }
-    }
-    if !keys_modified.is_empty() {
-        writeln!(writer, "\n----------------------------------\nKeys modified: {}\n----------------------------------", keys_modified.len())?;
-        for k in keys_modified {
-            write_key(writer, &k.0, "");
-            write_key(writer, &k.1, "");
-        }
-    }
-    if !values_deleted.is_empty() {
-        writeln!(writer, "\n----------------------------------\nValues deleted: {}\n----------------------------------", values_deleted.len())?;
-        for v in values_deleted {
-            write_value(writer, &v.0, &v.1, "");
-        }
-    }
-    if !values_added.is_empty() {
-        writeln!(writer, "\n----------------------------------\nValues added: {}\n----------------------------------", values_added.len())?;
-        for v in values_added {
-            write_value(writer, &v.0, &v.1, "");
-        }
-    }
-    if !values_modified.is_empty() {
-        writeln!(writer, "\n----------------------------------\nValues modified: {}\n----------------------------------", values_modified.len())?;
-        for v in values_modified {
-            write_value(writer, &v.0, &v.1, "");
-            write_value(writer, &v.0, &v.2, "");
-        }
-    }
+    write_text_section(
+        writer,
+        "Keys deleted",
+        keys_deleted.iter().map(format_key),
+        iter::empty::<String>(),
+        keys_deleted.len()
+    )?;
+
+    write_text_section(
+        writer,
+        "Keys added",
+        iter::empty::<String>(),
+        keys_added.iter().map(format_key),
+        keys_added.len()
+    )?;
+
+    write_text_section(
+        writer,
+        "Keys modified",
+        keys_modified.iter().map(|k| format_key(&k.0)),
+        keys_modified.iter().map(|k| format_key(&k.1)),
+        keys_modified.len()
+    )?;
+
+    write_text_section(
+        writer,
+        "Values deleted",
+        values_deleted.iter().map(|v| format_value(&v.0, &v.1)),
+        iter::empty::<String>(),
+        values_deleted.len()
+    )?;
+
+    write_text_section(
+        writer,
+        "Values added",
+        iter::empty::<String>(),
+        values_added.iter().map(|v| format_value(&v.0, &v.1)),
+        values_added.len()
+    )?;
+
+    write_text_section(
+        writer,
+        "Values modified",
+        values_modified.iter().map(|v| format_value(&v.0, &v.1)),
+        values_modified.iter().map(|v| format_value(&v.0, &v.2)),
+        values_modified.len()
+    )?;
+
     writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;
     Ok(())
 }
@@ -593,37 +626,6 @@ fn format_key(cell_key_node: &CellKeyNode) -> String {
         cell_key_node.key_node_flags(&mut logs),
         cell_key_node.access_flags(&mut logs)
     )
-}
-
-fn write_value<W: Write>(
-    writer: &mut W,
-    cell_key_node_path: &str,
-    value: &CellKeyValue,
-    diff_prefix: &str,
-) {
-    writeln!(
-        writer,
-        "{}{}\t{}\t{:?}",
-        diff_prefix,
-        cell_key_node_path,
-        value.get_pretty_name(),
-        value.get_content().0
-    )
-    .unwrap();
-}
-
-fn write_key<W: Write>(writer: &mut W, cell_key_node: &CellKeyNode, diff_prefix: &str) {
-    let mut logs = Logs::default();
-    writeln!(
-        writer,
-        "{}{}\t{}\t{:?}\t{:?}",
-        diff_prefix,
-        cell_key_node.path,
-        format_date_time(cell_key_node.last_key_written_date_and_time()),
-        cell_key_node.key_node_flags(&mut logs),
-        cell_key_node.access_flags(&mut logs)
-    )
-    .unwrap();
 }
 
 fn get_parser(primary: PathBuf, logs: Option<Vec<PathBuf>>) -> Result<Parser, Error> {
