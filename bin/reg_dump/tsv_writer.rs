@@ -1,4 +1,20 @@
-use notatin::{
+/*
+ * Copyright 2023 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+ use notatin::{
     cell::Cell,
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,
@@ -19,7 +35,7 @@ pub(crate) struct WriteTsv {
 }
 
 impl WriteTsv {
-    pub(crate) fn new(output: &PathBuf, recovered_only: bool) -> Result<Self, Error> {
+    pub(crate) fn new(output: &dyn AsRef<Path>, recovered_only: bool) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
         Ok(WriteTsv {
