@@ -65,6 +65,9 @@ fn main() -> Result<(), Error> {
     .arg(arg!(
             -d --diff "Export unified diff format output"
     ))
+    .arg(arg!(
+        -s --"skip-logs" "Skip transaction log files"
+    ))
     .get_matches();
 
     let base = matches.get_one::<String>("base").expect("Required value");
@@ -123,12 +126,12 @@ where
     let base_logs = get_log_files(
         skip_logs,
         &base.file_name().unwrap().to_string_lossy(),
-        base.parent().unwrap(),
+        &base,
     );
     let comp_logs = get_log_files(
         skip_logs,
         &comparison.file_name().unwrap().to_string_lossy(),
-        comparison.parent().unwrap(),
+        &comparison,
     );
 
     reg_compare(
@@ -342,11 +345,11 @@ where
         &mut writer,
         &base_filenames,
         &comparison_filenames,
-        keys_added,
         keys_deleted,
+        keys_added,
         keys_modified,
-        values_added,
         values_deleted,
+        values_added,
         values_modified,
     )?;
 
