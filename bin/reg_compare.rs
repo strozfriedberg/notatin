@@ -649,7 +649,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_add_one() {
+    fn test_add_one_diff() {
         let mut buf = Vec::<u8>::new();
         let right = ["abc"];
 
@@ -670,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_two() {
+    fn test_add_two_diff() {
         let mut buf = Vec::<u8>::new();
         let right = ["abc", "xyz"];
 
@@ -691,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn test_del_one() {
+    fn test_del_one_diff() {
         let mut buf = Vec::<u8>::new();
         let left = ["abc"];
 
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn test_del_two() {
+    fn test_del_two_diff() {
         let mut buf = Vec::<u8>::new();
         let left = ["abc", "xyz"];
 
@@ -733,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mod_one() {
+    fn test_mod_one_diff() {
         let mut buf = Vec::<u8>::new();
         let left = ["abc"];
         let right = ["xyz"];
@@ -755,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mod_two() {
+    fn test_mod_two_diff() {
         let mut buf = Vec::<u8>::new();
         let left = ["abc", "def"];
         let right = ["uvw", "xyz"];
@@ -776,6 +776,125 @@ mod tests {
         assert_eq!(
             str::from_utf8(&buf),
             Ok("@@ -6,2 +85,2 @@\n-abc\n-def\n+uvw\n+xyz\n")
+        );
+    }
+
+    #[test]
+    fn test_add_one_text() {
+        let mut buf = Vec::<u8>::new();
+        let right = ["abc"];
+
+        assert_eq!(
+            write_text_section(
+                &mut buf,
+                "Add One Text",
+                iter::empty::<String>(),
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok(())
+        );
+
+        assert_eq!(str::from_utf8(&buf).unwrap(), "\n----------------------------------\nAdd One Text: 1\n----------------------------------\nabc\n");
+    }
+
+    #[test]
+    fn test_add_two_text() {
+        let mut buf = Vec::<u8>::new();
+        let right = ["abc", "xyz"];
+
+        assert_eq!(
+            write_text_section(
+                &mut buf,
+                "Add Two Text",
+                iter::empty::<String>(),
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok(())
+        );
+
+        assert_eq!(str::from_utf8(&buf), Ok("\n----------------------------------\nAdd Two Text: 2\n----------------------------------\nabc\nxyz\n"));
+    }
+
+    #[test]
+    fn test_del_one_text() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc"];
+
+        assert_eq!(
+            write_text_section(
+                &mut buf,
+                "Del One Text",
+                left.iter().map(|s| s.to_string()),
+                iter::empty::<String>(),
+                left.len(),
+            ),
+            Ok(())
+        );
+
+        assert_eq!(str::from_utf8(&buf), Ok("\n----------------------------------\nDel One Text: 1\n----------------------------------\nabc\n"));
+    }
+
+    #[test]
+    fn test_del_two_text() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc", "xyz"];
+
+        assert_eq!(
+            write_text_section(
+                &mut buf,
+                "Del Two Text",
+                left.iter().map(|s| s.to_string()),
+                iter::empty::<String>(),
+                left.len(),
+            ),
+            Ok(())
+        );
+
+        assert_eq!(str::from_utf8(&buf), Ok("\n----------------------------------\nDel Two Text: 2\n----------------------------------\nabc\nxyz\n"));
+    }
+
+    #[test]
+    fn test_mod_one_text() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc"];
+        let right = ["xyz"];
+
+        assert_eq!(
+            write_text_section(
+                &mut buf,
+                "Mod One Text",
+                left.iter().map(|s| s.to_string()),
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok(())
+        );
+
+        assert_eq!(str::from_utf8(&buf), Ok("\n----------------------------------\nMod One Text: 1\n----------------------------------\nabc\nxyz\n"));
+    }
+
+    #[test]
+    fn test_mod_two_text() {
+        let mut buf = Vec::<u8>::new();
+        let left = ["abc", "def"];
+        let right = ["uvw", "xyz"];
+
+        assert_eq!(
+            write_text_section(
+                &mut buf,
+                "Mod Two Text",
+                left.iter().map(|s| s.to_string()),
+                right.iter().map(|s| s.to_string()),
+                right.len()
+            ),
+            Ok(())
+        );
+
+        assert_eq!(
+            str::from_utf8(&buf),
+            Ok("\n----------------------------------\nMod Two Text: 2\n----------------------------------\nabc\nuvw\ndef\nxyz\n")
         );
     }
 }
