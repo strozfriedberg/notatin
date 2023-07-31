@@ -30,6 +30,7 @@ use notatin::{
 };
 use std::{
     collections::HashMap,
+    fmt::Debug,
     fs::File,
     io::{BufWriter, Write},
     iter,
@@ -122,7 +123,7 @@ fn process_files<T>(
     skip_logs: bool,
 ) -> Result<(), Error>
 where
-    T: AsRef<Path>
+    T: AsRef<Path> + Debug,
 {
     let base_logs = get_log_files(
         skip_logs,
@@ -188,7 +189,7 @@ where
                             let comp_logs = get_log_files(skip_logs, f, &comparison_path_to_find);
                             let outpath =
                                 get_outpath(primary_path_from_base, &outfolder, use_diff_format);
-                            let _ = reg_compare(
+                            if let Err(e) = reg_compare(
                                 &outpath,
                                 PathBuf::from(entry.path()),
                                 base_logs,
@@ -196,7 +197,12 @@ where
                                 comp_logs,
                                 filter.clone(),
                                 use_diff_format,
-                            );
+                            ) {
+                                println!(
+                                    "Error processing {:?} and {:?}: {:?}",
+                                    base, comparison, e
+                                );
+                            }
                         }
                     }
                 }
@@ -231,9 +237,10 @@ fn reg_compare<T>(
     use_diff_format: bool,
 ) -> Result<(), Error>
 where
-    T: AsRef<Path>,
+    T: AsRef<Path> + Debug + Copy,
 {
-    let write_file = File::create(output)?;
+    let write_file = File::create(output)
+        .map_err(|e| Error::buffer(format!("Error creating file {:?}: {}", output, e).as_str()))?;
     let mut writer = BufWriter::new(write_file);
 
     let mut base_filenames = base_primary.to_string_lossy().into_owned();
@@ -362,9 +369,13 @@ fn write_text_section<W: Write>(
     header: &str,
     removed: impl Iterator<Item = String>,
     added: impl Iterator<Item = String>,
-    len: usize
+    len: usize,
 ) -> Result<(), Error> {
-    writeln!(writer, "\n----------------------------------\n{}: {}\n----------------------------------", header, len)?;
+    writeln!(
+        writer,
+        "\n----------------------------------\n{}: {}\n----------------------------------",
+        header, len
+    )?;
 
     for item in removed.zip_longest(added) {
         match item {
@@ -405,7 +416,7 @@ fn write_text<W: Write>(
         "Keys deleted",
         keys_deleted.iter().map(format_key),
         iter::empty::<String>(),
-        keys_deleted.len()
+        keys_deleted.len(),
     )?;
 
     write_text_section(
@@ -413,7 +424,7 @@ fn write_text<W: Write>(
         "Keys added",
         iter::empty::<String>(),
         keys_added.iter().map(format_key),
-        keys_added.len()
+        keys_added.len(),
     )?;
 
     write_text_section(
@@ -421,7 +432,7 @@ fn write_text<W: Write>(
         "Keys modified",
         keys_modified.iter().map(|k| format_key(&k.0)),
         keys_modified.iter().map(|k| format_key(&k.1)),
-        keys_modified.len()
+        keys_modified.len(),
     )?;
 
     write_text_section(
@@ -429,7 +440,7 @@ fn write_text<W: Write>(
         "Values deleted",
         values_deleted.iter().map(|v| format_value(&v.0, &v.1)),
         iter::empty::<String>(),
-        values_deleted.len()
+        values_deleted.len(),
     )?;
 
     write_text_section(
@@ -437,7 +448,7 @@ fn write_text<W: Write>(
         "Values added",
         iter::empty::<String>(),
         values_added.iter().map(|v| format_value(&v.0, &v.1)),
-        values_added.len()
+        values_added.len(),
     )?;
 
     write_text_section(
@@ -445,7 +456,7 @@ fn write_text<W: Write>(
         "Values modified",
         values_modified.iter().map(|v| format_value(&v.0, &v.1)),
         values_modified.iter().map(|v| format_value(&v.0, &v.2)),
-        values_modified.len()
+        values_modified.len(),
     )?;
 
     writeln!(writer, "\n----------------------------------\nTotal changes: {}\n----------------------------------", total_changes)?;

@@ -39,7 +39,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn buffer(s: &str) -> Self {
+    pub fn buffer(s: &str) -> Self {
         Self::Buffer {
             detail: s.to_string(),
         }
