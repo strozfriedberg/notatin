@@ -64,10 +64,10 @@ fn main() -> Result<(), Error> {
                 .default_value("jsonl"),
         )
         .arg(arg!(
-            -r --recurse "Recurse through input looking for registry files"
+            --recurse "Recurse through input looking for registry files"
         ))
         .arg(arg!(
-            -v --recoVer "Recover deleted and versioned keys and values"
+            -r --recover "Recover deleted and versioned keys and values"
         ))
         .arg(arg!(
             --"recovered-only" "Only export recovered items (applicable to tsv and xlsx output)"
@@ -272,18 +272,18 @@ impl ValueEnum for OutputType {
     fn value_variants<'a>() -> &'a [Self] {
         &[
             OutputType::Jsonl,
-            OutputType::Common,
-            OutputType::Tsv,
             OutputType::Xlsx,
+            OutputType::Tsv,
+            OutputType::Common,
         ]
     }
 
     fn to_possible_value<'a>(&self) -> Option<PossibleValue> {
         Some(match self {
             OutputType::Jsonl => PossibleValue::new("jsonl"),
-            OutputType::Common => PossibleValue::new("common"),
-            OutputType::Tsv => PossibleValue::new("tsv"),
             OutputType::Xlsx => PossibleValue::new("xlsx"),
+            OutputType::Tsv => PossibleValue::new("tsv"),
+            OutputType::Common => PossibleValue::new("common"),
         })
     }
 }
