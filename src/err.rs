@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Aon Cyber Solutions
+ * Copyright 2023 Aon Cyber Solutions
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub(crate) fn buffer(s: &str) -> Self {
+    pub fn buffer(s: &str) -> Self {
         Self::Buffer {
             detail: s.to_string(),
         }

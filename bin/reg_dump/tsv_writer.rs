@@ -1,3 +1,19 @@
+/*
+ * Copyright 2023 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 use notatin::{
     cell::Cell,
     cell_key_node::CellKeyNode,
@@ -9,6 +25,7 @@ use notatin::{
 };
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::*;
 
 pub(crate) struct WriteTsv {
     index: usize,
@@ -18,7 +35,7 @@ pub(crate) struct WriteTsv {
 }
 
 impl WriteTsv {
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, Error> {
+    pub(crate) fn new(output: impl AsRef<Path>, recovered_only: bool) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
         Ok(WriteTsv {
@@ -35,7 +52,7 @@ impl WriteTsv {
             iter.with_filter(filter);
         }
 
-        writeln!(self.writer,"Index\tKey Path\tValue Name\tValue Data\tTimestamp\tStatus\tPrevious Seq Num\tModifying Seq Num\tFlags\tAccess Flags\tValue Type\tLogs")?;
+        writeln!(self.writer,"Index\tKey Path\tSubkey Count\tValue Name\tValue Data\tTimestamp\tStatus\tPrevious Seq Num\tModifying Seq Num\tFlags\tAccess Flags\tValue Type\tLogs")?;
         for (index, key) in iter.iter().enumerate() {
             self.console.update_progress(index)?;
             self.write_key_tsv(&key, false)?;
@@ -54,7 +71,7 @@ impl WriteTsv {
             self.index += 1;
             writeln!(
                 self.writer,
-                "{index}\t{key_path}\t{value_name}\t{value_data}\t\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t\t\t{value_type}\t{logs}",
+                "{index}\t{key_path}\t\t{value_name}\t{value_data}\t\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t\t\t{value_type}\t{logs}",
                 index = self.index,
                 key_path = util::escape_string(&cell_key_node.path),
                 value_name = util::escape_string(&value.get_pretty_name()),
@@ -79,9 +96,10 @@ impl WriteTsv {
             self.index += 1;
             writeln!(
                 self.writer,
-                "{index}\t{key_path}\t\t\t{timestamp}\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t{flags:?}\t{access_flags:?}\t\t{logs}",
+                "{index}\t{key_path}\t{subkey_count}\t\t\t{timestamp}\t{status:?}\t{prev_seq_num}\t{mod_seq_num}\t{flags:?}\t{access_flags:?}\t\t{logs}",
                 index = self.index,
                 key_path = util::escape_string(&cell_key_node.path),
+                subkey_count = &cell_key_node.cell_sub_key_offsets_absolute.len(),
                 timestamp = util::format_date_time(cell_key_node.last_key_written_date_and_time()),
                 status = cell_key_node.cell_state,
                 prev_seq_num = Self::get_sequence_num_string(cell_key_node.sequence_num),

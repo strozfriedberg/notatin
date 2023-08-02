@@ -1,3 +1,19 @@
+/*
+ * Copyright 2023 Aon Cyber Solutions
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 use notatin::{
     cell::{Cell, CellState},
     cell_key_node::CellKeyNode,
@@ -8,7 +24,7 @@ use notatin::{
     parser::{Parser, ParserIterator},
     progress, util,
 };
-use std::{borrow::Cow, convert::TryFrom};
+use std::{borrow::Cow, convert::TryFrom, path::*};
 use xlsxwriter::format::{FormatBorder, FormatColor, FormatUnderline};
 use xlsxwriter::{Format, Workbook, Worksheet, XlsxError};
 
@@ -23,18 +39,21 @@ impl WriteXlsx {
     const COL_WIDTH_WIDE: f64 = 50.0;
     const COL_WIDTH_NARROW: f64 = 23.0;
     const COL_WIDTH_TINY: f64 = 6.0;
+
     const COL_INDEX: u16 = 0;
     const COL_KEY_PATH: u16 = 1;
-    const COL_VALUE_NAME: u16 = 2;
-    const COL_VALUE_DATA: u16 = 3;
-    const COL_TIMESTAMP: u16 = 4;
-    const COL_STATUS: u16 = 5;
-    const COL_PREV_SEQ_NUM: u16 = 6;
-    const COL_MOD_SEQ_NUM: u16 = 7;
-    const COL_FLAGS: u16 = 8;
-    const COL_ACCESS_FLAGS: u16 = 9;
-    const COL_VALUE_TYPE: u16 = 10;
-    const COL_LOGS: u16 = 11;
+    const COL_SUBKEY_COUNT: u16 = 2;
+    const COL_VALUE_NAME: u16 = 3;
+    const COL_VALUE_DATA: u16 = 4;
+    const COL_TIMESTAMP: u16 = 5;
+    const COL_STATUS: u16 = 6;
+    const COL_PREV_SEQ_NUM: u16 = 7;
+    const COL_MOD_SEQ_NUM: u16 = 8;
+    const COL_FLAGS: u16 = 9;
+    const COL_ACCESS_FLAGS: u16 = 10;
+    const COL_VALUE_TYPE: u16 = 11;
+    const COL_LOGS: u16 = 12;
+
     const MAX_EXCEL_CELL_LEN: usize = 32767;
     const MAX_TRUNCATED_CHARS: usize = 250;
     const TRUNCATED: &'static str = "truncated";
@@ -43,9 +62,9 @@ impl WriteXlsx {
     const COLOR_DARK_GREY: u32 = 0x808080;
     const COLOR_DARK_RED: u32 = 0xA51B1B;
 
-    pub(crate) fn new(output: &str, recovered_only: bool) -> Result<Self, XlsxError> {
+    pub(crate) fn new(output: impl AsRef<Path>, recovered_only: bool) -> Result<Self, XlsxError> {
         Ok(WriteXlsx {
-            workbook: Workbook::new(output)?,
+            workbook: Workbook::new(&output.as_ref().to_string_lossy())?,
             recovered_only,
             console: progress::new(true),
         })
@@ -93,6 +112,7 @@ impl WriteXlsx {
 
         reg_items_sheet.write_string(Self::COL_INDEX, "Index")?;
         reg_items_sheet.write_string(Self::COL_KEY_PATH, "Key Path")?;
+        reg_items_sheet.write_string(Self::COL_SUBKEY_COUNT, "Subkey Count")?;
         reg_items_sheet.write_string(Self::COL_VALUE_NAME, "Value Name")?;
         reg_items_sheet.write_string(Self::COL_VALUE_DATA, "Value Data")?;
         reg_items_sheet.write_string(Self::COL_TIMESTAMP, "Timestamp")?;
@@ -158,6 +178,10 @@ impl WriteXlsx {
                 Self::COL_KEY_PATH,
                 &sanitize_for_xml_1_0(&cell_key_node.path),
                 &link_format,
+            )?;
+            reg_items_sheet.write_number(
+                Self::COL_SUBKEY_COUNT,
+                cell_key_node.cell_sub_key_offsets_absolute.len() as f64,
             )?;
             reg_items_sheet.write_string(
                 Self::COL_TIMESTAMP,

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Aon Cyber Solutions
+ * Copyright 2023 Aon Cyber Solutions
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(None, read_range_checked(&buffer, 5, 0));
         assert_eq!(None, read_range_checked(&buffer, 5, 1));
         assert_eq!(Some(ret0), read_range_checked(&buffer, 0, 2));
-        assert_eq!(Some(ret1), read_range_checked(&buffer, 1, 3 ));
+        assert_eq!(Some(ret1), read_range_checked(&buffer, 1, 3));
         assert_eq!(Some(ret4), read_range_checked(&buffer, 4, 1));
     }
 }
