@@ -376,6 +376,18 @@ impl CellKeyNode {
         get_deleted_and_modified: bool,
     ) -> (Vec<Self>, bool) {
         if self.cell_state == CellState::Allocated {
+            // Sanity check to prevent OOM with recovered data
+            if self.detail.number_of_sub_keys() > 1024 * 1024 {
+                self.logs.add(
+                    LogCode::WarningParse,
+                    &format!(
+                        "read_values error: too many subkeys: {}",
+                        self.detail.number_of_sub_keys()
+                    ),
+                );
+                return (vec![], false);
+            }
+
             let mut children = Vec::with_capacity(self.detail.number_of_sub_keys() as usize);
             let mut found_key = false;
             if self.detail.number_of_sub_keys() > 0 {
@@ -640,6 +652,18 @@ impl CellKeyNode {
         if self.detail.key_values_list_offset_relative() > 0
             && (self.detail.key_values_list_offset_relative() as usize) < file_info.buffer.len()
         {
+            // Sanity check to prevent OOM with recovered data
+            if self.detail.number_of_key_values() > 1024 * 1024 {
+                self.logs.add(
+                    LogCode::WarningParse,
+                    &format!(
+                        "read_values error: too many values: {}",
+                        (self.detail.number_of_key_values()),
+                    ),
+                );
+                return Ok(());
+            }
+
             self.sub_values = Vec::with_capacity(self.detail.number_of_key_values() as usize);
             let (_, key_values) = Self::parse_key_values(
                 file_info,
