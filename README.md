@@ -1,19 +1,19 @@
 # Notatin
 
-Notatin is a Rust parser for offline Windows Registry files. This project is currently pre-release and should not be used for active investigations.
+Notatin is a Rust library for parsing offline Windows Registry files. It includes Python bindings for the library (pynotattin) and binaries for working directly with registry files.
 
 ## Features
- - Implemented using 100% safe Rust and works on all platforms supported by Rust (that have stdlib). Tested in Windows and Ubuntu.
- - Supports applying transaction logs and recovering deleted and modified keys and values.
+ - Implemented using 100% safe Rust, and works on all platforms supported by Rust (that have stdlib). Tested in Windows and Ubuntu.
+ - Supports applying transaction logs, and recovering deleted and modified keys and values.
  - Supports exporting to JSONL, XLSX, TSV, and Eric Zimmerman's common registry format (https://github.com/EricZimmerman/Registry).
  - Python bindings are included in the project (pynotatin).
 
 ### notatin (crate)
- `notatin` is a library that parses Windows Registry files.
+ `notatin` is a library that parses offline Windows Registry files.
 
 ### reg_dump (utility)
-`reg_dump` is a binary utility provided with this crate. It parses primary registry files (with optional transaction logs) and exports to JSONL, XLSX, TSV, or common format.
-An optional key path filter may also be supplied. Optional recovery of deleted and prior versions of keys and values from the transaction log is also supported.
+`reg_dump` is a binary utility. It parses registry files, or a tree of registry files using the `--recurse` argument, and exports to JSONL, XLSX, TSV, or common format.
+An optional key path filter may also be supplied. Optional recovery of deleted and prior versions of keys and values is also supported.
 
 JSONL dumps _all_ the data. The `--full-field-info` argument will include file offset information for each field.
 
@@ -23,40 +23,41 @@ And, if you are focusing on recovered items, the `--recovered-only` argument wil
 Common dumps what common wants.
 
 ```
-Notatin Registry Dump 0.2
+Notatin Registry Dump 1.0.0
 
-USAGE:
-    reg_dump [FLAGS] [OPTIONS] -t <TYPE> --input <FILE(S)> --output <FILE>
+Usage: reg_dump [OPTIONS] --input <input> --output <output> -t <TYPE>
 
-FLAGS:
-        --full-field-info    Get the offset and length for each key/value field (applicable for jsonl output only)
-    -h, --help               Prints help information
-    -r, --recover            Recover deleted and versioned keys and values
-        --recovered-only     Only export recovered items (applicable for tsv and xlsx output only)
-    -V, --version            Prints version information
-
-OPTIONS:
-    -t <TYPE>                output type [default: jsonl]  [possible values: Jsonl, Common, Tsv, Xlsx]
-    -f, --filter <STRING>    Key path for filter (ex: 'ControlSet001\Services')
-    -i, --input <FILE(S)>    Base registry file with optional transaction log(s) (Comma separated list)
-    -o, --output <FILE>      Output file
+Options:
+  -i, --input <input>      Base registry file, or root folder if recursing
+  -o, --output <output>    Output file. or folder if recursing
+  -t <TYPE>                output type [default: jsonl] [possible values: jsonl, xlsx, tsv, common]
+      --recurse            Recurse through input looking for registry files
+  -r, --recover            Recover deleted and versioned keys and values
+      --recovered-only     Only export recovered items (applicable to tsv and xlsx output)
+      --full-field-info    Get the offset and length for each key/value field (applicable to jsonl output)
+  -s, --skip-logs          Skip transaction log files
+  -f, --filter [<STRING>]  Key path for filter (ex: 'ControlSet001\Services')
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 ### reg_compare (utility)
-`reg_compare` is a binary utility provided with this crate. It will compare two registry files (with optional transaction logs) and produce a report of the differences
-in a format similar to that of Regshot.
+`reg_compare` is a binary utility. It will compare two registry files, or trees of files using `--recurse` argument (the structure of the trees must match). The default output is a report of the differences
+in a format similar to that of Regshot. The `--diff` argument will format the results in a unified diff format.
 
 ```
-Notatin Registry Compare 0.1
+Usage: reg_compare [OPTIONS] --base <base> --compare <compare> --output <output>
 
-USAGE:
-    reg_compare [OPTIONS] --base <FILES> --comparison <FILES> --output <FILE>
-
-OPTIONS:
-    -b, --base <FILES>          Base registry file with optional transaction file(s) (Comma separated list)
-    -c, --comparison <FILES>    Comparison registry file with optional transaction file(s) (Comma separated list)
-    -f, --filter <STRING>       Key path for filter (ex: 'ControlSet001\Services')
-    -o, --output <FILE>         Output file
+Options:
+  -b, --base <base>        Base registry file or root folder to search
+  -c, --compare <compare>  Registry file or root folder to search for comparison
+  -o, --output <output>    Output file or folder
+      --recurse            Recurse through base and comparison folders looking for registry files; file trees must match
+  -f, --filter [<STRING>]  Key path for filter (ex: 'ControlSet001\Services')
+  -d, --diff               Export unified diff format output
+  -s, --skip-logs          Skip transaction log files
+  -h, --help               Print help
+  -V, --version            Print version
 ```
 
 ## Library usage
@@ -100,10 +101,6 @@ let filter = FilterBuilder::new()
     .build();
 ```
 
-## Upcoming improvements
- - Support for optional Hachoir-light style struct information
- - Improve performance of transaction log analysis
-
  ## What is Notatin?
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
  It is present in honey because honeybees synthesize the enzyme and deposit it into the honey, where it acts as a natural preservative.
@@ -112,4 +109,4 @@ let filter = FilterBuilder::new()
  * https://en.wikipedia.org/wiki/Windows_Registry#Hives
 
  ## Copyright
- Copyright 2021 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.
+ Copyright 2023 Aon Cyber Solutions. Notatin is licensed under the Apache License, Version 2.0.
