@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
- use notatin::{
+use notatin::{
     cell::Cell,
     cell_key_node::CellKeyNode,
     cell_key_value::CellKeyValue,

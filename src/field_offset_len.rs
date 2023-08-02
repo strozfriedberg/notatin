@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
- use serde::Serialize;
+use serde::Serialize;
 
 pub(crate) trait FieldTrait<T: Default + 'static> {
     fn value(&self) -> T;

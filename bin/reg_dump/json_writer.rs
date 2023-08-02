@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
- use notatin::{
+use notatin::{
     err::Error,
     filter::Filter,
     parser::{Parser, ParserIterator},
