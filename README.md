@@ -101,6 +101,9 @@ let filter = FilterBuilder::new()
     .build();
 ```
 
+### pynotatin (Python bindings)
+Please see the pynotatin README.md for details on using pynotatin.
+
  ## What is Notatin?
  _Notatin_ is another name for the enzyme glucose oxidase. Glucose oxidase catalyzes the oxidation of glucose to hydrogen peroxide.
  It is present in honey because honeybees synthesize the enzyme and deposit it into the honey, where it acts as a natural preservative.
