@@ -35,7 +35,7 @@ pub(crate) struct WriteTsv {
 }
 
 impl WriteTsv {
-    pub(crate) fn new(output: &dyn AsRef<Path>, recovered_only: bool) -> Result<Self, Error> {
+    pub(crate) fn new<P: AsRef<Path>>(output: &P, recovered_only: bool) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
         Ok(WriteTsv {

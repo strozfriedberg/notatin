@@ -32,7 +32,7 @@ pub(crate) struct WriteCommon {
 }
 
 impl WriteCommon {
-    pub(crate) fn new(output: &dyn AsRef<Path>) -> Result<Self, Error> {
+    pub(crate) fn new<P: AsRef<Path>>(output: &P) -> Result<Self, Error> {
         let write_file = File::create(output)?;
         let writer = BufWriter::new(write_file);
         Ok(WriteCommon { writer })

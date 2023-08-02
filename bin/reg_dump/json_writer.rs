@@ -27,8 +27,8 @@ use std::path::*;
 pub(crate) struct WriteJson {}
 
 impl WriteJson {
-    pub(crate) fn write(
-        out_path: &dyn AsRef<Path>,
+    pub(crate) fn write<P: AsRef<Path>>(
+        out_path: &P,
         parser: &Parser,
         filter: Option<Filter>,
         console: &mut Box<dyn progress::UpdateProgressTrait>,
