@@ -64,10 +64,10 @@ fn main() -> Result<(), Error> {
                 .default_value("jsonl"),
         )
         .arg(arg!(
-            --recurse "Recurse through input looking for registry files"
+            -r --recurse "Recurse through input looking for registry files"
         ))
         .arg(arg!(
-            -r --recover "Recover deleted and versioned keys and values"
+            --recover "Recover deleted and versioned keys and values"
         ))
         .arg(arg!(
             --"recovered-only" "Only export recovered items (applicable to tsv and xlsx output)"

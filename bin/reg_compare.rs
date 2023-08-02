@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
         .required(true)
         .number_of_values(1))
     .arg(arg!(
-        --recurse "Recurse through base and comparison folders looking for registry files; file trees must match"
+        -r --recurse "Recurse through base and comparison folders looking for registry files; file trees must match"
     ))
     .arg(arg!(-f --filter [STRING] "Key path for filter (ex: 'ControlSet001\\Services')"))
     .arg(arg!(

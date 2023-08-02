@@ -31,8 +31,8 @@ Options:
   -i, --input <input>      Base registry file, or root folder if recursing
   -o, --output <output>    Output file. or folder if recursing
   -t <TYPE>                output type [default: jsonl] [possible values: jsonl, xlsx, tsv, common]
-      --recurse            Recurse through input looking for registry files
-  -r, --recover            Recover deleted and versioned keys and values
+  -r, --recurse            Recurse through input looking for registry files
+      --recover            Recover deleted and versioned keys and values
       --recovered-only     Only export recovered items (applicable to tsv and xlsx output)
       --full-field-info    Get the offset and length for each key/value field (applicable to jsonl output)
   -s, --skip-logs          Skip transaction log files
@@ -52,7 +52,7 @@ Options:
   -b, --base <base>        Base registry file or root folder to search
   -c, --compare <compare>  Registry file or root folder to search for comparison
   -o, --output <output>    Output file or folder
-      --recurse            Recurse through base and comparison folders looking for registry files; file trees must match
+  -r, --recurse            Recurse through base and comparison folders looking for registry files; file trees must match
   -f, --filter [<STRING>]  Key path for filter (ex: 'ControlSet001\Services')
   -d, --diff               Export unified diff format output
   -s, --skip-logs          Skip transaction log files
