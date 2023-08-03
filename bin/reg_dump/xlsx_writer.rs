@@ -304,15 +304,15 @@ impl WriteXlsx {
 
     fn safe_split_at(val: &str, max_split: usize) -> (String, String) {
         let offset = std::cmp::min(max_split, val.len());
-        let iter = val.char_indices();
-        let chunk = iter.clone().take(offset).map(|v| v.1).collect();
-        let remain = iter.skip(offset).map(|v| v.1).collect();
+        let iter = val.chars();
+        let chunk = iter.clone().take(offset).collect();
+        let remain = iter.skip(offset).collect();
         (chunk, remain)
     }
 
     fn safe_truncate(val: &str, max_split: usize) -> String {
         let offset = std::cmp::min(max_split, val.len());
-        val.char_indices().take(offset).map(|v| v.1).collect()
+        val.chars().take(offset).collect()
     }
 
     fn write_string_handle_overflow(
