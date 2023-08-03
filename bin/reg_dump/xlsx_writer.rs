@@ -302,6 +302,19 @@ impl WriteXlsx {
         Ok(())
     }
 
+    fn safe_split_at(val: &str, max_split: usize) -> (String, String) {
+        let offset = std::cmp::min(max_split, val.len());
+        let iter = val.char_indices();
+        let chunk = iter.clone().take(offset).map(|v| v.1).collect();
+        let remain = iter.skip(offset).map(|v| v.1).collect();
+        (chunk, remain)
+    }
+
+    fn safe_truncate(val: &str, max_split: usize) -> String {
+        let offset = std::cmp::min(max_split, val.len());
+        val.char_indices().take(offset).map(|v| v.1).collect()
+    }
+
     fn write_string_handle_overflow(
         primary_sheet: &mut WorksheetState,
         overflow_sheet: &mut WorksheetState,
@@ -313,10 +326,9 @@ impl WriteXlsx {
             let full_val = val.into_owned();
 
             let mut full_val_chunks = vec![];
-            let mut full_val_cur: &str = &full_val;
+            let mut full_val_cur: String = full_val.to_string();
             while !full_val_cur.is_empty() {
-                let (chunk, rest) = full_val_cur
-                    .split_at(std::cmp::min(Self::MAX_EXCEL_CELL_LEN, full_val_cur.len()));
+                let (chunk, rest) = Self::safe_split_at(&full_val_cur, Self::MAX_EXCEL_CELL_LEN);
                 full_val_chunks.push(chunk);
                 full_val_cur = rest;
             }
@@ -335,9 +347,10 @@ impl WriteXlsx {
                 Some(link_format),
             )?;
 
-            let mut sample = full_val.clone();
-            sample.truncate(Self::MAX_TRUNCATED_CHARS);
+            let mut sample = full_val;
+            sample = Self::safe_truncate(&sample, Self::MAX_TRUNCATED_CHARS);
             sample += &truncated_label;
+
             primary_sheet.sheet.write_string(
                 primary_sheet.row,
                 primary_sheet_col,
@@ -474,4 +487,57 @@ impl<'a> WorksheetState<'a> {
             self.upper_border = false;
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_safe_truncate() {
+        assert_eq!(
+            WriteXlsx::safe_truncate("test1", 2).as_str(),
+            "te"
+        );
+        assert_eq!(
+            WriteXlsx::safe_truncate("test1", 5).as_str(),
+            "test1"
+        );
+        assert_eq!(
+            WriteXlsx::safe_truncate("test1", 6).as_str(),
+            "test1"
+        );
+        assert_eq!(
+            WriteXlsx::safe_truncate("ab\u{AB30}cd", 1).as_str(),
+            "a"
+        );
+        assert_eq!(
+            WriteXlsx::safe_truncate("ab\u{AB30}cd", 3).as_str(),
+            "ab\u{AB30}"
+        );
+    }
+
+    #[test]
+    fn test_safe_split_at() {
+        assert_eq!(
+            WriteXlsx::safe_split_at("test1", 2),
+            ("te".to_string(), "st1".to_string())
+        );
+        assert_eq!(
+            WriteXlsx::safe_split_at("test1", 5),
+            ("test1".to_string(), "".to_string())
+        );
+        assert_eq!(
+            WriteXlsx::safe_split_at("test1", 6),
+            ("test1".to_string(), "".to_string())
+        );
+        assert_eq!(
+            WriteXlsx::safe_split_at("ab\u{AB30}cd", 1),
+            ("a".to_string(), "b\u{AB30}cd".to_string())
+        );
+        assert_eq!(
+            WriteXlsx::safe_split_at("ab\u{AB30}cd", 3),
+            ("ab\u{AB30}".to_string(), "cd".to_string())
+        );
+}
 }
