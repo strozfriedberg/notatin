@@ -390,14 +390,11 @@ impl Parser {
         &self,
         iter_context: &mut ParserIteratorContext,
     ) -> Option<CellKeyNode> {
+        // not using 'while let' here because we don't want to pop stack_to_traverse in the event that we return something from stack_to_return
         while !iter_context.stack_to_traverse.is_empty() {
             // first check to see if we are done with anything on stack_to_return;
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
-            if !iter_context.stack_to_return.is_empty() {
-                let last = iter_context
-                    .stack_to_return
-                    .last()
-                    .expect("Just checked that stack_to_return wasn't empty");
+            if let Some(last) = iter_context.stack_to_return.last() {
                 if last.iteration_state.track_returned == last.iteration_state.to_return {
                     return Some(
                         iter_context
@@ -408,31 +405,29 @@ impl Parser {
                 }
             }
 
-            let mut node = iter_context
-                .stack_to_traverse
-                .pop()
-                .expect("Just checked that stack_to_traverse wasn't empty");
-            if node.detail.number_of_sub_keys() > 0 {
-                let (children, _) = node.read_sub_keys_internal(
-                    &self.file_info,
-                    &mut iter_context.state,
-                    &iter_context.filter,
-                    None,
-                    iter_context.get_modified_items,
-                );
-                node.iteration_state.to_return = children.len() as u32;
-                for c in children.into_iter().rev() {
-                    iter_context.stack_to_traverse.push(c);
+            if let Some(mut node) = iter_context.pop_stack_to_traverse() {
+                if node.detail.number_of_sub_keys() > 0 {
+                    let (children, _) = node.read_sub_keys_internal(
+                        &self.file_info,
+                        &mut iter_context.state,
+                        &iter_context.filter,
+                        None,
+                        iter_context.get_modified_items,
+                    );
+                    node.iteration_state.to_return = children.len() as u32;
+                    for c in children.into_iter().rev() {
+                        let _ = iter_context.push_stack_to_traverse(c);
+                    }
                 }
+                if !iter_context.stack_to_return.is_empty() {
+                    let last = iter_context
+                        .stack_to_return
+                        .last_mut()
+                        .expect("Just checked that stack_to_return wasn't empty");
+                    last.iteration_state.track_returned += 1;
+                }
+                iter_context.stack_to_return.push(node);
             }
-            if !iter_context.stack_to_return.is_empty() {
-                let last = iter_context
-                    .stack_to_return
-                    .last_mut()
-                    .expect("Just checked that stack_to_return wasn't empty");
-                last.iteration_state.track_returned += 1;
-            }
-            iter_context.stack_to_return.push(node);
         }
 
         // Handle any remaining elements
@@ -634,13 +629,7 @@ impl ParserIteratorContext {
     fn pop_stack_to_traverse(
         &mut self
     ) -> Option<CellKeyNode> {
-        match self.stack_to_traverse.pop() {
-            Some(node) => {
-                //self.stack_file_offsets.remove(&node.file_offset_absolute);
-                Some(node)
-            },
-            None => None
-        }
+        self.stack_to_traverse.pop()
     }
 }
 
