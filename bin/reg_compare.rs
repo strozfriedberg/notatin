@@ -41,7 +41,7 @@ use walkdir::WalkDir;
 
 fn main() -> Result<(), Error> {
     let matches = Command::new("Notatin Registry Compare")
-    .version("1.0.0")
+    .version("1.0.1")
     .arg(Arg::new("base")
         .short('b')
         .long("base")

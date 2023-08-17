@@ -498,7 +498,7 @@ dependencies = [
 
 [[package]]
 name = "notatin"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "bitflags 2.3.3",
  "blake3",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "pynotatin"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "csv",
