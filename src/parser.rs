@@ -416,8 +416,12 @@ impl Parser {
                     );
                     node.iteration_state.to_return = children.len() as u32;
                     for c in children.into_iter().rev() {
-                        let _ = iter_context.push_stack_to_traverse(c);
+                        let _ = iter_context.push_check_stack_to_traverse(c);
                     }
+                }
+                for d in node.deleted_keys.iter_mut() {
+                    d.iteration_state.filter_state = node.iteration_state.filter_state;
+                    let _ = iter_context.stack_to_traverse.push(d.clone()); // just push - don't call push_check_stack_to_traverse becase we don't follow deleted keys
                 }
                 if !iter_context.stack_to_return.is_empty() {
                     let last = iter_context
@@ -460,12 +464,12 @@ impl Parser {
                 );
                 node.iteration_state.to_return = children.len() as u32;
                 for c in children.into_iter().rev() {
-                    let _ = iter_context.push_stack_to_traverse(c);
+                    let _ = iter_context.push_check_stack_to_traverse(c);
                 }
             }
             for d in node.deleted_keys.iter_mut() {
                 d.iteration_state.filter_state = node.iteration_state.filter_state;
-                let _ = iter_context.push_stack_to_traverse(d.clone());
+                let _ = iter_context.stack_to_traverse.push(d.clone()); // just push - don't call push_check_stack_to_traverse becase we don't follow deleted keys
             }
             if iter_context.filter_include_ancestors
                 || !iter_context.filter.is_valid()
@@ -608,16 +612,16 @@ impl ParserIteratorContext {
         }
     }
 
-    fn push_stack_to_traverse(&mut self, node_to_add: CellKeyNode) -> Result<(), Error> {
+    fn push_check_stack_to_traverse(&mut self, node_to_add: CellKeyNode) -> Result<(), Error> {
         // Make sure the offset of what we're about to add is not the same as the offset of the current node, or of another node we are going to process.
-        // Otherwise we have a circular reference (this should only happen with a deleted node, or in recovery mode)
+        // Otherwise we could have a circular reference (this should only happen in recovery mode)
         if self
             .stack_file_offsets
             .get(&node_to_add.file_offset_absolute)
             .is_some()
         {
             Err(Error::Any {
-                detail: format!("Attempting to add node with same file offset as another node we have processed (circular reference): {}", node_to_add.file_offset_absolute),
+                detail: format!("Attempting to add node with same file offset as another node we have processed (potential circular reference): {}", node_to_add.file_offset_absolute),
             })
         } else {
             self.stack_file_offsets
@@ -764,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+   // #[ignore]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
         let mut parser = ParserBuilder::from_path("test_data/system")
@@ -1103,7 +1107,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(1, iter_context.stack_to_traverse.len()); // initially it has the root node to traverse
-        assert_eq!(Ok(()), iter_context.push_stack_to_traverse(node10));
+        assert_eq!(Ok(()), iter_context.push_check_stack_to_traverse(node10));
         assert_eq!(2, iter_context.stack_to_traverse.len());
         let ret = iter_context.stack_file_offsets.get(&10);
         assert_eq!(&10, ret.unwrap());
@@ -1112,9 +1116,9 @@ mod tests {
             file_offset_absolute: 10,
             ..Default::default()
         };
-        let ret = iter_context.push_stack_to_traverse(node10_2.clone());
+        let ret = iter_context.push_check_stack_to_traverse(node10_2.clone());
         assert_eq!(Err(Error::Any {
-            detail: format!("Attempting to add node with same file offset as another node we have processed (circular reference): {}", node10_2.file_offset_absolute),
+            detail: format!("Attempting to add node with same file offset as another node we have processed (potential circular reference): {}", node10_2.file_offset_absolute),
         })
         , ret);
         Ok(())
@@ -1129,7 +1133,7 @@ mod tests {
             file_offset_absolute: 10,
             ..Default::default()
         };
-        assert_eq!(Ok(()), iter_context.push_stack_to_traverse(node10));
+        assert_eq!(Ok(()), iter_context.push_check_stack_to_traverse(node10));
         let ret = iter_context.pop_stack_to_traverse();
         assert_eq!(10, ret.unwrap().file_offset_absolute);
 
