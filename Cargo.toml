@@ -1,6 +1,6 @@
 [package]
 name = "notatin"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Kimberly Stone <kimberly.stone@aon.com>", "Joel Uckelman <juckelman@strozfriedberg.co.uk>"]
 edition = "2018"
 license = "Apache-2.0"
