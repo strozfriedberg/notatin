@@ -608,27 +608,26 @@ impl ParserIteratorContext {
         }
     }
 
-    fn push_stack_to_traverse(
-        &mut self,
-        node_to_add: CellKeyNode
-    ) -> Result<(), Error> {
+    fn push_stack_to_traverse(&mut self, node_to_add: CellKeyNode) -> Result<(), Error> {
         // Make sure the offset of what we're about to add is not the same as the offset of the current node, or of another node we are going to process.
         // Otherwise we have a circular reference (this should only happen with a deleted node, or in recovery mode)
-        if self.stack_file_offsets.get(&node_to_add.file_offset_absolute).is_some() {
+        if self
+            .stack_file_offsets
+            .get(&node_to_add.file_offset_absolute)
+            .is_some()
+        {
             Err(Error::Any {
                 detail: format!("Attempting to add node with same file offset as another node we have processed (circular reference): {}", node_to_add.file_offset_absolute),
             })
-        }
-        else {
-            self.stack_file_offsets.insert(node_to_add.file_offset_absolute);
+        } else {
+            self.stack_file_offsets
+                .insert(node_to_add.file_offset_absolute);
             self.stack_to_traverse.push(node_to_add);
             Ok(())
         }
     }
 
-    fn pop_stack_to_traverse(
-        &mut self
-    ) -> Option<CellKeyNode> {
+    fn pop_stack_to_traverse(&mut self) -> Option<CellKeyNode> {
         self.stack_to_traverse.pop()
     }
 }
@@ -1096,8 +1095,7 @@ mod tests {
 
     #[test]
     fn test_push_stack_to_traverse() -> Result<(), Error> {
-        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()?;
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
 
         let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
         let node10 = CellKeyNode {
@@ -1124,8 +1122,7 @@ mod tests {
 
     #[test]
     fn test_pop_stack_to_traverse() -> Result<(), Error> {
-        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT")
-            .build()?;
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
 
         let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
         let node10 = CellKeyNode {
