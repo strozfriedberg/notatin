@@ -96,15 +96,15 @@ mod tests {
     fn test_get_log_name() {
         assert_eq!(
             PathBuf::from("/mnt/d/tmp/ntuser.dat.LOG1"),
-            get_log_name(&Path::new("/mnt/d/tmp"), "NTUSER.DAT", "LOG1")
+            get_log_name(Path::new("/mnt/d/tmp"), "NTUSER.DAT", "LOG1")
         );
         assert_eq!(
             PathBuf::from("/mnt/d/tmp/UsrClass.dat.LOG2"),
-            get_log_name(&Path::new("/mnt/d/tmp"), "UsrClass.DAT", "LOG2")
+            get_log_name(Path::new("/mnt/d/tmp"), "UsrClass.DAT", "LOG2")
         );
         assert_eq!(
             PathBuf::from("/mnt/d/tmp/SYSTEM.LOG2"),
-            get_log_name(&Path::new("/mnt/d/tmp"), "SYSTEM", "LOG2")
+            get_log_name(Path::new("/mnt/d/tmp"), "SYSTEM", "LOG2")
         );
     }
 }
