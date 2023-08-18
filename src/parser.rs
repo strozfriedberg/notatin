@@ -421,7 +421,7 @@ impl Parser {
                 }
                 for d in node.deleted_keys.iter_mut() {
                     d.iteration_state.filter_state = node.iteration_state.filter_state;
-                    let _ = iter_context.stack_to_traverse.push(d.clone()); // just push - don't call push_check_stack_to_traverse becase we don't follow deleted keys. (Also, log errors todo ^^.)
+                    let _ = iter_context.stack_to_traverse.push(d.clone()); // just push directly; don't call push_check_stack_to_traverse because we don't follow deleted keys. (Also, log errors todo ^^.)
                 }
                 if !iter_context.stack_to_return.is_empty() {
                     let last = iter_context
@@ -469,7 +469,7 @@ impl Parser {
             }
             for d in node.deleted_keys.iter_mut() {
                 d.iteration_state.filter_state = node.iteration_state.filter_state;
-                let _ = iter_context.stack_to_traverse.push(d.clone()); // just push - don't call push_check_stack_to_traverse becase we don't follow deleted keys
+                let _ = iter_context.stack_to_traverse.push(d.clone()); // just push directly; don't call push_check_stack_to_traverse because we don't follow deleted keys
             }
             if iter_context.filter_include_ancestors
                 || !iter_context.filter.is_valid()
