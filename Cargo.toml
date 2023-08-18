@@ -1,8 +1,14 @@
 [package]
 name = "notatin"
-version = "1.0.0"
-authors = ["kimberly.stone <kimberly.stone@aon.com>"]
+version = "1.0.1"
+authors = ["Kimberly Stone <kimberly.stone@aon.com>", "Joel Uckelman <juckelman@strozfriedberg.co.uk>"]
 edition = "2018"
+license = "Apache-2.0"
+description = "Notatin is a Rust library for parsing offline Windows Registry files."
+repository = "https://github.com/strozfriedberg/notatin"
+readme = "README.md"
+keywords = ["forensic", "windows_registry", "parser"]
+categories = ["parser-implementations"]
 
 [dependencies]
 bitflags = ">= 2.3.1"

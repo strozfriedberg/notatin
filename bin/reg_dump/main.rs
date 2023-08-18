@@ -39,7 +39,7 @@ use xlsx_writer::WriteXlsx;
 
 fn main() -> Result<(), Error> {
     let matches = Command::new("Notatin Registry Dump")
-        .version("1.0.0")
+        .version("1.0.1")
         .arg(
             Arg::new("input")
                 .short('i')

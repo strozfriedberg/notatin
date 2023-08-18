@@ -25,6 +25,7 @@ use crate::parser_recover_deleted::ParserRecoverDeleted;
 use crate::progress;
 use crate::state::State;
 use crate::transaction_log::TransactionLog;
+use std::collections::BTreeSet;
 
 /* Structures based upon:
     https://github.com/libyal/libregf/blob/main/documentation/Windows%20NT%20Registry%20File%20(REGF)%20format.asciidoc
@@ -389,14 +390,11 @@ impl Parser {
         &self,
         iter_context: &mut ParserIteratorContext,
     ) -> Option<CellKeyNode> {
+        // not using 'while let' here because we don't want to pop stack_to_traverse in the event that we return something from stack_to_return
         while !iter_context.stack_to_traverse.is_empty() {
             // first check to see if we are done with anything on stack_to_return;
             // if so, we can pop, return it, and carry on (without this check we'd push every node onto the stack before returning anything)
-            if !iter_context.stack_to_return.is_empty() {
-                let last = iter_context
-                    .stack_to_return
-                    .last()
-                    .expect("Just checked that stack_to_return wasn't empty");
+            if let Some(last) = iter_context.stack_to_return.last() {
                 if last.iteration_state.track_returned == last.iteration_state.to_return {
                     return Some(
                         iter_context
@@ -407,31 +405,33 @@ impl Parser {
                 }
             }
 
-            let mut node = iter_context
-                .stack_to_traverse
-                .pop()
-                .expect("Just checked that stack_to_traverse wasn't empty");
-            if node.detail.number_of_sub_keys() > 0 {
-                let (children, _) = node.read_sub_keys_internal(
-                    &self.file_info,
-                    &mut iter_context.state,
-                    &iter_context.filter,
-                    None,
-                    iter_context.get_modified_items,
-                );
-                node.iteration_state.to_return = children.len() as u32;
-                for c in children.into_iter().rev() {
-                    iter_context.stack_to_traverse.push(c);
+            if let Some(mut node) = iter_context.pop_stack_to_traverse() {
+                if node.detail.number_of_sub_keys() > 0 {
+                    let (children, _) = node.read_sub_keys_internal(
+                        &self.file_info,
+                        &mut iter_context.state,
+                        &iter_context.filter,
+                        None,
+                        iter_context.get_modified_items,
+                    );
+                    node.iteration_state.to_return = children.len() as u32;
+                    for c in children.into_iter().rev() {
+                        let _ = iter_context.push_check_stack_to_traverse(c); // Come back to this. We should log if we get an error, but we need to rework things so self is mut, or pass in the logs directly.
+                    }
                 }
+                for d in node.deleted_keys.iter_mut() {
+                    d.iteration_state.filter_state = node.iteration_state.filter_state;
+                    let _ = iter_context.stack_to_traverse.push(d.clone()); // just push directly; don't call push_check_stack_to_traverse because we don't follow deleted keys. (Also, log errors todo ^^.)
+                }
+                if !iter_context.stack_to_return.is_empty() {
+                    let last = iter_context
+                        .stack_to_return
+                        .last_mut()
+                        .expect("Just checked that stack_to_return wasn't empty");
+                    last.iteration_state.track_returned += 1;
+                }
+                iter_context.stack_to_return.push(node);
             }
-            if !iter_context.stack_to_return.is_empty() {
-                let last = iter_context
-                    .stack_to_return
-                    .last_mut()
-                    .expect("Just checked that stack_to_return wasn't empty");
-                last.iteration_state.track_returned += 1;
-            }
-            iter_context.stack_to_return.push(node);
         }
 
         // Handle any remaining elements
@@ -453,11 +453,7 @@ impl Parser {
         &self,
         iter_context: &mut ParserIteratorContext,
     ) -> Option<CellKeyNode> {
-        while !iter_context.stack_to_traverse.is_empty() {
-            let mut node = iter_context
-                .stack_to_traverse
-                .pop()
-                .expect("Just checked that stack_to_traverse wasn't empty");
+        while let Some(mut node) = iter_context.pop_stack_to_traverse() {
             if node.detail.number_of_sub_keys() > 0 {
                 let (children, _) = node.read_sub_keys_internal(
                     &self.file_info,
@@ -468,12 +464,12 @@ impl Parser {
                 );
                 node.iteration_state.to_return = children.len() as u32;
                 for c in children.into_iter().rev() {
-                    iter_context.stack_to_traverse.push(c);
+                    let _ = iter_context.push_check_stack_to_traverse(c);
                 }
             }
             for d in node.deleted_keys.iter_mut() {
                 d.iteration_state.filter_state = node.iteration_state.filter_state;
-                iter_context.stack_to_traverse.push(d.clone());
+                let _ = iter_context.stack_to_traverse.push(d.clone()); // just push directly; don't call push_check_stack_to_traverse because we don't follow deleted keys
             }
             if iter_context.filter_include_ancestors
                 || !iter_context.filter.is_valid()
@@ -588,6 +584,7 @@ pub struct ParserIteratorContext {
     pub(crate) state: State,
     pub(crate) filter: Filter,
     stack_to_traverse: Vec<CellKeyNode>,
+    stack_file_offsets: BTreeSet<usize>,
     stack_to_return: Vec<CellKeyNode>,
     get_modified_items: bool,
     filter_include_ancestors: bool,
@@ -600,14 +597,39 @@ impl ParserIteratorContext {
         filter_and_ancestors: Option<(Filter, bool)>,
     ) -> Self {
         let (filter, filter_include_ancestors) = filter_and_ancestors.unwrap_or_default();
+
+        let root = parser.cell_key_node_root.clone().unwrap_or_default();
+        let mut stack_file_offsets = BTreeSet::new();
+        stack_file_offsets.insert(root.file_offset_absolute);
         ParserIteratorContext {
             state: parser.state.clone(),
             filter,
-            stack_to_traverse: vec![parser.cell_key_node_root.clone().unwrap_or_default()],
+            stack_to_traverse: vec![root],
+            stack_file_offsets,
             stack_to_return: vec![],
             get_modified_items,
             filter_include_ancestors,
         }
+    }
+
+    fn push_check_stack_to_traverse(&mut self, node_to_add: CellKeyNode) -> Result<(), Error> {
+        // Make sure the offset of what we're about to add is not the same as the offset of the current node, or of another node we are going to process.
+        // Otherwise we could have a circular reference (this should only happen in recovery mode)
+        if self
+            .stack_file_offsets
+            .insert(node_to_add.file_offset_absolute)
+        {
+            self.stack_to_traverse.push(node_to_add);
+            Ok(())
+        } else {
+            Err(Error::Any {
+                detail: format!("Attempting to add node with same file offset as another node we have processed (potential circular reference): {}", node_to_add.file_offset_absolute),
+            })
+        }
+    }
+
+    fn pop_stack_to_traverse(&mut self) -> Option<CellKeyNode> {
+        self.stack_to_traverse.pop()
     }
 }
 
@@ -743,7 +765,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
         let mut parser = ParserBuilder::from_path("test_data/system")
@@ -1069,6 +1090,49 @@ mod tests {
         );
         let kv = parser.count_all_keys_and_values(Some(&filter));
         assert_eq!((4, 4), kv);
+        Ok(())
+    }
+
+    #[test]
+    fn test_push_stack_to_traverse() -> Result<(), Error> {
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        let node10 = CellKeyNode {
+            file_offset_absolute: 10,
+            ..Default::default()
+        };
+        assert_eq!(1, iter_context.stack_to_traverse.len()); // initially it has the root node to traverse
+        assert_eq!(Ok(()), iter_context.push_check_stack_to_traverse(node10));
+        assert_eq!(2, iter_context.stack_to_traverse.len());
+        let ret = iter_context.stack_file_offsets.get(&10);
+        assert_eq!(&10, ret.unwrap());
+
+        let node10_2 = CellKeyNode {
+            file_offset_absolute: 10,
+            ..Default::default()
+        };
+        let ret = iter_context.push_check_stack_to_traverse(node10_2.clone());
+        assert_eq!(Err(Error::Any {
+            detail: format!("Attempting to add node with same file offset as another node we have processed (potential circular reference): {}", node10_2.file_offset_absolute),
+        })
+        , ret);
+        Ok(())
+    }
+
+    #[test]
+    fn test_pop_stack_to_traverse() -> Result<(), Error> {
+        let parser = ParserBuilder::from_path("test_data/NTUSER.DAT").build()?;
+
+        let mut iter_context = ParserIteratorContext::from_parser(&parser, true, None);
+        let node10 = CellKeyNode {
+            file_offset_absolute: 10,
+            ..Default::default()
+        };
+        assert_eq!(Ok(()), iter_context.push_check_stack_to_traverse(node10));
+        let ret = iter_context.pop_stack_to_traverse();
+        assert_eq!(10, ret.unwrap().file_offset_absolute);
+
         Ok(())
     }
 }

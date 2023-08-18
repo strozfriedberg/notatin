@@ -23,7 +23,7 @@ pub fn bench(c: &mut Criterion) {
         .measurement_time(std::time::Duration::from_secs(5))
         .bench_function("read small reg", |b| b.iter(test_read_small_reg))
         .bench_function("read small reg with deleted", |b| {
-            b.iter(|| test_read_small_reg_with_deleted())
+            b.iter(test_read_small_reg_with_deleted)
         });
     group1.finish();
 }

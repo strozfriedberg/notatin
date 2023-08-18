@@ -23,8 +23,6 @@ And, if you are focusing on recovered items, the `--recovered-only` argument wil
 Common dumps what common wants.
 
 ```
-Notatin Registry Dump 1.0.0
-
 Usage: reg_dump [OPTIONS] --input <input> --output <output> -t <TYPE>
 
 Options:
