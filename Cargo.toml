@@ -9,6 +9,9 @@ repository = "https://github.com/strozfriedberg/notatin"
 readme = "README.md"
 keywords = ["forensic", "windows_registry", "parser"]
 categories = ["parser-implementations"]
+exclude = [
+    "test_data/*",
+]
 
 [dependencies]
 bitflags = ">= 2.3.1"
