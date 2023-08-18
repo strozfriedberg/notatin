@@ -416,12 +416,12 @@ impl Parser {
                     );
                     node.iteration_state.to_return = children.len() as u32;
                     for c in children.into_iter().rev() {
-                        let _ = iter_context.push_check_stack_to_traverse(c);
+                        let _ = iter_context.push_check_stack_to_traverse(c); // Come back to this. We should log if we get an error, but we need to rework things so self is mut, or pass in the logs directly.
                     }
                 }
                 for d in node.deleted_keys.iter_mut() {
                     d.iteration_state.filter_state = node.iteration_state.filter_state;
-                    let _ = iter_context.stack_to_traverse.push(d.clone()); // just push - don't call push_check_stack_to_traverse becase we don't follow deleted keys
+                    let _ = iter_context.stack_to_traverse.push(d.clone()); // just push - don't call push_check_stack_to_traverse becase we don't follow deleted keys. (Also, log errors todo ^^.)
                 }
                 if !iter_context.stack_to_return.is_empty() {
                     let last = iter_context
@@ -617,17 +617,14 @@ impl ParserIteratorContext {
         // Otherwise we could have a circular reference (this should only happen in recovery mode)
         if self
             .stack_file_offsets
-            .get(&node_to_add.file_offset_absolute)
-            .is_some()
+            .insert(node_to_add.file_offset_absolute)
         {
+            self.stack_to_traverse.push(node_to_add);
+            Ok(())
+        } else {
             Err(Error::Any {
                 detail: format!("Attempting to add node with same file offset as another node we have processed (potential circular reference): {}", node_to_add.file_offset_absolute),
             })
-        } else {
-            self.stack_file_offsets
-                .insert(node_to_add.file_offset_absolute);
-            self.stack_to_traverse.push(node_to_add);
-            Ok(())
         }
     }
 
@@ -768,7 +765,6 @@ mod tests {
     }
 
     #[test]
-   // #[ignore]
     // this test is slow because log analysis is slow. Ideally we will speed up analysis, but would be good to find smaller sample data as well.
     fn test_reg_logs_no_filter() {
         let mut parser = ParserBuilder::from_path("test_data/system")

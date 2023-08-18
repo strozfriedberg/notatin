@@ -721,7 +721,8 @@ impl CellKeyNode {
             if let Some(deleted_keys) = state.deleted_keys.get(path) {
                 self.deleted_keys = deleted_keys.to_vec();
                 for dk in self.deleted_keys.iter_mut() {
-                    if dk.file_offset_absolute != self.file_offset_absolute { // prevent infinite loop
+                    if dk.file_offset_absolute != self.file_offset_absolute {
+                        // prevent infinite loop
                         dk.update_modified_lists(state);
                     }
                 }
