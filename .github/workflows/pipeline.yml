@@ -1,0 +1,31 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        rust: [stable]
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: ⚙️ Install Rust
+        run: |
+          rustup update ${{ matrix.rust }}
+          rustup default ${{ matrix.rust }}
+      - name: 🔨 Build
+        run: cargo build --verbose
+      - name: 🧪 Run Tests
+        run: cargo test --verbose
+      - name: 📎 Run Clippy
+        run: cargo clippy --release -- -D warnings

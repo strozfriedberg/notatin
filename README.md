@@ -1,5 +1,8 @@
 # Notatin
 
+[![Build Status](https://github.com/strozfriedberg/notatin/actions/workflows/pipeline.yml/badge.svg)](https://github.com/strozfriedberg/notatin/actions)
+[![crates.io](https://img.shields.io/crates/v/notatin.svg)](https://docs.rs/notatin/latest/notatin/)
+
 Notatin is a Rust library for parsing offline Windows Registry files. It includes Python bindings for the library (pynotatin) and binaries for working directly with registry files.
 
 ## Features
