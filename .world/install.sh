@@ -13,5 +13,5 @@ cp target/wheels/* $INSTALL/lib/python/pynotatin
 popd
 
 mkdir -p $INSTALL/bin
-cp release/reg_compare${EXE_EXT} $INSTALL/bin
-cp release/reg_dump${EXE_EXT} $INSTALL/bin
+cp target/release/reg_compare${EXE_EXT} $INSTALL/bin
+cp target/release/reg_dump${EXE_EXT} $INSTALL/bin
