@@ -2,10 +2,9 @@
 
 . .world/build_config.sh
 
-if [[ "$Linkage" == 'static' || ( "$Target" == 'windows' ) ]]; then
+if [[ "$Linkage" == 'static' || ("$Target" == 'windows') ]]; then
   exit
 fi
-
 
 cargo test
 cargo clippy --all-features --all-targets
@@ -17,7 +16,5 @@ cargo test --no-default-features # --no-default-features is specified to avoid a
 cargo clippy --all-features --all-targets
 poetry run maturin develop --release
 poetry run pytest
-
-poetry run maturin build  --interpreter $PYTHON --release
 
 popd
