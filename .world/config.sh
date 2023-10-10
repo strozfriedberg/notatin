@@ -7,5 +7,5 @@ if [[ "$Linkage" == 'static' || ( "$Target" == 'windows' ) ]]; then
 fi
 
 pushd pynotatin
-poetry lock --check && poetry install
+poetry lock --check && poetry install --no-cache
 popd
