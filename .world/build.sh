@@ -6,7 +6,7 @@ if [[ "$Linkage" == 'static' || ("$Target" == 'windows') ]]; then
   exit
 fi
 
-cargo test
+cargo test --all-features --all-targets
 cargo clippy --all-features --all-targets
 cargo build --release --features="build-binary"
 
