@@ -6,10 +6,12 @@ if [[ "$Linkage" == 'static' || ("$Target" == 'windows') ]]; then
   exit
 fi
 
+pushd pynotatin
+poetry config virtualenvs.in-project true --local
+
 if [[ "$Target" == 'windows_package' ]]; then
-  export POETRY_CACHE_DIR=pynotatin/.poetry
+  poetry config cache-dir .poetry --local
 fi
 
-pushd pynotatin
 poetry lock --check && poetry install --no-cache
 popd
