@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use nom::Parser;
 use crate::hive_bin_cell;
 use crate::log::Logs;
 use crate::util;
@@ -52,7 +53,7 @@ impl SubKeyListLf {
         let (input, _signature) = tag("lf")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, items) =
-            nom::multi::count(SubKeyListLfItem::from_bytes(), count.into())(input)?;
+            nom::multi::count(SubKeyListLfItem::from_bytes(), count.into()).parse(input)?;
         Ok((
             input,
             SubKeyListLf {

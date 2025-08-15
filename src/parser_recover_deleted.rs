@@ -22,7 +22,7 @@ use crate::file_info::FileInfo;
 use crate::hive_bin_header::HiveBinHeader;
 use crate::log::LogCode;
 use crate::state::State;
-use nom::{branch::alt, bytes::complete::tag, combinator::map, number::complete::le_i32, IResult};
+use nom::{branch::alt, bytes::complete::tag, combinator::map, number::complete::le_i32, IResult, Parser};
 
 pub(crate) struct ParserRecoverDeleted<'a> {
     pub file_info: &'a FileInfo,
@@ -208,7 +208,7 @@ impl<'a> ParserRecoverDeleted<'a> {
                 alt((
                     map(tag("nk"), |_| CellType::CellKey),
                     map(tag("vk"), |_| CellType::CellValue),
-                ))(b)
+                )).parse(b)
             }
 
             match cell_type(input) {

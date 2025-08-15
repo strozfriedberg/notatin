@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use nom::Parser as NomParser;
 use crate::cell::{Cell, CellState};
 use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
@@ -478,11 +479,12 @@ impl CellKeyNode {
                 code: nom::error::ErrorKind::Eof,
             }))?;
         let (slice, _size) = le_u32(slice)?;
-        let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
+        let (_, list) = count(le_u32, key_values_count as usize).parse(slice)?;
         Ok((slice, list))
     }
 
     /// Returns a vector of the absolute sub key offsets
+
     pub(crate) fn parse_sub_key_list(
         file_info: &FileInfo,
         state: &mut State,
@@ -493,6 +495,7 @@ impl CellKeyNode {
             .buffer
             .get(file_offset_absolute..)
             .ok_or_else(|| Error::buffer("parse_sub_key_list"))?;
+
         // We either have an lf/lh/li list here (offsets to subkey lists), or an ri list (offsets to offsets...)
         // Look for the ri list first and follow the pointers
         match SubKeyListRi::from_bytes(slice) {
@@ -502,7 +505,9 @@ impl CellKeyNode {
                     SubKeyListLf::from_bytes(),
                     SubKeyListLh::from_bytes(),
                     SubKeyListLi::from_bytes(),
-                ))(slice)?;
+                ))
+                    .parse(slice)?; // nom 7+ requires `.parse()`
+
                 Ok(cell_sub_key_list.get_offset_list(file_info.hbin_offset_absolute as u32))
             }
         }

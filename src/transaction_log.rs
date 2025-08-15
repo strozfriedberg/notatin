@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use nom::Parser as NomParser;
 use crate::base_block::BaseBlockBase;
 use crate::cell::{Cell, CellState};
 use crate::cell_key_node::{CellKeyNode, CellKeyNodeReadOptions};
@@ -105,7 +106,7 @@ impl LogEntry {
         let (input, hash1) = le_u64(input)?;
         let (input, hash2) = le_u64(input)?;
         let (mut input, dirty_page_refs) =
-            nom::multi::count(DirtyPageRef::from_bytes(), dirty_pages_count as usize)(input)?;
+            nom::multi::count(DirtyPageRef::from_bytes(), dirty_pages_count as usize).parse(input)?;
 
         let mut dirty_pages = Vec::new();
         for dirty_page_ref in dirty_page_refs {
@@ -175,7 +176,7 @@ impl TransactionLog {
         let start = input;
         let start_pos = input.as_ptr() as usize;
         let (input, base_block) = BaseBlockBase::from_bytes(input)?;
-        let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(start_pos))(input)?;
+        let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(start_pos)).parse(input)?;
         Ok((
             input,
             Self {

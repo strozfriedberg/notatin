@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use nom::Parser;
 use crate::hive_bin_cell;
 use nom::{
     bytes::complete::tag,
@@ -37,7 +38,7 @@ impl SubKeyListLi {
         let (input, _signature) = tag("li")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, items) =
-            nom::multi::count(SubKeyListLiItem::from_bytes(), count.into())(input)?;
+            nom::multi::count(SubKeyListLiItem::from_bytes(), count.into()).parse(input)?;
         Ok((
             input,
             SubKeyListLi {

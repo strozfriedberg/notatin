@@ -16,7 +16,7 @@
 
 use crate::err::Error;
 use crate::log::{LogCode, Logs};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use nom::{bytes::complete::take, IResult};
 use std::{
     borrow::Cow, char::REPLACEMENT_CHARACTER, convert::TryInto, fmt::Write as FmtWrite, mem, str,
@@ -152,12 +152,12 @@ pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
     let filetime_nanos: i128 = filetime as i128 * 100;
 
     // Add nanoseconds to timestamp via Duration
-    DateTime::<Utc>::from_utc(
-        chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
+    DateTime::from_naive_utc_and_offset(
+        NaiveDate::from_ymd_opt(1970, 1, 1)
             .expect("impossible")
             .and_hms_nano_opt(0, 0, 0, 0)
             .expect("impossible")
-            + chrono::Duration::nanoseconds((filetime_nanos - UNIX_EPOCH_NANOS) as i64),
+            + Duration::nanoseconds((filetime_nanos - UNIX_EPOCH_NANOS) as i64),
         Utc,
     )
 }
@@ -353,7 +353,7 @@ mod tests {
     fn test_get_date_time_from_filetime() {
         assert_eq!(
             1333727545146808300,
-            get_date_time_from_filetime(129782011451468083).timestamp_nanos()
+            get_date_time_from_filetime(129782011451468083).timestamp_nanos_opt().expect("failed to get timestamp")
         );
     }
 
