@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use nom::Parser;
 use crate::cell_key_value::{CellKeyValue, CellKeyValueDataTypes};
 use crate::err::Error;
 use crate::file_info::FileInfo;
@@ -125,7 +126,7 @@ impl CellBigData {
                 code: nom::error::ErrorKind::Eof,
             }))?;
         let (input, _size) = le_u32(slice)?;
-        let (_, list) = count(le_u32, self.count as usize)(input)?;
+        let (_, list) = count(le_u32, self.count as usize).parse(input)?;
         Ok((input, list))
     }
 }

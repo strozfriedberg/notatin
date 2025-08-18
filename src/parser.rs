@@ -714,7 +714,7 @@ mod tests {
         }
         assert_eq!(
             "7e0d357766857c0524cc78d622709da9",
-            format!("{:x}", md5_context.compute()),
+            format!("{:x}", md5_context.finalize()),
             "Expected hash of paths doesn't match"
         );
     }
@@ -867,7 +867,7 @@ mod tests {
         }
         assert_eq!(
             "c04d7a8f64b35f46bc93490701afbaf0",
-            format!("{:x}", md5_context.compute()),
+            format!("{:x}", md5_context.finalize()),
             "Expected hash of paths doesn't match"
         );
 

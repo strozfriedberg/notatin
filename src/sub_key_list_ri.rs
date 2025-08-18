@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use nom::Parser;
 use crate::cell_key_node::CellKeyNode;
 use crate::err::Error;
 use crate::file_info::FileInfo;
@@ -54,7 +55,7 @@ impl SubKeyListRi {
         let (input, _signature) = tag("ri")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, list_offsets) =
-            nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
+            nom::multi::count(parse_sub_key_list_ri_item(), count.into()).parse(input)?;
 
         Ok((
             input,
