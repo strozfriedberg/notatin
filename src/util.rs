@@ -99,7 +99,7 @@ pub(crate) fn from_ascii(slice: &[u8], logs: &mut Logs, err_detail: &str) -> Str
         if c.is_ascii() {
             result.push(c);
         } else {
-            let u = std::char::decode_utf16(vec![u16::from_le_bytes([*b, 0])].iter().cloned())
+            let u = std::char::decode_utf16([u16::from_le_bytes([*b, 0])].iter().cloned())
                 .map(|r| {
                     r.unwrap_or_else(|err| {
                         // error shouldn't happen here since we're constructing a valid UTF-16 char
@@ -353,7 +353,9 @@ mod tests {
     fn test_get_date_time_from_filetime() {
         assert_eq!(
             1333727545146808300,
-            get_date_time_from_filetime(129782011451468083).timestamp_nanos()
+            get_date_time_from_filetime(129782011451468083)
+                .timestamp_nanos_opt()
+                .unwrap()
         );
     }
 

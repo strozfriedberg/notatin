@@ -421,7 +421,7 @@ fn is_legal_xml_1_0(c: char) -> bool {
     )
 }
 
-fn sanitize_for_xml_1_0(s: &str) -> Cow<str> {
+fn sanitize_for_xml_1_0(s: &str) -> Cow<'_, str> {
     // Replace code points illegal in XML 1.0 with U+FFFD
     let i = s.chars().position(|c| !is_legal_xml_1_0(c));
     match i {
@@ -438,7 +438,7 @@ fn sanitize_for_xml_1_0(s: &str) -> Cow<str> {
     }
 }
 
-fn sanitize_cell(v: &CellValue) -> Cow<str> {
+fn sanitize_cell(v: &CellValue) -> Cow<'_, str> {
     match v {
         CellValue::String(v) => sanitize_for_xml_1_0(v),
         v => format!("{}", v).into(),
@@ -495,22 +495,10 @@ mod tests {
 
     #[test]
     fn test_safe_truncate() {
-        assert_eq!(
-            WriteXlsx::safe_truncate("test1", 2).as_str(),
-            "te"
-        );
-        assert_eq!(
-            WriteXlsx::safe_truncate("test1", 5).as_str(),
-            "test1"
-        );
-        assert_eq!(
-            WriteXlsx::safe_truncate("test1", 6).as_str(),
-            "test1"
-        );
-        assert_eq!(
-            WriteXlsx::safe_truncate("ab\u{AB30}cd", 1).as_str(),
-            "a"
-        );
+        assert_eq!(WriteXlsx::safe_truncate("test1", 2).as_str(), "te");
+        assert_eq!(WriteXlsx::safe_truncate("test1", 5).as_str(), "test1");
+        assert_eq!(WriteXlsx::safe_truncate("test1", 6).as_str(), "test1");
+        assert_eq!(WriteXlsx::safe_truncate("ab\u{AB30}cd", 1).as_str(), "a");
         assert_eq!(
             WriteXlsx::safe_truncate("ab\u{AB30}cd", 3).as_str(),
             "ab\u{AB30}"
@@ -539,5 +527,5 @@ mod tests {
             WriteXlsx::safe_split_at("ab\u{AB30}cd", 3),
             ("ab\u{AB30}".to_string(), "cd".to_string())
         );
-}
+    }
 }

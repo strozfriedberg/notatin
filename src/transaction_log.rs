@@ -155,7 +155,7 @@ impl LogEntry {
 
     fn calc_hash2(raw_bytes: &[u8]) -> u64 {
         const LENGTH: usize = 32;
-        let mut b = vec![0; LENGTH];
+        let mut b = [0; LENGTH];
         let dst = &mut b[0..LENGTH];
         let src = &raw_bytes[0..LENGTH];
         dst.copy_from_slice(src);

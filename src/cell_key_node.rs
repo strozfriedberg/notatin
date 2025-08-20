@@ -630,7 +630,7 @@ impl CellKeyNode {
         let (children, found_key) =
             self.read_sub_keys_internal(file_info, state, filter, sequence_num, false);
         if found_key {
-            match children.get(0) {
+            match children.first() {
                 Some(child) => return Some(child.clone()),
                 None => return None,
             }

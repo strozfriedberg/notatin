@@ -67,7 +67,7 @@ impl DeletedValueMap {
     }
 
     pub(crate) fn add(&mut self, key_path: &str, value: CellKeyValue) {
-        match self.map.get_mut(&key_path.to_string()) {
+        match self.map.get_mut(key_path) {
             Some(vec) => {
                 vec.push(value);
             }
@@ -78,7 +78,7 @@ impl DeletedValueMap {
     }
 
     pub(crate) fn get(&self, key_path: &str) -> Option<&Vec<CellKeyValue>> {
-        self.map.get(&key_path.to_string())
+        self.map.get(key_path)
     }
 
     pub(crate) fn remove(&mut self, key_path: &str, value_name: &str, hash: &Hash) {
