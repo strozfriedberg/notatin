@@ -18,14 +18,12 @@ use serde::Serialize;
 
 pub(crate) trait FieldTrait<T: Default + 'static> {
     fn value(&self) -> T;
-    fn set(&mut self, val: T);
     fn offset(&self) -> usize;
     fn len(&self) -> u32;
 
     // This trait exists only to support FieldLight and FieldFull, so rather than
     // using a more generic Any/downcast approach to get the specific typed value
     // we instead have these functions
-    fn get_field_light(&self) -> Option<&FieldLight<T>>;
     fn get_field_full(&self) -> Option<&FieldFull<T>>;
 }
 
@@ -40,17 +38,11 @@ impl<T: Default + Clone + 'static> FieldTrait<T> for FieldFull<T> {
     fn value(&self) -> T {
         self.value.clone()
     }
-    fn set(&mut self, val: T) {
-        self.value = val
-    }
     fn offset(&self) -> usize {
         self.offset
     }
     fn len(&self) -> u32 {
         self.len
-    }
-    fn get_field_light(&self) -> Option<&FieldLight<T>> {
-        None
     }
     fn get_field_full(&self) -> Option<&FieldFull<T>> {
         Some(self)
@@ -94,17 +86,11 @@ impl<T: Default + Clone + 'static> FieldTrait<T> for FieldLight<T> {
     fn value(&self) -> T {
         self.value.clone()
     }
-    fn set(&mut self, val: T) {
-        self.value = val
-    }
     fn offset(&self) -> usize {
         0
     }
     fn len(&self) -> u32 {
         0
-    }
-    fn get_field_light(&self) -> Option<&FieldLight<T>> {
-        Some(self)
     }
     fn get_field_full(&self) -> Option<&FieldFull<T>> {
         None

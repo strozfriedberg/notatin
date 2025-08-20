@@ -16,10 +16,10 @@ exclude = [
 
 [dependencies]
 bitflags = "2.3"
-blake3 = "0.3"
-crossterm = "0.21"
-enum-primitive-derive = "0.2"
-md5 = "0.7"
+blake3 = "1.0"
+crossterm = "0.29"
+enum-primitive-derive = "0.3"
+md5 = "0.8"
 nom = "6.0"
 num = "0.4"
 num-traits = "0.2.14"
@@ -27,12 +27,12 @@ paste = "1.0"
 regex = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-strum_macros = "0.22"
-thiserror = "1.0"
+strum_macros = "0.27"
+thiserror = "2.0"
 winstructs = "0.3"
 
 clap = { version = "4.3", optional = true }
-itertools = { version = "0.11", optional = true }
+itertools = { version = "0.14", optional = true }
 walkdir = { version = "2.3", optional = true }
 xlsxwriter = { version = "0.6", optional = true }
 
@@ -43,7 +43,7 @@ features = ["serde"]
 
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.7"
 
 
 [features]

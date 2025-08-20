@@ -152,7 +152,7 @@ pub fn get_date_time_from_filetime(filetime: u64) -> DateTime<Utc> {
     let filetime_nanos: i128 = filetime as i128 * 100;
 
     // Add nanoseconds to timestamp via Duration
-    DateTime::<Utc>::from_utc(
+    DateTime::<Utc>::from_naive_utc_and_offset(
         chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
             .expect("impossible")
             .and_hms_nano_opt(0, 0, 0, 0)
@@ -213,7 +213,7 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
     s.trim_end().to_string()
 }
 
-pub fn escape_string(orig: &str) -> Cow<str> {
+pub fn escape_string(orig: &str) -> Cow<'_, str> {
     if orig.contains(&['\t', '\r', '\n', ',', '\"'][..]) {
         let escaped = &str::replace(orig, "\"", "\"\"");
         Cow::Owned(format!("\"{}\"", escaped))
