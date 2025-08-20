@@ -44,7 +44,7 @@ use nom::{
     bytes::complete::{tag, take},
     multi::count,
     number::complete::{le_i32, le_u16, le_u32, le_u64},
-    IResult,
+    IResult, Parser as NParser,
 };
 use serde::Serialize;
 use winstructs::security::SecurityDescriptor;
@@ -478,7 +478,7 @@ impl CellKeyNode {
                 code: nom::error::ErrorKind::Eof,
             }))?;
         let (slice, _size) = le_u32(slice)?;
-        let (_, list) = count(le_u32, key_values_count as usize)(slice)?;
+        let (_, list) = count(le_u32, key_values_count as usize).parse(slice)?;
         Ok((slice, list))
     }
 
@@ -502,7 +502,8 @@ impl CellKeyNode {
                     SubKeyListLf::from_bytes(),
                     SubKeyListLh::from_bytes(),
                     SubKeyListLi::from_bytes(),
-                ))(slice)?;
+                ))
+                .parse(slice)?;
                 Ok(cell_sub_key_list.get_offset_list(file_info.hbin_offset_absolute as u32))
             }
         }

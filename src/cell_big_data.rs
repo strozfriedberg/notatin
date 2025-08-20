@@ -22,7 +22,7 @@ use nom::{
     bytes::complete::tag,
     multi::count,
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 
@@ -125,7 +125,7 @@ impl CellBigData {
                 code: nom::error::ErrorKind::Eof,
             }))?;
         let (input, _size) = le_u32(slice)?;
-        let (_, list) = count(le_u32, self.count as usize)(input)?;
+        let (_, list) = count(le_u32, self.count as usize).parse(input)?;
         Ok((input, list))
     }
 }

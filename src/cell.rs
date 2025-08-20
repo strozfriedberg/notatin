@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use nom::{branch::alt, bytes::complete::tag, combinator::map, IResult};
+use nom::{branch::alt, bytes::complete::tag, combinator::map, IResult, Parser};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -69,7 +69,8 @@ impl CellType {
                 map(tag("lh"), |_| CellType::CellHashLeaf),
                 map(tag("ri"), |_| CellType::CellIndexRoot),
                 map(tag("db"), |_| CellType::CellBigData),
-            ))(b)
+            ))
+            .parse(b)
         }
 
         match cell_type(input) {

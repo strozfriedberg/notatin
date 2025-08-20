@@ -22,7 +22,7 @@ use crate::state::State;
 use nom::{
     bytes::complete::tag,
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 
@@ -54,7 +54,7 @@ impl SubKeyListRi {
         let (input, _signature) = tag("ri")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, list_offsets) =
-            nom::multi::count(parse_sub_key_list_ri_item(), count.into())(input)?;
+            nom::multi::count(parse_sub_key_list_ri_item(), count.into()).parse(input)?;
 
         Ok((
             input,
