@@ -24,6 +24,8 @@ pub(crate) trait FieldTrait<T: Default + 'static> {
     // This trait exists only to support FieldLight and FieldFull, so rather than
     // using a more generic Any/downcast approach to get the specific typed value
     // we instead have these functions
+    #[allow(dead_code)]
+    fn get_field_light(&self) -> Option<&FieldLight<T>>; // this is currently unused in the existing code, but it may be useful in the future
     fn get_field_full(&self) -> Option<&FieldFull<T>>;
 }
 
@@ -43,6 +45,9 @@ impl<T: Default + Clone + 'static> FieldTrait<T> for FieldFull<T> {
     }
     fn len(&self) -> u32 {
         self.len
+    }
+    fn get_field_light(&self) -> Option<&FieldLight<T>> {
+        None
     }
     fn get_field_full(&self) -> Option<&FieldFull<T>> {
         Some(self)
@@ -91,6 +96,9 @@ impl<T: Default + Clone + 'static> FieldTrait<T> for FieldLight<T> {
     }
     fn len(&self) -> u32 {
         0
+    }
+    fn get_field_light(&self) -> Option<&FieldLight<T>> {
+        Some(self)
     }
     fn get_field_full(&self) -> Option<&FieldFull<T>> {
         None
