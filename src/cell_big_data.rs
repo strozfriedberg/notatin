@@ -77,7 +77,7 @@ impl CellBigData {
     pub(crate) fn is_big_data_block(input: &[u8]) -> bool {
         match input.get(4..) {
             Some(slice) => {
-                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).is_ok_and(|_| true)
+                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).is_ok()
             }
             None => false,
         }

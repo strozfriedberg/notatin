@@ -42,7 +42,7 @@ struct UpdateConsole {
 
 impl UpdateProgressTrait for UpdateConsole {
     fn update_progress(&mut self, index: usize) -> Result<(), Error> {
-        if index % 1000 == 0 {
+        if index.is_multiple_of(1000) {
             self.stdout.write_all(".".as_bytes())?;
             self.stdout.flush()?;
         }

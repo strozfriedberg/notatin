@@ -142,7 +142,7 @@ impl LogEntry {
     }
 
     fn is_valid_hive_bin_data_size(&self) -> bool {
-        self.hive_bins_data_size % 4096 == 0
+        self.hive_bins_data_size.is_multiple_of(4096)
     }
 
     fn calc_hash1(raw_bytes: &[u8], len: usize) -> u64 {

@@ -484,7 +484,6 @@ impl CellKeyNode {
     }
 
     /// Returns a vector of the absolute sub key offsets
-
     pub(crate) fn parse_sub_key_list(
         file_info: &FileInfo,
         state: &mut State,
