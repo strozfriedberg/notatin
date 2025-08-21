@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-use nom::Parser;
 use crate::cell_key_node::CellKeyNode;
 use crate::err::Error;
 use crate::file_info::FileInfo;
@@ -23,7 +22,7 @@ use crate::state::State;
 use nom::{
     bytes::complete::tag,
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 

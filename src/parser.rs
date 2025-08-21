@@ -519,7 +519,7 @@ impl Parser {
         cell_key_node
             .read_sub_keys_internal(&self.file_info, &mut self.state, &filter, None, false)
             .0
-            .get(0)
+            .first()
             .map_or_else(|| Ok(None), |k| Ok(Some(k.clone())))
     }
 

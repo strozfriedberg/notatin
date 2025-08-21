@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use nom::Parser as NomParser;
+
 use crate::cell::{Cell, CellState};
 use crate::cell_key_security;
 use crate::cell_key_value::CellKeyValue;
@@ -45,7 +45,7 @@ use nom::{
     bytes::complete::{tag, take},
     multi::count,
     number::complete::{le_i32, le_u16, le_u32, le_u64},
-    IResult,
+    IResult, Parser as NParser,
 };
 use serde::Serialize;
 use winstructs::security::SecurityDescriptor;
@@ -506,8 +506,7 @@ impl CellKeyNode {
                     SubKeyListLh::from_bytes(),
                     SubKeyListLi::from_bytes(),
                 ))
-                    .parse(slice)?; // nom 7+ requires `.parse()`
-
+                .parse(slice)?; // nom 7+ requires `.parse()`
                 Ok(cell_sub_key_list.get_offset_list(file_info.hbin_offset_absolute as u32))
             }
         }
@@ -635,7 +634,7 @@ impl CellKeyNode {
         let (children, found_key) =
             self.read_sub_keys_internal(file_info, state, filter, sequence_num, false);
         if found_key {
-            match children.get(0) {
+            match children.first() {
                 Some(child) => return Some(child.clone()),
                 None => return None,
             }

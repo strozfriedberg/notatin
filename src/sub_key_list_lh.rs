@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-use nom::Parser;
 use crate::hive_bin_cell;
 use nom::{
     bytes::complete::tag,
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 

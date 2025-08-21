@@ -69,7 +69,8 @@ impl CellType {
                 map(tag("lh"), |_| CellType::CellHashLeaf),
                 map(tag("ri"), |_| CellType::CellIndexRoot),
                 map(tag("db"), |_| CellType::CellBigData),
-            )).parse(b)
+            ))
+            .parse(b)
         }
 
         match cell_type(input) {

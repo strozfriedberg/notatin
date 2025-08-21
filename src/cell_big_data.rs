@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-use nom::Parser;
 use crate::cell_key_value::{CellKeyValue, CellKeyValueDataTypes};
 use crate::err::Error;
 use crate::file_info::FileInfo;
@@ -23,7 +22,7 @@ use nom::{
     bytes::complete::tag,
     multi::count,
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 
@@ -78,7 +77,7 @@ impl CellBigData {
     pub(crate) fn is_big_data_block(input: &[u8]) -> bool {
         match input.get(4..) {
             Some(slice) => {
-                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).map_or(false, |_| true)
+                tag::<&str, &[u8], nom::error::Error<&[u8]>>("db")(slice).is_ok_and(|_| true)
             }
             None => false,
         }
