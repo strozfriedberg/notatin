@@ -80,7 +80,6 @@ impl CellType {
     }
 }
 
-
 pub trait Cell {
     fn get_file_offset_absolute(&self) -> usize;
     fn get_hash(&self) -> Option<blake3::Hash>;
