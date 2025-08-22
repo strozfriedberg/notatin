@@ -20,7 +20,7 @@ use crate::util;
 use nom::{
     bytes::complete::{tag, take},
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 
@@ -52,7 +52,7 @@ impl SubKeyListLf {
         let (input, _signature) = tag("lf")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, items) =
-            nom::multi::count(SubKeyListLfItem::from_bytes(), count.into())(input)?;
+            nom::multi::count(SubKeyListLfItem::from_bytes(), count.into()).parse(input)?;
         Ok((
             input,
             SubKeyListLf {

@@ -30,7 +30,7 @@ use crate::util;
 use nom::{
     bytes::complete::tag,
     number::complete::{le_u32, le_u64},
-    IResult,
+    IResult, Parser as NParser,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -105,7 +105,8 @@ impl LogEntry {
         let (input, hash1) = le_u64(input)?;
         let (input, hash2) = le_u64(input)?;
         let (mut input, dirty_page_refs) =
-            nom::multi::count(DirtyPageRef::from_bytes(), dirty_pages_count as usize)(input)?;
+            nom::multi::count(DirtyPageRef::from_bytes(), dirty_pages_count as usize)
+                .parse(input)?;
 
         let mut dirty_pages = Vec::new();
         for dirty_page_ref in dirty_page_refs {
@@ -141,7 +142,7 @@ impl LogEntry {
     }
 
     fn is_valid_hive_bin_data_size(&self) -> bool {
-        self.hive_bins_data_size % 4096 == 0
+        self.hive_bins_data_size.is_multiple_of(4096)
     }
 
     fn calc_hash1(raw_bytes: &[u8], len: usize) -> u64 {
@@ -155,7 +156,7 @@ impl LogEntry {
 
     fn calc_hash2(raw_bytes: &[u8]) -> u64 {
         const LENGTH: usize = 32;
-        let mut b = vec![0; LENGTH];
+        let mut b = [0; LENGTH];
         let dst = &mut b[0..LENGTH];
         let src = &raw_bytes[0..LENGTH];
         dst.copy_from_slice(src);
@@ -175,7 +176,8 @@ impl TransactionLog {
         let start = input;
         let start_pos = input.as_ptr() as usize;
         let (input, base_block) = BaseBlockBase::from_bytes(input)?;
-        let (input, log_entries) = nom::multi::many0(LogEntry::from_bytes(start_pos))(input)?;
+        let (input, log_entries) =
+            nom::multi::many0(LogEntry::from_bytes(start_pos)).parse(input)?;
         Ok((
             input,
             Self {

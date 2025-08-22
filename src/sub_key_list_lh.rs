@@ -18,7 +18,7 @@ use crate::hive_bin_cell;
 use nom::{
     bytes::complete::tag,
     number::complete::{le_i32, le_u16, le_u32},
-    IResult,
+    IResult, Parser,
 };
 use serde::Serialize;
 
@@ -37,7 +37,7 @@ impl SubKeyListLh {
         let (input, _signature) = tag("lh")(input)?;
         let (input, count) = le_u16(input)?;
         let (input, items) =
-            nom::multi::count(SubKeyListLhItem::from_bytes(), count.into())(input)?;
+            nom::multi::count(SubKeyListLhItem::from_bytes(), count.into()).parse(input)?;
         Ok((
             input,
             SubKeyListLh {
