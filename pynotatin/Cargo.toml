@@ -1,7 +1,7 @@
 [package]
 name = "pynotatin"
 version = "1.0.1"
-authors = ["Kimberly Stone <kimberly.stone@aon.com>"]
+authors = ["Kimberly Stone <kimberly.stone@levelblue.com>"]
 edition = "2018"
 
 [lib]
