@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "pynotatin"
 version = "1.0.1"
-authors = ["kimberly.stone <kimberly.stone@aon.com>"]
+authors = ["kimberly.stone <kimberly.stone@levelblue.com>"]
 description = "Python bindings for notatin"
 
 [build-system]
